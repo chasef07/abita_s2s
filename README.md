@@ -191,5 +191,4 @@ GPT-Live Responses delegation, audio interruptions, SIP, or deployment behavior.
 ## Staff tasks
 
 Caller-approved staff delivery uses the existing Product service credential and
-optional `ACUITY_PRODUCT_HANDOFF_URL`. See [staff task delivery](docs/staff-task-delivery.md)
-for the contract, office restrictions, category gap, retry semantics, and offline proof.
+optional `ACUITY_PRODUCT_HANDOFF_URL`.
