@@ -2,7 +2,8 @@
 
 Python LiveKit worker using OpenAI GPT-Live. One job owns one call.
 Office questions use Product knowledge search. Patient resolution uses the existing
-middleware contract. Registration, scheduling, and transfers are not migrated yet.
+middleware contract. Insurance, registration, and appointment scheduling have local
+implementations and offline tests; transfers are not migrated yet.
 
 ## Setup
 
@@ -179,10 +180,20 @@ Verified state retains backend references, on-file insurance, routing, appointme
 and appointment-load status. Appointment-load failure remains visible and allows
 reloading. The model receives only the verified name, insurance carrier, DOB-on-file
 indicator, appointment-load status, outcome, and next input; private references and
-candidate details never enter tool output. Registration and appointment mutations
-are outside this implementation.
+candidate details never enter tool output. Dedicated owners perform registration
+and appointment mutations.
 
 Offline tests exercise the HTTP contract, identity cases, cancellation and late
 responses, and the actual registered tool across multiple `AgentSession` turns.
 They substitute the model and HTTP transport: they do not prove live middleware,
 GPT-Live Responses delegation, audio interruptions, SIP, or deployment behavior.
+
+## Appointment scheduling
+
+`Scheduling` owns availability, booking, cancellation and rescheduling. It consumes
+the insurance/registration guard and updates the canonical active patient receipt.
+Only returned private references can select slots or loaded appointments. Writes
+are never automatically retried; uncertain results and partial moves require staff
+reconciliation. Offline tests cover the four registered tools through AgentSession,
+patient switches, cancellation, duplicate writes, and partial rescheduling. Live
+backend, audio and SIP behavior still require verification.

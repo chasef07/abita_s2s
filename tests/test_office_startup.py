@@ -131,6 +131,20 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         await shutdown
         self.assertTrue(owner._middleware._client.is_closed)
 
+    async def test_http_cleanup_drains_scheduling_before_closing_client(self):
+        ctx, args = await self.run_startup(True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"})
+        owner = args["agent"]._scheduling
+        finish = asyncio.Event()
+        owner._write_task = asyncio.create_task(finish.wait())
+        close_client = ctx.add_shutdown_callback.call_args_list[0].args[0]
+        shutdown = asyncio.create_task(close_client())
+        await asyncio.sleep(0)
+        self.assertTrue(owner._closed)
+        self.assertFalse(owner.http.client.is_closed)
+        finish.set()
+        await shutdown
+        self.assertTrue(owner.http.client.is_closed)
+
     async def test_greeting_uses_office_profile(self):
         agent = AbitaAgent(SPRING_HILL, Mock())
         handle = AsyncMock()
