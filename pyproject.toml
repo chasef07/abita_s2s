@@ -1,0 +1,20 @@
+[project]
+name = "abita-s2s"
+version = "0.1.0"
+description = "Abita voice agent using LiveKit Python and OpenAI GPT-Live"
+readme = "README.md"
+authors = [
+    { name = "Chase Fagen", email = "fagenchase@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "livekit-agents[openai]~=1.8",
+    "python-dotenv>=1.2.3",
+]
+
+[project.scripts]
+abita-s2s = "abita_s2s.main:main"
+
+[build-system]
+requires = ["uv_build>=0.12.13,<0.13.0"]
+build-backend = "uv_build"
