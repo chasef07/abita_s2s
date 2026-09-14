@@ -159,6 +159,9 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 )
             elif change == "acceptance":
                 owner.state.insurance.accepted = None
+                owner.state.patient.active = owner.state.patient.active.model_copy(
+                    update={"insuranceCarrier": None}
+                )
             else:
                 owner.state.patient.active = None
             self.assertEqual(

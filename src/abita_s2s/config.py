@@ -3,6 +3,14 @@
 import os
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
+from uuid import UUID
+
+
+@dataclass(frozen=True)
+class HandoffConfig:
+    url: str
+    secret: str = field(repr=False)
+    practice_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -14,6 +22,7 @@ class Config:
     middleware_url: str | None = None
     middleware_token: str | None = field(default=None, repr=False)
     staff_tasks_url: str | None = None
+    handoff: HandoffConfig | None = None
 
 
 def load_config() -> Config:
@@ -94,6 +103,35 @@ def load_config() -> Config:
             )
         ):
             raise ValueError("AMD_API_URL must use HTTPS (HTTP only on loopback)")
+    # Admission is optional: missing practice/legacy settings must not block
+    # staff tasks, knowledge, or offices with direct transfer destinations.
+    practice = os.environ.get("ABITA_EYE_GROUP_PRODUCT_PRACTICE_ID", "").strip()
+    handoff = None
+    if handoff_url or practice:
+        try:
+            UUID(practice)
+        except ValueError:
+            pass
+        else:
+            if handoff_url and product_secret:
+                handoff = HandoffConfig(handoff_url, product_secret, practice)
+    else:
+        legacy_url = os.environ.get("ACUITY_HANDOFF_URL", "").strip()
+        legacy_secret = os.environ.get("ACUITY_HANDOFF_SECRET", "").strip()
+        try:
+            target = urlsplit(legacy_url)
+            valid = (
+                target.scheme == "https"
+                and target.hostname
+                and target.username is None
+                and target.password is None
+                and not target.query
+                and not target.fragment
+            )
+        except ValueError:
+            valid = False
+        if valid and legacy_secret:
+            handoff = HandoffConfig(legacy_url, legacy_secret)
     return Config(
         api_key,
         voice,
@@ -102,4 +140,5 @@ def load_config() -> Config:
         middleware_url,
         middleware_token,
         staff_tasks_url,
+        handoff,
     )
