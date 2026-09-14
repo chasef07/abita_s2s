@@ -120,7 +120,8 @@ Care and action records will be added with insurance and scheduling tools.
 Set `ACUITY_PRODUCT_KNOWLEDGE_URL` to the full Product
 `/v1/agent/knowledge/search` endpoint and
 `ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET` to a service credential authorized for
-the office with `READ_KNOWLEDGE`. Set both or neither. Without them, the tool
+the office with `READ_KNOWLEDGE`. The URL requires the secret, which can also
+enable staff delivery. Without knowledge configuration, the tool
 reports unavailable; partial or insecure configuration fails at startup.
 
 The thinker calls `search_office_knowledge(query)` through LiveKit's existing
@@ -186,3 +187,9 @@ Offline tests exercise the HTTP contract, identity cases, cancellation and late
 responses, and the actual registered tool across multiple `AgentSession` turns.
 They substitute the model and HTTP transport: they do not prove live middleware,
 GPT-Live Responses delegation, audio interruptions, SIP, or deployment behavior.
+
+## Staff tasks
+
+Caller-approved staff delivery uses the existing Product service credential and
+optional `ACUITY_PRODUCT_HANDOFF_URL`. See [staff task delivery](docs/staff-task-delivery.md)
+for the contract, office restrictions, category gap, retry semantics, and offline proof.
