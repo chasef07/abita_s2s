@@ -4,6 +4,7 @@ import json
 import re
 from functools import lru_cache
 from pathlib import Path
+from typing import NamedTuple
 
 from abita_s2s.insurance_state import CoverageType
 
@@ -14,6 +15,14 @@ SOURCES = {
     "sweetwater": ("HOLLYWOOD_SWEETWATER", "SPRING_HILL_ROUTINE_VISION"),
     "north-miami-beach-optical": (None, "SPRING_HILL_ROUTINE_VISION"),
 }
+
+
+class _Candidate(NamedTuple):
+    rule: dict
+    term: str
+    normalized_term: str
+    source: str
+    exact: bool
 
 
 def normalize(text: str) -> str:
@@ -36,7 +45,8 @@ def contains(query: str, term: str) -> bool:
 def match_plan(office: str, query: str, coverage: CoverageType) -> dict:
     if coverage not in ("medical", "routine_vision"):
         raise ValueError("Unsupported visit type")
-    source = SOURCES[office][coverage == "routine_vision"]
+    medical_source, vision_source = SOURCES[office]
+    source = vision_source if coverage == "routine_vision" else medical_source
     if source is None:
         return {
             "outcome": "not_accepted",
@@ -62,7 +72,7 @@ def match_plan(office: str, query: str, coverage: CoverageType) -> dict:
             )
             if matches:
                 candidates.append(
-                    (
+                    _Candidate(
                         rule,
                         query if kind == "required" else term,
                         term_normalized,
@@ -72,28 +82,28 @@ def match_plan(office: str, query: str, coverage: CoverageType) -> dict:
                 )
 
     def rank(c):
-        return c[4], len(c[2]), 2 if c[3] == "display" else 1
+        return c.exact, len(c.normalized_term), 2 if c.source == "display" else 1
 
     def best(items):
         return max(items, key=rank, default=None)
 
-    selected = best([c for c in candidates if c[3] == "required"]) or best(
-        [c for c in candidates if c[4]]
+    selected = best([c for c in candidates if c.source == "required"]) or best(
+        [c for c in candidates if c.exact]
     )
     if selected is None:
-        rejected = best([c for c in candidates if c[0]["status"] == "not_accepted"])
-        accepted = best([c for c in candidates if c[0]["status"] == "accepted"])
+        rejected = best([c for c in candidates if c.rule["status"] == "not_accepted"])
+        accepted = best([c for c in candidates if c.rule["status"] == "accepted"])
         followup = best(
             [
                 c
                 for c in candidates
-                if c[0]["status"] in ("needs_clarification", "needs_staff_task")
+                if c.rule["status"] in ("needs_clarification", "needs_staff_task")
             ]
         )
         if rejected and not (
             accepted
             and rank(accepted) > rank(rejected)
-            and contains(accepted[2], rejected[2])
+            and contains(accepted.normalized_term, rejected.normalized_term)
         ):
             selected = rejected
         elif accepted and (not followup or rank(accepted) > rank(followup)):
@@ -102,7 +112,7 @@ def match_plan(office: str, query: str, coverage: CoverageType) -> dict:
             selected = followup or accepted
     if selected is None:
         return clarification("the exact plan name from the insurance card")
-    rule, term, _, kind, _ = selected
+    rule, term, kind = selected.rule, selected.term, selected.source
     if rule["status"] == "needs_clarification":
         return clarification(
             rule.get("clarificationNeeded")

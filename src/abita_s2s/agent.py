@@ -97,7 +97,25 @@ class AbitaAgent(Agent):
         """
         if self._insurance is None or self._insurance.state is not context.userdata:
             return json.dumps(staff())
-        registration = Registration(**{k: v for k, v in locals().items() if k not in ("self", "context")})
+        registration = Registration(
+            firstName=firstName,
+            lastName=lastName,
+            dob=dob,
+            phone=phone,
+            inboundPhoneConfirmed=inboundPhoneConfirmed,
+            email=email,
+            street=street,
+            aptSuite=aptSuite,
+            city=city,
+            state=state,
+            zip=zip,
+            sex=sex,
+            subscriberName=subscriberName,
+            insuranceMemberId=insuranceMemberId,
+            ssnLast4=ssnLast4,
+            newPatientConfirmed=newPatientConfirmed,
+            readBack=readBack,
+        )
         return json.dumps(await self._insurance.add(registration))
 
     @function_tool
