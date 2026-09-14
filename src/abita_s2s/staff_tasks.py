@@ -71,31 +71,79 @@ class StaffTasks:
     async def submit(
         self, category: Category, urgency: Urgency, summary: str, message: str
     ) -> dict:
+        if self._closed:
+            return _result("failed", "This call has ended. No request was sent.")
+        try:
+            payload = self._payload(category, urgency, summary, message)
+        except ValueError as exc:
+            return _result("failed", str(exc))
+        patient = payload.get("patient")
+        # Product fingerprints exact fields, including urgency and patient context.
+        key = (
+            "staff_task_"
+            + hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+        )
+        payload["idempotencyKey"] = key
+        task = self._deliveries.get(key)
+        replay = task is not None
+        previous = task.result() if task is not None and task.done() else None
+        if task is None or (
+            previous and previous["outcome"] in ("failed", "ambiguous")
+        ):
+            task = asyncio.create_task(
+                self._deliver(
+                    payload,
+                    uncertain=previous is not None
+                    and previous["outcome"] == "ambiguous",
+                )
+            )
+            self._deliveries[key] = task
+            replay = False
+        # Corrections/cancellation do not undo a submitted mutation or lose its receipt.
+        result = dict(await asyncio.shield(task))
+        if replay and result["outcome"] == "created":
+            result.update(
+                _result(
+                    "duplicate", "This request was already sent to the team for review."
+                )
+            )
+        result["summary"] = payload["summary"]
+        result["patient"] = (
+            {"name": patient.get("name"), "verified": "id" in patient}
+            if patient
+            else None
+        )
+        if patient != self._resolver.staff_task_patient():
+            result["patientChanged"] = True
+            result["answer"] += (
+                " This receipt belongs to the previous patient context, not the current patient."
+            )
+        return result
+
+    def _payload(
+        self, category: Category, urgency: Urgency, summary: str, message: str
+    ) -> dict:
+        """Validate before any write, then snapshot the exact request for replay."""
         call = self.state.call
-        if self._closed or call.customer_key != "abita":
-            return _result(
-                "failed",
-                "Staff tasks are unavailable for this call. No request was sent.",
+        if call.customer_key != "abita":
+            raise ValueError(
+                "Staff tasks are unavailable for this call. No request was sent."
             )
         try:
             office = get_office_profile(call.called_office_key)
-        except ValueError:
-            return _result(
-                "failed", "This office is not authorized. No request was sent."
-            )
+        except ValueError as exc:
+            raise ValueError(
+                "This office is not authorized. No request was sent."
+            ) from exc
         if not office.staff_tasks_enabled:
-            return _result(
-                "failed",
-                "Staff tasks are disabled for this office. No request was sent.",
+            raise ValueError(
+                "Staff tasks are disabled for this office. No request was sent."
             )
         if not self._url or not self._secret:
-            return _result(
-                "failed", "Staff delivery is not configured. No request was sent."
-            )
+            raise ValueError("Staff delivery is not configured. No request was sent.")
         if category not in CATEGORIES:
-            return _result(
-                "failed",
-                "Product does not support this category. No request was sent. Do not relabel it to bypass this restriction; offer office help.",
+            raise ValueError(
+                "Product does not support this category. No request was sent. Do not relabel it to bypass this restriction; offer office help."
             )
         summary, message = summary.strip(), message.strip()
         if (
@@ -103,23 +151,20 @@ class StaffTasks:
             or not 1 <= len(summary) <= 240
             or not 1 <= len(message) <= 2500
         ):
-            return _result(
-                "failed",
-                "No request was sent. Use a supported urgency, a summary up to 240 characters and details up to 2500 characters. Preserve essential intake and missing details.",
+            raise ValueError(
+                "No request was sent. Use a supported urgency, a summary up to 240 characters and details up to 2500 characters. Preserve essential intake and missing details."
             )
         phone = _phone(call.caller_phone)
         if not phone or not 1 <= len(call.call_id) <= 255:
-            return _result(
-                "failed",
-                "A valid caller contact and call identity are required. No request was sent; offer office help.",
+            raise ValueError(
+                "A valid caller contact and call identity are required. No request was sent; offer office help."
             )
         patient = self._resolver.staff_task_patient()
         if patient and any(
             len(v) > {"id": 255, "name": 200, "dob": 64}[k] for k, v in patient.items()
         ):
-            return _result(
-                "failed",
-                "Patient details exceed the delivery contract. No request was sent.",
+            raise ValueError(
+                "Patient details exceed the delivery contract. No request was sent."
             )
         payload = {
             "callId": call.call_id,
@@ -134,54 +179,14 @@ class StaffTasks:
         }
         if patient:
             payload["patient"] = patient
-        if call.called_number and _phone(call.called_number) != office.trunk_numbers[0]:
-            inbound = _phone(call.called_number)
+        inbound = _phone(call.called_number)
+        if call.called_number and inbound != office.trunk_numbers[0]:
             if inbound not in office.trunk_numbers:
-                return _result(
-                    "failed",
-                    "Inbound office does not match this office. No request was sent.",
+                raise ValueError(
+                    "Inbound office does not match this office. No request was sent."
                 )
             payload["inboundOfficePhone"] = inbound
-        # Product fingerprints exact fields, including urgency and patient context.
-        key = (
-            "staff_task_"
-            + hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
-        )
-        payload["idempotencyKey"] = key
-        task = self._deliveries.get(key)
-        replay = task is not None
-        if task is None or (
-            task.done() and task.result()["outcome"] not in ("created", "duplicate")
-        ):
-            task = asyncio.create_task(
-                self._deliver(
-                    payload,
-                    uncertain=task is not None
-                    and task.result()["outcome"] == "ambiguous",
-                )
-            )
-            self._deliveries[key] = task
-            replay = False
-        # Corrections/cancellation do not undo a submitted mutation or lose its receipt.
-        result = dict(await asyncio.shield(task))
-        if replay and result["outcome"] == "created":
-            result.update(
-                _result(
-                    "duplicate", "This request was already sent to the team for review."
-                )
-            )
-        result["summary"] = summary
-        result["patient"] = (
-            {"name": patient.get("name"), "verified": "id" in patient}
-            if patient
-            else None
-        )
-        if patient != self._resolver.staff_task_patient():
-            result["patientChanged"] = True
-            result["answer"] += (
-                " This receipt belongs to the previous patient context, not the current patient."
-            )
-        return result
+        return payload
 
     async def _deliver(self, payload: dict, *, uncertain: bool = False) -> dict:
         for _ in range(2):
