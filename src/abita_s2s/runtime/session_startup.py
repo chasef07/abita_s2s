@@ -10,7 +10,9 @@ from livekit.agents import AgentSession, JobContext, room_io
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.config import load_config
+from abita_s2s.identity import PatientResolver
 from abita_s2s.knowledge import OfficeKnowledge
+from abita_s2s.middleware import PatientMiddleware
 from abita_s2s.model_config import create_model
 from abita_s2s.offices import (
     get_office_profile,
@@ -39,7 +41,9 @@ async def start_voice_call(ctx: JobContext) -> None:
         )
     else:
         await ctx.connect()
-        participant = await ctx.wait_for_participant(kind=rtc.ParticipantKind.PARTICIPANT_KIND_SIP)
+        participant = await ctx.wait_for_participant(
+            kind=rtc.ParticipantKind.PARTICIPANT_KIND_SIP
+        )
         office = get_office_profile_by_phone(
             participant.attributes.get("sip.trunkPhoneNumber", "")
         )
@@ -60,15 +64,19 @@ async def start_voice_call(ctx: JobContext) -> None:
 
     client = httpx.AsyncClient()
     ctx.add_shutdown_callback(client.aclose)
+    state = CallState(call=call)
     session = AgentSession[CallState](
-        userdata=CallState(call=call),
+        userdata=state,
         llm=create_model(config),
         vad=None,
         turn_handling={"turn_detection": "realtime_llm"},
     )
+    resolver = PatientResolver(state, PatientMiddleware(client, config))
+    ctx.add_shutdown_callback(resolver.aclose)
+    resolver.start_phone_lookup()
     # LiveKit owns session shutdown and closes when the selected caller leaves.
     await session.start(
-        agent=AbitaAgent(office, OfficeKnowledge(client, config)),
+        agent=AbitaAgent(office, OfficeKnowledge(client, config), resolver),
         room=ctx.room,
         room_options=room_options,
     )

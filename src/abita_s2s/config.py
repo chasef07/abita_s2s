@@ -11,6 +11,8 @@ class Config:
     voice: str = "gleam"
     knowledge_url: str | None = None
     product_secret: str | None = field(default=None, repr=False)
+    middleware_url: str | None = None
+    middleware_token: str | None = field(default=None, repr=False)
 
 
 def load_config() -> Config:
@@ -46,4 +48,27 @@ def load_config() -> Config:
             raise ValueError(
                 "ACUITY_PRODUCT_KNOWLEDGE_URL must use HTTPS (HTTP only on loopback)"
             )
-    return Config(api_key, voice, knowledge_url, product_secret)
+    middleware_url = os.environ.get("AMD_API_URL", "").strip() or None
+    middleware_token = os.environ.get("AMD_API_TOKEN", "").strip() or None
+    if bool(middleware_url) != bool(middleware_token):
+        raise ValueError("Set both AMD_API_URL and AMD_API_TOKEN")
+    if middleware_url:
+        url = urlsplit(middleware_url)
+        if (
+            not url.hostname
+            or url.username
+            or url.password
+            or url.query
+            or url.fragment
+            or not (
+                url.scheme == "https"
+                or (
+                    url.scheme == "http"
+                    and url.hostname in ("localhost", "127.0.0.1", "::1")
+                )
+            )
+        ):
+            raise ValueError("AMD_API_URL must use HTTPS (HTTP only on loopback)")
+    return Config(
+        api_key, voice, knowledge_url, product_secret, middleware_url, middleware_token
+    )

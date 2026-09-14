@@ -1,13 +1,14 @@
 """Office identity and trunk routing; business policies live with their workflows."""
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class OfficeProfile:
     key: str
     display_name: str
+    # First entry is the canonical middleware office phone; the rest are SIP aliases.
     trunk_numbers: tuple[str, ...]
     greeting: str
 
