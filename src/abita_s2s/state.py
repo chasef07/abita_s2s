@@ -2,7 +2,10 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from abita_s2s.middleware import Candidate, Receipt
 
 
 @dataclass(frozen=True, repr=False)
@@ -19,29 +22,9 @@ class CallContext:
 
 
 @dataclass(frozen=True, repr=False)
-class PatientCandidate:
-    """Private lookup evidence; not permission to act on a patient chart."""
-
-    patient_id: str
-    first_name: str
-    last_name: str
-    dob: str
-
-
-@dataclass(frozen=True, repr=False)
-class VerifiedPatient:
-    """Identity already verified by the identity workflow, not by this record."""
-
-    patient_id: str
-    name: str
-    dob: str
-    phone: str | None = None
-
-
-@dataclass(frozen=True, repr=False)
 class CandidateLookup:
     status: Literal["not_attempted", "found", "none", "failed"] = "not_attempted"
-    candidates: tuple[PatientCandidate, ...] = ()
+    candidates: tuple["Candidate | Receipt", ...] = ()
     failure_reason: str | None = None
 
     def __post_init__(self) -> None:
@@ -57,12 +40,21 @@ class CandidateLookup:
 @dataclass(repr=False)
 class PatientState:
     lookup: CandidateLookup = field(default_factory=CandidateLookup)
-    active: VerifiedPatient | None = None
+    active: "Receipt | None" = None
     revision: int = 0
-    _lookup_token: object | None = field(default=None, init=False)
+    absence: "PatientAbsence | None" = None
 
 
 @dataclass(repr=False)
 class CallState:
     call: CallContext
     patient: PatientState = field(default_factory=PatientState)
+
+
+@dataclass(frozen=True, repr=False)
+class PatientAbsence:
+    """Complete first-name/DOB search evidence, invalidated by the next operation."""
+
+    first_name: str
+    dob: str
+    office_key: str

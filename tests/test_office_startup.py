@@ -4,7 +4,12 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.config import Config
-from abita_s2s.offices import SPRING_HILL, OFFICES, get_office_profile, get_office_profile_by_phone
+from abita_s2s.offices import (
+    OFFICES,
+    SPRING_HILL,
+    get_office_profile,
+    get_office_profile_by_phone,
+)
 from abita_s2s.runtime.session_startup import start_voice_call
 
 
@@ -105,9 +110,9 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             patch("abita_s2s.runtime.session_startup.load_config", return_value=Config("offline")),
             patch("abita_s2s.runtime.session_startup.httpx.AsyncClient", return_value=client),
             patch("abita_s2s.runtime.session_startup.create_model", side_effect=RuntimeError("model startup failed")),
+            self.assertRaisesRegex(RuntimeError, "model startup failed"),
         ):
-            with self.assertRaisesRegex(RuntimeError, "model startup failed"):
-                await start_voice_call(ctx)
+            await start_voice_call(ctx)
         self.assertEqual(callbacks, [client.aclose])
         await callbacks[0]()
         client.aclose.assert_awaited_once()

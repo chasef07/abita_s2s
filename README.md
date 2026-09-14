@@ -1,8 +1,8 @@
 # Abita S2S
 
 Python LiveKit worker using OpenAI GPT-Live. One job owns one call.
-Office questions use Product knowledge search. Patient, scheduling, and transfer
-workflows are not migrated yet.
+Office questions use Product knowledge search. Patient resolution uses the existing
+middleware contract. Registration, scheduling, and transfers are not migrated yet.
 
 ## Setup
 
@@ -56,8 +56,8 @@ Edit the Markdown files in `src/abita_s2s/prompts/`:
 - `speaker.md`: voice persona, opening greeting, and when to delegate.
 - `thinker.md`: instructions for delegated reasoning and future tools.
 
-The prompts describe the intended Abita workflows; only office knowledge has a
-model-facing tool so far. Unavailable actions must not be claimed as completed.
+The prompts describe the intended Abita workflows; office knowledge and patient
+resolution have model-facing tools. Unavailable actions must not be claimed as completed.
 `prompt.py` loads them relative to the package, independent of the working
 directory. They ship in the built wheel. Missing or empty files fail visibly.
 New agents load the files again; restart the worker after editing prompts.
@@ -87,7 +87,7 @@ Console jobs require `ABITA_CONSOLE_OFFICE` set to `spring-hill`, `crystal-river
 `hollywood`, `sweetwater`, or `north-miami-beach-optical`; this setting is ignored
 for real calls. The agent receives the resolved immutable office profile.
 
-Product call registration and patient lookup remain future migration work.
+Product call registration remains future migration work.
 No SIP trunk or dispatch configuration has been changed.
 
 ```sh
@@ -102,16 +102,16 @@ Startup creates one `CallState` per session and attaches it as typed LiveKit
 is not automatically added to either model's prompt.
 
 The first slice contains only `call` and `patient`. Private lookup candidates do
-not activate a patient. `identity.py` owns current-read tokens and patient changes:
+not activate a patient. `PatientResolver` privately owns current-read tokens and patient changes:
 older, cross-call, or replayed lookup results are rejected, and clearing the active
 patient invalidates outstanding reads. The caller phone is not the patient phone;
 missing caller ID remains unknown. Console sessions have unique local call IDs
 and no fabricated SIP metadata. `session_started_at` records worker entry time;
 Product call-start timestamp parity will be handled with Product integration.
 
-This is state infrastructure only. Patient matching, registration, backend lookup,
-and model-facing tools are not implemented yet. `activate_verified_patient`
-expects identity evidence already checked by the future resolution workflow.
+`PatientResolver` validates and activates one canonical patient receipt, including
+its backend references and loaded facts. Call state holds no read coordination;
+tokens, tasks, and pending identity remain private to the resolver.
 Chart creation and other writes require separate receipt/commit handling.
 Care and action records will be added with insurance and scheduling tools.
 
@@ -141,3 +141,48 @@ retrieval, GPT-Live audio, or spoken correction handling. With credentials set,
 use the console command above to ask about office hours, then correct the question
 to Saturday hours while lookup is running; verify the final answer matches the
 latest question and the returned facts.
+
+## Patient resolution
+
+Set both `AMD_API_URL` (middleware base URL) and `AMD_API_TOKEN` to enable patient
+reads. Without them, resolution reports unavailable. The client sends the token
+in `Authorization`, matching the middleware contract, and routes through the
+called office's canonical phone number. Neither office nor chart IDs are model inputs.
+
+One per-call `PatientResolver` owns private phone lookup, pending first name/DOB,
+matching, read freshness, and patient activation. Startup begins phone lookup in
+parallel with session startup; it never activates a chart. If that read is still
+pending when interactive resolution starts, it is cancelled and its late result
+cannot replace current evidence. Missing caller ID stays unknown.
+
+The registered `resolve_patient(firstName, dob)` tool accepts only these two nullable
+fields. It tries a supplied first name immediately, using a unique qualifying
+phone candidate without demanding DOB. Phone matching preserves the existing
+whole-name Damerau similarity and Double Metaphone thresholds. Otherwise it asks
+for DOB. Supplied DOB needs no separate confirmation. A complete first-name/DOB
+search must select one chart, then its hydrated receipt must match both the
+selected chart and supplied identity. Ambiguity stays unresolved and asks for
+clarification or staff help. A same-name patient switch requires a different DOB;
+this interface cannot distinguish two people with the same first name and DOB.
+
+A conflicting name or DOB clears the old active patient before another read.
+DOB-only followups retain the pending first name; a changed name does not inherit
+an earlier DOB. Duplicate in-flight requests share one read. Superseded, cancelled,
+cross-call, and replayed reads cannot activate a patient. The HTTP owner permits
+one retry for eligible read failures within a ten-second total deadline and does
+not follow redirects. The LiveKit tool is cancellable; it does not block interruptions.
+
+A definitive complete no-match is stored as private absence evidence for later
+registration work. Failed, partial, ambiguous, or invalid hydrated results never
+establish absence. A new lookup or patient transition invalidates that evidence.
+Verified state retains backend references, on-file insurance, routing, appointments,
+and appointment-load status. Appointment-load failure remains visible and allows
+reloading. The model receives only the verified name, insurance carrier, DOB-on-file
+indicator, appointment-load status, outcome, and next input; private references and
+candidate details never enter tool output. Registration and appointment mutations
+are outside this implementation.
+
+Offline tests exercise the HTTP contract, identity cases, cancellation and late
+responses, and the actual registered tool across multiple `AgentSession` turns.
+They substitute the model and HTTP transport: they do not prove live middleware,
+GPT-Live Responses delegation, audio interruptions, SIP, or deployment behavior.

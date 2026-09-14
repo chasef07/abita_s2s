@@ -65,7 +65,8 @@ class KnowledgeTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(office=office.key):
                 # Deliberately use a different greeting profile: routing belongs to call state.
                 agent = AbitaAgent(SPRING_HILL, knowledge)
-                schema = build_strict_openai_schema(agent.tools[0])["function"]
+                schema = next(build_strict_openai_schema(tool)["function"] for tool in agent.tools
+                              if build_strict_openai_schema(tool)["function"]["name"] == "search_office_knowledge")
                 self.assertEqual(schema["name"], "search_office_knowledge")
                 self.assertEqual(set(schema["parameters"]["properties"]), {"query"})
                 self.assertFalse(schema["parameters"]["additionalProperties"])
