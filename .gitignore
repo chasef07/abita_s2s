@@ -7,3 +7,6 @@ __pycache__/
 dist/
 *.egg-info/
 .DS_Store
+src/abita_s2s/release.json
+livekit.toml
+.ruff_cache/

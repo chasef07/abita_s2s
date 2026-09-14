@@ -37,6 +37,16 @@ class CallControl(EndCallTool):
         self.status = "idle"
         self.attempts = 0
         self.ending = False
+        self._closed = False
+        self._transfer_task = None
+
+    def close_admission(self):
+        self._closed = True
+
+    async def aclose(self):
+        self.close_admission()
+        if self._transfer_task:
+            await asyncio.shield(self._transfer_task)
 
     def _active(self) -> bool:
         call = self.state.call
@@ -60,6 +70,20 @@ class CallControl(EndCallTool):
         No patient lookup is required. Call without announcing; this tool speaks first.
         Retry only if the result explicitly offers one retry. Never claim a human answered.
         """
+        if self._closed:
+            return result("blocked", "This call has ended.")
+        if self._transfer_task and not self._transfer_task.done():
+            return result("pending", "Transfer is already in progress.")
+        self._transfer_task = asyncio.create_task(self._transfer(ctx))
+        return await asyncio.shield(self._transfer_task)
+
+    async def _transfer(self, ctx):
+        # Includes announcement and admission, so teardown is bounded even if
+        # playout never completes. HTTP/SIP deadlines fit within this budget.
+        async with asyncio.timeout(40):
+            return await self._perform_transfer(ctx)
+
+    async def _perform_transfer(self, ctx):
         if os.environ.get("LIVEKIT_AGENT_DEPLOYMENT", "").strip():
             return result(
                 "blocked",

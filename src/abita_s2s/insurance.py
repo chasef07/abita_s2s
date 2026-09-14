@@ -72,6 +72,9 @@ class InsuranceRegistration:
         self._task: asyncio.Task | None = None
         self._closed = False
 
+    def close_admission(self) -> None:
+        self._closed = True
+
     async def aclose(self):
         self._closed = True
         if self._task:

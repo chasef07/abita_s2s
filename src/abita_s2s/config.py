@@ -24,11 +24,39 @@ def load_config() -> Config:
     voice = os.environ.get("GPT_LIVE_VOICE", "gleam").strip()
     if not voice:
         raise ValueError("GPT_LIVE_VOICE must not be empty")
-    knowledge_url = os.environ.get("ACUITY_PRODUCT_KNOWLEDGE_URL", "").strip() or None
-    product_secret = (
-        os.environ.get("ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET", "").strip() or None
+    deployment = os.environ.get("LIVEKIT_AGENT_DEPLOYMENT", "").strip()
+    if deployment not in ("", "production", "staging"):
+        raise ValueError("Unsupported backend deployment; configure staging explicitly")
+    backend_keys = (
+        "ACUITY_PRODUCT_KNOWLEDGE_URL",
+        "ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET",
+        "ACUITY_PRODUCT_HANDOFF_URL",
+        "AMD_API_URL",
+        "AMD_API_TOKEN",
     )
-    handoff_url = os.environ.get("ACUITY_PRODUCT_HANDOFF_URL", "").strip().rstrip("/")
+
+    def backend(key: str, default: str = "") -> str:
+        if deployment == "staging":
+            value = os.environ.get("STAGING_" + key, "").strip()
+            if not value:
+                raise ValueError(
+                    "Missing required staging configuration: STAGING_" + key
+                )
+            if value == os.environ.get(key, "").strip():
+                raise ValueError(
+                    "Staging backend configuration must differ from production: " + key
+                )
+            return value
+        return os.environ.get(key, default)
+
+    if deployment == "staging":
+        for key in backend_keys:
+            backend(key)
+    knowledge_url = backend("ACUITY_PRODUCT_KNOWLEDGE_URL", "").strip() or None
+    product_secret = (
+        backend("ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET", "").strip() or None
+    )
+    handoff_url = backend("ACUITY_PRODUCT_HANDOFF_URL", "").strip().rstrip("/")
     staff_tasks_url = None
     if handoff_url:
         if not handoff_url.endswith("/v1/handoffs"):
@@ -73,8 +101,8 @@ def load_config() -> Config:
             raise ValueError(
                 "ACUITY_PRODUCT_KNOWLEDGE_URL must use HTTPS (HTTP only on loopback)"
             )
-    middleware_url = os.environ.get("AMD_API_URL", "").strip() or None
-    middleware_token = os.environ.get("AMD_API_TOKEN", "").strip() or None
+    middleware_url = backend("AMD_API_URL", "").strip() or None
+    middleware_token = backend("AMD_API_TOKEN", "").strip() or None
     if bool(middleware_url) != bool(middleware_token):
         raise ValueError("Set both AMD_API_URL and AMD_API_TOKEN")
     if middleware_url:
