@@ -137,10 +137,13 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
         return json.loads(outputs[-1].output)
 
     async def test_distinct_needs_duplicates_and_changed_details(self):
-        async with self.setup_session() as (session, agent, state, _owner, requests, _):
+        async with self.setup_session() as (session, agent, state, owner, requests, _):
             state.patient.active = patient()
             first = await self.invoke(session, agent)
             self.assertEqual(first["outcome"], "created")
+            self.assertNotIn("taskId", first)
+            self.assertNotIn(TASK_ID, json.dumps(first))
+            self.assertEqual(next(iter(owner._deliveries.values())).result()["taskId"], TASK_ID)
             self.assertEqual(
                 (await self.invoke(session, agent))["outcome"], "duplicate"
             )

@@ -101,6 +101,7 @@ class StaffTasks:
             replay = False
         # Corrections/cancellation do not undo a submitted mutation or lose its receipt.
         result = dict(await asyncio.shield(task))
+        result.pop("taskId", None)  # Keep the delivery receipt application-owned.
         if replay and result["outcome"] == "created":
             result.update(
                 _result(
