@@ -19,7 +19,7 @@ those settings. No credentials are included.
 
 ```sh
 uv run abita-s2s --help
-uv run abita-s2s console  # Local microphone/speaker test
+ABITA_CONSOLE_OFFICE=spring-hill uv run abita-s2s console  # Local microphone/speaker test
 uv run abita-s2s dev      # LiveKit worker; dispatch name: abita-s2s
 ```
 
@@ -67,8 +67,26 @@ The installed plugin lists `aster`, `beacon`, `cinder`, `marin`, `stone`, and
 Set `GPT_LIVE_VOICE` in `.env.local` or override it for a new console session:
 
 ```sh
-GPT_LIVE_VOICE=vesper uv run abita-s2s console
+GPT_LIVE_VOICE=vesper ABITA_CONSOLE_OFFICE=spring-hill uv run abita-s2s console
 ```
 
 Stop the session before trying another voice. Voice selection is fixed for each
 GPT-Live session. Console tests need credentials and make live API calls.
+
+## Office routing
+
+`offices.py` owns office identity, trunk aliases, and greetings.
+Supported production offices match `abita_agent`: Spring Hill, Crystal River
+(Eye Radiance), Hollywood, Sweetwater, and North Miami Beach Optical, including
+all 11 trunk numbers. Sweetwater optical remains a Sweetwater routing alias. Other trunks fail explicitly; they do not select a default office.
+Real jobs wait for a SIP participant and bind session audio to that participant.
+Console jobs require `ABITA_CONSOLE_OFFICE` set to `spring-hill`, `crystal-river`,
+`hollywood`, `sweetwater`, or `north-miami-beach-optical`; this setting is ignored
+for real calls. The agent receives the resolved immutable office profile.
+
+Patient/call state, Product registration, and lookup remain future migration work.
+No SIP trunk or dispatch configuration has been changed.
+
+```sh
+uv run python -m unittest discover -s tests
+```
