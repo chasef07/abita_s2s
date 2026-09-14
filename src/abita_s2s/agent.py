@@ -13,6 +13,7 @@ from abita_s2s.knowledge import OfficeKnowledge
 from abita_s2s.offices import OfficeProfile
 from abita_s2s.prompt import load_prompt
 from abita_s2s.state import CallState
+from abita_s2s.scheduling import Scheduling
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +25,10 @@ class AbitaAgent(Agent):
         knowledge: OfficeKnowledge,
         resolver: PatientResolver | None = None,
         insurance: InsuranceRegistration | None = None,
+        scheduling: Scheduling | None = None,
     ) -> None:
         super().__init__(
+            tools=scheduling.tools if scheduling else [],
             instructions=(
                 load_prompt("speaker")
                 + f"\n\nCurrent office: {office.display_name} ({office.key})."
@@ -35,6 +38,7 @@ class AbitaAgent(Agent):
         self._knowledge = knowledge
         self._resolver = resolver
         self._insurance = insurance
+        self._scheduling = scheduling
 
     @function_tool(flags=ToolFlag.CANCELLABLE)
     async def resolve_patient(
@@ -58,9 +62,10 @@ class AbitaAgent(Agent):
                     "next_input": "staff_help",
                 }
             )
-        return json.dumps(
-            await self._resolver.resolve(firstName, dob), ensure_ascii=False
-        )
+        result = await self._resolver.resolve(firstName, dob)
+        if self._scheduling:
+            result["appointments"] = self._scheduling.appointments()
+        return json.dumps(result, ensure_ascii=False)
 
     @function_tool
     async def check_insurance(
