@@ -1,6 +1,6 @@
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.config import Config
@@ -43,33 +43,48 @@ class OfficeRoutingTests(unittest.TestCase):
 
 class StartupTests(unittest.IsolatedAsyncioTestCase):
     async def run_startup(self, fake, trunk="+18135484830", env=None):
-        participant = SimpleNamespace(identity="caller", attributes={"sip.trunkPhoneNumber": trunk})
+        participant = SimpleNamespace(identity="caller", attributes={"sip.trunkPhoneNumber": trunk, "sip.phoneNumber": "+15555550101", "sip.callID": "sip-test"})
         ctx = SimpleNamespace(
             is_fake_job=lambda: fake,
             connect=AsyncMock(),
             wait_for_participant=AsyncMock(return_value=participant),
-            room=object(),
+            room=SimpleNamespace(name="test-room"),
         )
         session = SimpleNamespace(start=AsyncMock())
+        session_type = Mock(return_value=session)
+        session_generic = MagicMock()
+        session_generic.__getitem__.return_value = session_type
         with (
             patch.dict("os.environ", env or {}, clear=True),
             patch("abita_s2s.runtime.session_startup.load_config", return_value=Config("offline")),
             patch("abita_s2s.runtime.session_startup.create_model"),
-            patch("abita_s2s.runtime.session_startup.AgentSession", return_value=session),
+            patch("abita_s2s.runtime.session_startup.AgentSession", session_generic),
         ):
             await start_voice_call(ctx)
-        return ctx, session.start.call_args.kwargs
+        args = session.start.call_args.kwargs
+        args["userdata"] = session_type.call_args.kwargs["userdata"]
+        return ctx, args
 
     async def test_sip_ignores_console_override_and_binds_caller(self):
         ctx, args = await self.run_startup(False, env={"ABITA_CONSOLE_OFFICE": "invalid"})
         ctx.connect.assert_awaited_once()
         self.assertEqual(args["room_options"].participant_identity, "caller")
         self.assertEqual(args["agent"]._greeting, SPRING_HILL.greeting)
+        call = args["userdata"].call
+        self.assertEqual(call.call_id, "sip-test")
+        self.assertEqual(call.called_number, "+18135484830")
+        self.assertEqual(call.called_office_key, "spring-hill")
+        self.assertEqual(call.caller_phone, "+15555550101")
+        self.assertIsNone(args["userdata"].patient.active)
 
     async def test_console_requires_explicit_office(self):
         with self.assertRaisesRegex(ValueError, "ABITA_CONSOLE_OFFICE"):
             await self.run_startup(True)
-        ctx, _ = await self.run_startup(True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"})
+        ctx, args = await self.run_startup(True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"})
+        _, other_args = await self.run_startup(True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"})
+        self.assertNotEqual(args["userdata"].call.call_id, other_args["userdata"].call.call_id)
+        self.assertIsNone(args["userdata"].call.caller_phone)
+        self.assertIsNone(args["userdata"].call.sip_call_id)
         ctx.connect.assert_not_awaited()
         ctx.wait_for_participant.assert_not_awaited()
 

@@ -90,3 +90,24 @@ No SIP trunk or dispatch configuration has been changed.
 ```sh
 uv run python -m unittest discover -s tests
 ```
+
+## Call state
+
+`state.py` defines customer-independent call metadata and patient snapshots.
+Startup creates one `CallState` per session and attaches it as typed LiveKit
+`userdata`. Future tools use `RunContext[CallState].userdata` to access it; state
+is not automatically added to either model's prompt.
+
+The first slice contains only `call` and `patient`. Private lookup candidates do
+not activate a patient. `identity.py` owns current-read tokens and patient changes:
+older, cross-call, or replayed lookup results are rejected, and clearing the active
+patient invalidates outstanding reads. The caller phone is not the patient phone;
+missing caller ID remains unknown. Console sessions have unique local call IDs
+and no fabricated SIP metadata. `session_started_at` records worker entry time;
+Product call-start timestamp parity will be handled with Product integration.
+
+This is state infrastructure only. Patient matching, registration, backend lookup,
+and model-facing tools are not implemented yet. `activate_verified_patient`
+expects identity evidence already checked by the future resolution workflow.
+Chart creation and other writes require separate receipt/commit handling.
+Care and action records will be added with insurance and scheduling tools.
