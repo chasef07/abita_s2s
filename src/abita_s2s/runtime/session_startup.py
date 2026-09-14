@@ -6,10 +6,11 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import httpx
-from livekit import rtc
+from livekit import api, rtc
 from livekit.agents import AgentSession, JobContext, room_io
 
 from abita_s2s.agent import AbitaAgent
+from abita_s2s.call_control import CallControl
 from abita_s2s.config import load_config
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
@@ -96,13 +97,20 @@ async def start_voice_call(ctx: JobContext) -> None:
     )
     resolver = PatientResolver(state, PatientMiddleware(client, config))
     ctx.add_shutdown_callback(resolver.aclose)
+    sip_api = None
+    if not ctx.is_fake_job():
+        sip_api = api.LiveKitAPI(failover=False)
+        ctx.add_shutdown_callback(sip_api.aclose)
+    control = CallControl(state, client, ctx.room, sip_api.sip if sip_api else None)
+
     resolver.start_phone_lookup()
     insurance = InsuranceRegistration(state, resolver, RegistrationMiddleware(client, config))
     scheduling = Scheduling(state, SchedulingHTTP(client, config))
     staff_tasks = StaffTasks(state, resolver, client, config)
     await session.start(
         agent=AbitaAgent(office, OfficeKnowledge(client, config), resolver,
-                        insurance=insurance, scheduling=scheduling, staff_tasks=staff_tasks),
+                        insurance=insurance, scheduling=scheduling, staff_tasks=staff_tasks,
+                        call_control=control),
         room=ctx.room,
         room_options=room_options,
     )

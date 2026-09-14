@@ -52,7 +52,7 @@ def load_config() -> Config:
             raise ValueError(
                 "ACUITY_PRODUCT_HANDOFF_URL must use HTTPS (HTTP only on loopback)"
             )
-    if bool(knowledge_url or staff_tasks_url) != bool(product_secret):
+    if (knowledge_url or staff_tasks_url) and not product_secret:
         raise ValueError(
             "Set ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET with ACUITY_PRODUCT_KNOWLEDGE_URL or ACUITY_PRODUCT_HANDOFF_URL"
         )

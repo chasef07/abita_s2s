@@ -7,6 +7,7 @@ from typing import Literal
 from livekit.agents import Agent, RunContext, function_tool
 from livekit.agents.llm import ToolFlag
 
+from abita_s2s.call_control import CallControl
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration, Registration, staff
 from abita_s2s.knowledge import OfficeKnowledge
@@ -28,10 +29,13 @@ class AbitaAgent(Agent):
         insurance: InsuranceRegistration | None = None,
         scheduling: Scheduling | None = None,
         staff_tasks: StaffTasks | None = None,
+        call_control: CallControl | None = None,
     ) -> None:
         tools = list(scheduling.tools) if scheduling else []
         if office.staff_tasks_enabled:
             tools.append(function_tool(self.create_staff_task))
+        if call_control:
+            tools.append(call_control)
         super().__init__(tools=tools,
             instructions=(
                 load_prompt("speaker")
@@ -198,6 +202,10 @@ class AbitaAgent(Agent):
         return json.dumps(
             await self._staff_tasks.submit(category, urgency, summary, message)
         )
+
+    async def on_exit(self) -> None:
+        if self._resolver is not None:
+            await self._resolver.aclose()
 
     async def on_enter(self) -> None:
         handle = self.session.generate_reply(

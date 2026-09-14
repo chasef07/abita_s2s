@@ -12,6 +12,7 @@ class OfficeProfile:
     trunk_numbers: tuple[str, ...]
     greeting: str
     staff_tasks_enabled: bool = True
+    transfer_phone: str | None = None
 
 
 SPRING_HILL = OfficeProfile(
@@ -25,6 +26,7 @@ SPRING_HILL = OfficeProfile(
 OFFICES = (
     SPRING_HILL,
     OfficeProfile(
+        transfer_phone="tel:+13527941244",
         key="crystal-river",
         staff_tasks_enabled=False,
         display_name="Eye Radiance",
