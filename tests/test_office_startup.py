@@ -134,16 +134,57 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
     async def test_http_cleanup_drains_scheduling_before_closing_client(self):
         ctx, args = await self.run_startup(True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"})
         owner = args["agent"]._scheduling
-        finish = asyncio.Event()
+        finish, entered = asyncio.Event(), asyncio.Event()
         owner._write_task = asyncio.create_task(finish.wait())
+        original = owner.aclose
+        async def close():
+            entered.set()
+            await original()
         close_client = ctx.add_shutdown_callback.call_args_list[0].args[0]
-        shutdown = asyncio.create_task(close_client())
-        await asyncio.sleep(0)
-        self.assertTrue(owner._closed)
-        self.assertFalse(owner.http.client.is_closed)
-        finish.set()
-        await shutdown
+        with patch.object(owner, "aclose", new=close):
+            shutdown = asyncio.create_task(close_client())
+            try:
+                await asyncio.wait_for(entered.wait(), 2)
+                self.assertTrue(owner._closed)
+                self.assertFalse(owner.http.client.is_closed)
+            finally:
+                finish.set()
+                await shutdown
         self.assertTrue(owner.http.client.is_closed)
+
+    async def test_shutdown_drains_staff_delivery_before_closing_transport(self):
+        ctx, args = await self.run_startup(True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"})
+        owner = args["agent"]._staff_tasks
+        order = []
+        with (
+            patch.object(owner, "aclose", new=AsyncMock(side_effect=lambda: order.append("staff"))),
+            patch.object(owner._client, "aclose", new=AsyncMock(side_effect=lambda: order.append("http"))),
+        ):
+            await ctx.add_shutdown_callback.call_args_list[0].args[0]()
+        self.assertEqual(order, ["staff", "http"])
+
+    async def test_combined_shutdown_waits_for_other_writes_after_owner_failure(self):
+        ctx, args = await self.run_startup(True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"})
+        agent = args["agent"]
+        finish, entered = asyncio.Event(), asyncio.Event()
+        async def wait_for_write():
+            entered.set()
+            await finish.wait()
+        client = agent._staff_tasks._client
+        with (
+            patch.object(agent._scheduling, "aclose", new=AsyncMock(side_effect=RuntimeError("write failed"))),
+            patch.object(agent._insurance, "aclose", new=wait_for_write),
+        ):
+            shutdown = asyncio.create_task(ctx.add_shutdown_callback.call_args_list[0].args[0]())
+            try:
+                await asyncio.wait_for(entered.wait(), 2)
+                self.assertFalse(client.is_closed)
+                self.assertFalse(shutdown.done())
+            finally:
+                finish.set()
+                with self.assertRaisesRegex(RuntimeError, "write failed"):
+                    await shutdown
+        self.assertTrue(client.is_closed)
 
     async def test_greeting_uses_office_profile(self):
         agent = AbitaAgent(SPRING_HILL, Mock())

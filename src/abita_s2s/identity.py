@@ -64,6 +64,16 @@ class PatientResolver:
         self._previous_id: str | None = None
         self._token: object | None = None
 
+    def staff_task_patient(self) -> dict[str, str] | None:
+        """Snapshot current caller-reported identity without promoting it to verified."""
+        name, dob = self._pending
+        if name or dob:
+            return {k: v for k, v in {"name": name, "dob": dob}.items() if v}
+        active = self.state.patient.active
+        if active:
+            return {"id": active.patientId, "name": active.name, "dob": active.dob}
+        return None
+
     def _begin_lookup(self) -> object:
         self._token = object()
         self.state.patient.absence = None

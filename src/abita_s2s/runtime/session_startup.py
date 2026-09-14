@@ -1,5 +1,6 @@
 """Resolve the office and compose one voice session per LiveKit job."""
 
+import asyncio
 import os
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -20,9 +21,10 @@ from abita_s2s.offices import (
     get_office_profile_by_phone,
 )
 from abita_s2s.registration_middleware import RegistrationMiddleware
-from abita_s2s.state import CallContext, CallState
 from abita_s2s.scheduling import Scheduling
 from abita_s2s.scheduling_http import SchedulingHTTP
+from abita_s2s.staff_tasks import StaffTasks
+from abita_s2s.state import CallContext, CallState
 
 
 async def start_voice_call(ctx: JobContext) -> None:
@@ -69,16 +71,18 @@ async def start_voice_call(ctx: JobContext) -> None:
     client = httpx.AsyncClient()
     insurance: InsuranceRegistration | None = None
     scheduling: Scheduling | None = None
+    staff_tasks: StaffTasks | None = None
 
     async def close_client() -> None:
-        # LiveKit runs shutdown callbacks concurrently. Drain writes before closing HTTP.
+        # Close admission to every write owner, then drain all writes before HTTP.
         try:
-            try:
-                if scheduling is not None:
-                    await scheduling.aclose()
-            finally:
-                if insurance is not None:
-                    await insurance.aclose()
+            results = await asyncio.gather(
+                *(owner.aclose() for owner in (scheduling, insurance, staff_tasks) if owner is not None),
+                return_exceptions=True,
+            )
+            for result in results:
+                if isinstance(result, BaseException):
+                    raise result
         finally:
             await client.aclose()
 
@@ -93,16 +97,12 @@ async def start_voice_call(ctx: JobContext) -> None:
     resolver = PatientResolver(state, PatientMiddleware(client, config))
     ctx.add_shutdown_callback(resolver.aclose)
     resolver.start_phone_lookup()
-    insurance = InsuranceRegistration(
-        state, resolver, RegistrationMiddleware(client, config)
-    )
+    insurance = InsuranceRegistration(state, resolver, RegistrationMiddleware(client, config))
     scheduling = Scheduling(state, SchedulingHTTP(client, config))
-    # LiveKit owns session shutdown and closes when the selected caller leaves.
+    staff_tasks = StaffTasks(state, resolver, client, config)
     await session.start(
-        agent=AbitaAgent(
-            office, OfficeKnowledge(client, config), resolver,
-            insurance=insurance, scheduling=scheduling,
-        ),
+        agent=AbitaAgent(office, OfficeKnowledge(client, config), resolver,
+                        insurance=insurance, scheduling=scheduling, staff_tasks=staff_tasks),
         room=ctx.room,
         room_options=room_options,
     )
