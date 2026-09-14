@@ -88,6 +88,9 @@ def build(commit: str, output: Path):
         str(output),
         env={**os.environ, "SOURCE_DATE_EPOCH": str(epoch)},
     )
+    (output / ".gitignore").unlink(
+        missing_ok=True
+    )  # uv creates this build-directory marker.
     (output / "uv.lock").write_bytes((ROOT / "uv.lock").read_bytes())
     sums = {
         p.name: digest(p) for p in sorted(output.iterdir()) if p.name != "SHA256SUMS"
@@ -95,6 +98,9 @@ def build(commit: str, output: Path):
     (output / "SHA256SUMS").write_text(
         "".join(f"{sha}  {name}\n" for name, sha in sums.items())
     )
+    from deploy import validate_release
+
+    validate_release(output, commit)
     return manifest
 
 
