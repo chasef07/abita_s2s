@@ -33,7 +33,7 @@ class OfficeRoutingTests(unittest.TestCase):
     def test_crystal_river_identity(self):
         office = get_office_profile("crystal-river")
         self.assertIn("Eye Radiance", office.greeting)
-        self.assertIn("Current office: Eye Radiance", AbitaAgent(office).instructions)
+        self.assertIn("Current office: Eye Radiance", AbitaAgent(office, Mock()).instructions)
 
     def test_unknown_trunks_fail(self):
         for phone in ("", "+15555555555"):
@@ -49,6 +49,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             connect=AsyncMock(),
             wait_for_participant=AsyncMock(return_value=participant),
             room=SimpleNamespace(name="test-room"),
+            add_shutdown_callback=Mock(side_effect=self.addAsyncCleanup),
         )
         session = SimpleNamespace(start=AsyncMock())
         session_type = Mock(return_value=session)
@@ -92,8 +93,27 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.run_startup(False, trunk="", env={"ABITA_CONSOLE_OFFICE": "spring-hill"})
 
+    async def test_http_cleanup_is_registered_before_model_startup_can_fail(self):
+        callbacks = []
+        ctx = SimpleNamespace(
+            is_fake_job=lambda: True,
+            add_shutdown_callback=callbacks.append,
+        )
+        client = SimpleNamespace(aclose=AsyncMock())
+        with (
+            patch.dict("os.environ", {"ABITA_CONSOLE_OFFICE": "spring-hill"}),
+            patch("abita_s2s.runtime.session_startup.load_config", return_value=Config("offline")),
+            patch("abita_s2s.runtime.session_startup.httpx.AsyncClient", return_value=client),
+            patch("abita_s2s.runtime.session_startup.create_model", side_effect=RuntimeError("model startup failed")),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "model startup failed"):
+                await start_voice_call(ctx)
+        self.assertEqual(callbacks, [client.aclose])
+        await callbacks[0]()
+        client.aclose.assert_awaited_once()
+
     async def test_greeting_uses_office_profile(self):
-        agent = AbitaAgent(SPRING_HILL)
+        agent = AbitaAgent(SPRING_HILL, Mock())
         handle = AsyncMock()
         class Speech:
             def __await__(self):

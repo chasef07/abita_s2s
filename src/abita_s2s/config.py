@@ -2,12 +2,15 @@
 
 import os
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 
 @dataclass(frozen=True)
 class Config:
     openai_api_key: str = field(repr=False)
     voice: str = "gleam"
+    knowledge_url: str | None = None
+    product_secret: str | None = field(default=None, repr=False)
 
 
 def load_config() -> Config:
@@ -18,4 +21,29 @@ def load_config() -> Config:
     voice = os.environ.get("GPT_LIVE_VOICE", "gleam").strip()
     if not voice:
         raise ValueError("GPT_LIVE_VOICE must not be empty")
-    return Config(openai_api_key=api_key, voice=voice)
+    knowledge_url = os.environ.get("ACUITY_PRODUCT_KNOWLEDGE_URL", "").strip() or None
+    product_secret = (
+        os.environ.get("ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET", "").strip() or None
+    )
+    if bool(knowledge_url) != bool(product_secret):
+        raise ValueError(
+            "Set both ACUITY_PRODUCT_KNOWLEDGE_URL and ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET"
+        )
+    if knowledge_url:
+        url = urlsplit(knowledge_url)
+        if (
+            not url.hostname
+            or url.username is not None
+            or url.password is not None
+            or not (
+                url.scheme == "https"
+                or (
+                    url.scheme == "http"
+                    and url.hostname in ("localhost", "127.0.0.1", "::1")
+                )
+            )
+        ):
+            raise ValueError(
+                "ACUITY_PRODUCT_KNOWLEDGE_URL must use HTTPS (HTTP only on loopback)"
+            )
+    return Config(api_key, voice, knowledge_url, product_secret)

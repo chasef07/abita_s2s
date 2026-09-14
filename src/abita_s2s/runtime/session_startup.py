@@ -1,25 +1,27 @@
 """Resolve the office and compose one voice session per LiveKit job."""
 
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
+import httpx
 from livekit import rtc
 from livekit.agents import AgentSession, JobContext, room_io
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.config import load_config
+from abita_s2s.knowledge import OfficeKnowledge
+from abita_s2s.model_config import create_model
 from abita_s2s.offices import (
     get_office_profile,
     get_office_profile_by_phone,
 )
-from abita_s2s.model_config import create_model
 from abita_s2s.state import CallContext, CallState
 
 
 async def start_voice_call(ctx: JobContext) -> None:
     config = load_config()
-    session_started_at = datetime.now(timezone.utc)
+    session_started_at = datetime.now(UTC)
     room_options = room_io.RoomOptions(
         close_on_disconnect=True,
         delete_room_on_close=True,
@@ -56,6 +58,8 @@ async def start_voice_call(ctx: JobContext) -> None:
             sip_call_id=sip_call_id,
         )
 
+    client = httpx.AsyncClient()
+    ctx.add_shutdown_callback(client.aclose)
     session = AgentSession[CallState](
         userdata=CallState(call=call),
         llm=create_model(config),
@@ -64,7 +68,7 @@ async def start_voice_call(ctx: JobContext) -> None:
     )
     # LiveKit owns session shutdown and closes when the selected caller leaves.
     await session.start(
-        agent=AbitaAgent(office),
+        agent=AbitaAgent(office, OfficeKnowledge(client, config)),
         room=ctx.room,
         room_options=room_options,
     )
