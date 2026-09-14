@@ -64,6 +64,16 @@ class PatientResolver:
         self._previous_id: str | None = None
         self._token: object | None = None
 
+    def staff_task_patient(self) -> dict[str, str] | None:
+        """Snapshot current caller-reported identity without promoting it to verified."""
+        name, dob = self._pending
+        if name or dob:
+            return {k: v for k, v in {"name": name, "dob": dob}.items() if v}
+        active = self.state.patient.active
+        if active:
+            return {"id": active.patientId, "name": active.name, "dob": active.dob}
+        return None
+
     def _begin_lookup(self) -> object:
         self._token = object()
         self.state.patient.absence = None
@@ -289,6 +299,66 @@ class PatientResolver:
         self._pending = (None, None)
         self._previous_id = None
         return self._facts(receipt, "switched" if switched else "verified")
+
+    async def read_insurance(self, expected: Receipt) -> Receipt | None:
+        """Reload private backend references without replacing current appointment state."""
+        if self._closed or self.state.patient.active is not expected:
+            return None
+        token = self._begin_lookup()
+        try:
+            receipt = await self._middleware.resolve(
+                self.state.call.called_office_key, {"patientId": expected.patientId}
+            )
+            if (
+                not self._current(token)
+                or self.state.patient.active is not expected
+                or not isinstance(receipt, Receipt)
+                or receipt.patientId != expected.patientId
+                or exact_name(receipt.name) != exact_name(expected.name)
+                or not dob_matches(receipt.dob, expected.dob)
+            ):
+                return None
+            return receipt
+        finally:
+            if self._token is token:
+                self._token = None
+
+    def refresh_insurance(self, expected: Receipt, updated: Receipt) -> bool:
+        """Apply validated coverage to the same patient, fencing older patient reads."""
+        if (
+            self._closed
+            or self.state.patient.active is not expected
+            or updated.patientId != expected.patientId
+            or updated.name != expected.name
+            or updated.dob != expected.dob
+        ):
+            return False
+        self._token = None
+        self.state.patient.active = updated
+        self.state.patient.revision += 1
+        return True
+
+    def activate_created(self, absence: PatientAbsence, receipt: Receipt) -> bool:
+        """Promote a validated creation receipt only for its still-current absence."""
+        if (
+            self._closed
+            or self.state.patient.active is not None
+            or self.state.patient.absence is not absence
+            or absence.office_key != self.state.call.called_office_key
+            or not dob_matches(absence.dob, receipt.dob)
+            or not any(
+                exact_name(absence.first_name) == exact_name(n)
+                for n in first_names(receipt.name)
+            )
+        ):
+            return False
+        self._token = None
+        self.state.patient.active = receipt
+        self.state.patient.absence = None
+        self.state.patient.revision += 1
+        self._pending = (None, None)
+        self._previous_id = None
+        return True
 
     def _facts(self, receipt: Receipt, outcome: str) -> dict:
         result = reply(

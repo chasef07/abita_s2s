@@ -2,15 +2,19 @@
 
 import json
 import logging
+from typing import Literal
 
 from livekit.agents import Agent, RunContext, function_tool
 from livekit.agents.llm import ToolFlag
 
 from abita_s2s.call_control import CallControl
 from abita_s2s.identity import PatientResolver
+from abita_s2s.insurance import InsuranceRegistration, Registration, staff
 from abita_s2s.knowledge import OfficeKnowledge
 from abita_s2s.offices import OfficeProfile
 from abita_s2s.prompt import load_prompt
+from abita_s2s.scheduling import Scheduling
+from abita_s2s.staff_tasks import Category, StaffTasks, Urgency
 from abita_s2s.state import CallState
 
 logger = logging.getLogger(__name__)
@@ -22,18 +26,28 @@ class AbitaAgent(Agent):
         office: OfficeProfile,
         knowledge: OfficeKnowledge,
         resolver: PatientResolver | None = None,
+        insurance: InsuranceRegistration | None = None,
+        scheduling: Scheduling | None = None,
+        staff_tasks: StaffTasks | None = None,
         call_control: CallControl | None = None,
     ) -> None:
-        super().__init__(
-            tools=[call_control] if call_control else [],
+        tools = list(scheduling.tools) if scheduling else []
+        if office.staff_tasks_enabled:
+            tools.append(function_tool(self.create_staff_task))
+        if call_control:
+            tools.append(call_control)
+        super().__init__(tools=tools,
             instructions=(
                 load_prompt("speaker")
                 + f"\n\nCurrent office: {office.display_name} ({office.key})."
-            )
+            ),
         )
         self._greeting = office.greeting
         self._knowledge = knowledge
         self._resolver = resolver
+        self._insurance = insurance
+        self._scheduling = scheduling
+        self._staff_tasks = staff_tasks
 
     @function_tool(flags=ToolFlag.CANCELLABLE)
     async def resolve_patient(
@@ -57,9 +71,81 @@ class AbitaAgent(Agent):
                     "next_input": "staff_help",
                 }
             )
-        return json.dumps(
-            await self._resolver.resolve(firstName, dob), ensure_ascii=False
+        result = await self._resolver.resolve(firstName, dob)
+        if self._scheduling:
+            result["appointments"] = self._scheduling.appointments()
+        return json.dumps(result, ensure_ascii=False)
+
+    @function_tool
+    async def check_insurance(
+        self, context: RunContext[CallState], plan: str,
+        coverageType: Literal["medical", "routine_vision"],
+    ) -> str:
+        """Check office participation for the caller's plan and triaged visit type.
+
+        Use before registration or a requested insurance change. Follow clarification
+        or staff-review instructions; acceptance does not establish active benefits.
+        """
+        if self._insurance is None or self._insurance.state is not context.userdata:
+            return json.dumps(staff())
+        return json.dumps(self._insurance.check(plan, coverageType))
+
+    @function_tool
+    async def add_patient(
+        self, context: RunContext[CallState], firstName: str, lastName: str, dob: str,
+        phone: str | None, inboundPhoneConfirmed: Literal[True] | None,
+        email: str | None, street: str, aptSuite: str | None, city: str, state: str,
+        zip: str, sex: Literal["male", "female"], subscriberName: str,
+        insuranceMemberId: str, ssnLast4: str | None,
+        newPatientConfirmed: Literal[True] | None, readBack: Literal[True] | None,
+    ) -> str:
+        """Create a chart after complete resolution, accepted coverage and confirmation.
+
+        Confirm first registration, callback number, and the full identity, contact,
+        address and insurance read-back before setting confirmation flags true.
+        Use the patient's details, not the caller's. DOB uses MM/DD/YYYY.
+        Pass phone:null only when the inbound callback number was confirmed.
+        Request SSN last four once for insured routine vision; use null if unavailable
+        or declined, and skip for self-pay. Never repeat SSN in read-back.
+        Claim success only from this receipt; never retry full or partial creation.
+        """
+        if self._insurance is None or self._insurance.state is not context.userdata:
+            return json.dumps(staff())
+        registration = Registration(
+            firstName=firstName,
+            lastName=lastName,
+            dob=dob,
+            phone=phone,
+            inboundPhoneConfirmed=inboundPhoneConfirmed,
+            email=email,
+            street=street,
+            aptSuite=aptSuite,
+            city=city,
+            state=state,
+            zip=zip,
+            sex=sex,
+            subscriberName=subscriberName,
+            insuranceMemberId=insuranceMemberId,
+            ssnLast4=ssnLast4,
+            newPatientConfirmed=newPatientConfirmed,
+            readBack=readBack,
         )
+        return json.dumps(await self._insurance.add(registration))
+
+    @function_tool
+    async def update_insurance(
+        self, context: RunContext[CallState], insuranceMemberId: str,
+    ) -> str:
+        """Change the active verified patient's coverage only when the caller requests it.
+
+        First use check_insurance for the new plan and correct visit type. Supply the
+        card member ID, or self pay after Self Pay is accepted. Use add_patient for
+        registration. Claim success only from an updated receipt; never retry an
+        uncertain result or repeat a completed write.
+        """
+        if self._insurance is None or self._insurance.state is not context.userdata:
+            return json.dumps(staff())
+        return json.dumps(await self._insurance.update(insuranceMemberId))
 
     @function_tool
     async def search_office_knowledge(
@@ -75,6 +161,47 @@ class AbitaAgent(Agent):
             context.userdata.call.called_office_key, query
         )
         return json.dumps(result, ensure_ascii=False)
+
+    async def create_staff_task(
+        self,
+        context: RunContext[CallState],
+        category: Category,
+        urgency: Urgency,
+        summary: str,
+        message: str,
+    ) -> str:
+        """Send one safe, non-urgent caller-approved unresolved need per invocation.
+
+        Submit distinct needs separately, even in one category. For records, search
+        office knowledge for intake/delivery rules; speak restrictions and missing
+        prerequisites even when approved. Collect details and list gaps if incomplete.
+        Follow Human Transfer policy for urgent or clinical concerns. Confirm submission
+        only after success; staff owns fulfillment and timing.
+
+        Args:
+            category: Optical includes glasses/contact prescriptions; medication includes
+                refills and medication authorizations; insurance includes copays, coverage,
+                referrals requirements and service authorizations; referrals means specialist
+                or imaging orders. pre_op/post_op are surgical preparation/aftercare.
+                Ask what prior authorization authorizes; if still unclear use other.
+            urgency: high_priority for time-sensitive non-clinical work, normal for
+                standard follow-up, non_urgent without time sensitivity. Transfer clinical acuity.
+            summary: Short staff inbox title for one unresolved need.
+            message: Details of exactly one need. Include medication/pharmacy, service/plan,
+                authorization status and procedure timing when relevant. Preserve intake
+                and list missing details. Make another invocation for each additional need.
+        """
+        context.disallow_interruptions()
+        if self._staff_tasks is None or self._staff_tasks.state is not context.userdata:
+            return json.dumps(
+                {
+                    "outcome": "failed",
+                    "answer": "Staff delivery is unavailable. No request was sent.",
+                }
+            )
+        return json.dumps(
+            await self._staff_tasks.submit(category, urgency, summary, message)
+        )
 
     async def on_exit(self) -> None:
         if self._resolver is not None:

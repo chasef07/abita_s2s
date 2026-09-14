@@ -11,6 +11,7 @@ class OfficeProfile:
     # First entry is the canonical middleware office phone; the rest are SIP aliases.
     trunk_numbers: tuple[str, ...]
     greeting: str
+    staff_tasks_enabled: bool = True
     transfer_phone: str | None = None
 
 
@@ -27,6 +28,7 @@ OFFICES = (
     OfficeProfile(
         transfer_phone="tel:+13527941244",
         key="crystal-river",
+        staff_tasks_enabled=False,
         display_name="Eye Radiance",
         trunk_numbers=("+13523202007",),
         greeting="Thank you for calling Eye Radiance, powered by Abita Eye Group. How can I help you today?",
