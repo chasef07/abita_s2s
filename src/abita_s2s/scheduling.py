@@ -24,6 +24,7 @@ from abita_s2s.state import CallState
 
 VisitType = Literal["medical", "routine_vision"]
 MEDICAL_TYPES = {1004, 1005, 1006, 1007, 1008, 6167, 6168, 6169}
+ROUTINE_TYPES = {1010, 3364, 4244, 4245}
 NEW_TYPES = {1004, 1006, 1010, 4244, 6167}
 ESTABLISHED_TYPES = {1005, 1007, 3364, 4245, 6169}
 EASTERN = ZoneInfo("America/New_York")
@@ -45,11 +46,11 @@ def provider_name(name):
 
 
 def visit_type(appointment):
-    return (
-        "medical"
-        if appointment.appointmentTypeId in MEDICAL_TYPES
-        else "routine_vision"
-    )
+    if appointment.appointmentTypeId in MEDICAL_TYPES:
+        return "medical"
+    if appointment.appointmentTypeId in ROUTINE_TYPES:
+        return "routine_vision"
+    return None
 
 
 @dataclass(repr=False)
@@ -568,6 +569,11 @@ class Scheduling:
             return reply(
                 "needs_input",
                 "Resolve registration, insurance acceptance and authorization requirements before booking.",
+            )
+        if old and visit_type(old) is None:
+            return reply(
+                "needs_staff_review",
+                "The existing appointment's visit type could not be verified. Ask staff to reschedule it; no appointment was changed.",
             )
         if old and visit_type(old) != offered.visit:
             return reply(

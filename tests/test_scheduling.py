@@ -438,6 +438,25 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 [888] if status == "cancelled" else [77, 888],
             )
 
+    async def test_unknown_appointment_type_does_not_guess_reschedule_visit(self):
+        for type_id in (None, 99999):
+            owner, requests = self.owner([inventory(), {"status": "cancelled"}])
+            verified(owner.state, appointmentsStatus="found", appointments=[appointment(appointmentTypeId=type_id)])
+            old = owner.appointments()[0]
+            self.assertIsNone(old["visitType"])
+            ref = await self.slots(owner)
+            result = await self.tool(
+                owner, "reschedule_appointment", oldAppointmentRef=old["appointmentRef"],
+                appointmentSlotRef=ref, appointmentReason="Annual follow up",
+                referringDoctor="none", readBack=True,
+            )
+            self.assertEqual(result["outcome"], "needs_staff_review")
+            self.assertEqual(len(requests), 1)
+            self.assertEqual([a.id for a in owner.state.patient.active.appointments], [77])
+            # Cancelling the verified exact appointment does not require guessing its visit type.
+            result = await self.tool(owner, "cancel_appointment", appointmentRef=old["appointmentRef"])
+            self.assertEqual(result["outcome"], "cancelled")
+
     async def test_failed_reschedule_does_not_cancel_old(self):
         owner, requests = self.owner(
             [inventory(), {"status": "error", "outcome": "slot_unavailable"}]
