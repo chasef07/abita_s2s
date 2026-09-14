@@ -18,6 +18,7 @@ class Room:
     def __init__(self):
         self.handlers = {}
         self.connected = True
+        self.remote_participants = {"caller": SimpleNamespace(identity="caller")}
 
     def on(self, name, fn):
         self.handlers[name] = fn
@@ -105,6 +106,17 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
                 await task
             self.assertTrue(cancelled.is_set())
             self.assertEqual(room.handlers, {})
+
+    async def test_caller_already_gone_before_session_start_is_rejected(self):
+        room = Room()
+        room.remote_participants.clear()
+        ctx = SimpleNamespace(room=room, is_fake_job=lambda: False)
+        session = SimpleNamespace(start=AsyncMock())
+        with self.assertRaisesRegex(RuntimeError, "disconnected"):
+            await startup.start_session(
+                session, ctx, room_io.RoomOptions(participant_identity="caller"), Mock()
+            )
+        session.start.assert_not_awaited()
 
     async def test_session_start_failure_closes_application_transports(self):
         callbacks = []

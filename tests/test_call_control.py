@@ -135,6 +135,25 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.run_tool("end_call"))["outcome"], "blocked")
         self.sip.transfer_sip_participant.assert_awaited_once()
 
+    async def test_session_shutdown_drains_accepted_transfer(self):
+        entered, finish = asyncio.Event(), asyncio.Event()
+        async def transfer(*args, **kwargs):
+            entered.set()
+            await finish.wait()
+            return api.TransferSIPParticipantResponse(status=api.STS_TRANSFER_SUCCESSFUL)
+        self.sip.transfer_sip_participant.side_effect = transfer
+        caller = asyncio.create_task(self.run_tool("transfer_call"))
+        await asyncio.wait_for(entered.wait(), 2)
+        self.control.close_admission()
+        closing = asyncio.gather(self.control.aclose(), self.session.aclose())
+        await asyncio.sleep(0)
+        self.assertFalse(closing.done())
+        finish.set()
+        await closing
+        await asyncio.gather(caller, return_exceptions=True)
+        self.assertEqual(self.control.status, "accepted")
+        self.sip.transfer_sip_participant.assert_awaited_once()
+
     async def test_transport_uncertainty_suppresses_retry_and_hangup(self):
         self.sip.transfer_sip_participant.side_effect = TimeoutError()
         self.assertEqual((await self.run_tool("transfer_call"))["outcome"], "ambiguous")

@@ -54,7 +54,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             is_fake_job=lambda: fake,
             connect=AsyncMock(),
             wait_for_participant=AsyncMock(return_value=participant),
-            room=SimpleNamespace(name="test-room", on=Mock(), off=Mock(), isconnected=lambda: True),
+            room=SimpleNamespace(name="test-room", on=Mock(), off=Mock(), isconnected=lambda: True, remote_participants={"caller": participant}),
             add_shutdown_callback=Mock(side_effect=self.addAsyncCleanup),
         )
         session = SimpleNamespace(start=AsyncMock(), on=Mock())

@@ -81,7 +81,10 @@ async def start_session(session, ctx, room_options, agent):
     )
     try:
         async with asyncio.timeout(30):
-            if not ctx.is_fake_job() and not ctx.room.isconnected():
+            if not ctx.is_fake_job() and (
+                not ctx.room.isconnected()
+                or room_options.participant_identity not in ctx.room.remote_participants
+            ):
                 raise RuntimeError("Caller disconnected before session startup")
             done, _ = await asyncio.wait(
                 (task, disconnected), return_when=asyncio.FIRST_COMPLETED
