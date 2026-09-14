@@ -11,6 +11,7 @@ from livekit.agents import AgentSession, JobContext, room_io
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.config import load_config
 from abita_s2s.identity import PatientResolver
+from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.knowledge import OfficeKnowledge
 from abita_s2s.middleware import PatientMiddleware
 from abita_s2s.model_config import create_model
@@ -18,6 +19,7 @@ from abita_s2s.offices import (
     get_office_profile,
     get_office_profile_by_phone,
 )
+from abita_s2s.registration_middleware import RegistrationMiddleware
 from abita_s2s.state import CallContext, CallState
 
 
@@ -63,7 +65,17 @@ async def start_voice_call(ctx: JobContext) -> None:
         )
 
     client = httpx.AsyncClient()
-    ctx.add_shutdown_callback(client.aclose)
+    insurance: InsuranceRegistration | None = None
+
+    async def close_client() -> None:
+        # LiveKit runs shutdown callbacks concurrently. Drain writes before closing HTTP.
+        try:
+            if insurance is not None:
+                await insurance.aclose()
+        finally:
+            await client.aclose()
+
+    ctx.add_shutdown_callback(close_client)
     state = CallState(call=call)
     session = AgentSession[CallState](
         userdata=state,
@@ -74,9 +86,12 @@ async def start_voice_call(ctx: JobContext) -> None:
     resolver = PatientResolver(state, PatientMiddleware(client, config))
     ctx.add_shutdown_callback(resolver.aclose)
     resolver.start_phone_lookup()
+    insurance = InsuranceRegistration(
+        state, resolver, RegistrationMiddleware(client, config)
+    )
     # LiveKit owns session shutdown and closes when the selected caller leaves.
     await session.start(
-        agent=AbitaAgent(office, OfficeKnowledge(client, config), resolver),
+        agent=AbitaAgent(office, OfficeKnowledge(client, config), resolver, insurance),
         room=ctx.room,
         room_options=room_options,
     )

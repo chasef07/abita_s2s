@@ -1,0 +1,384 @@
+{
+  "version": 2,
+  "officeLabel": "Spring Hill Routine Vision",
+  "coverageType": "routine_vision",
+  "plans": [
+    {
+      "id": "accepted-vsp",
+      "status": "accepted",
+      "canonicalPlan": "VSP",
+      "displayName": "VSP",
+      "aliases": [],
+      "canProceed": true,
+      "needsExactPlanName": false
+    },
+    {
+      "id": "accepted-eyemed",
+      "status": "accepted",
+      "canonicalPlan": "EyeMed",
+      "displayName": "EyeMed",
+      "aliases": [],
+      "canProceed": true,
+      "needsExactPlanName": false
+    },
+    {
+      "id": "accepted-nva",
+      "status": "accepted",
+      "canonicalPlan": "NVA",
+      "displayName": "NVA",
+      "aliases": [],
+      "canProceed": true,
+      "needsExactPlanName": false
+    },
+    {
+      "id": "accepted-davis",
+      "status": "accepted",
+      "canonicalPlan": "Davis",
+      "displayName": "Davis",
+      "aliases": [],
+      "canProceed": true,
+      "needsExactPlanName": false
+    },
+    {
+      "id": "accepted-spectera",
+      "status": "accepted",
+      "canonicalPlan": "Spectera",
+      "displayName": "Spectera",
+      "aliases": [
+        "UnitedHealthcare"
+      ],
+      "canProceed": true,
+      "needsExactPlanName": false
+    },
+    {
+      "id": "accepted-solstice",
+      "status": "accepted",
+      "canonicalPlan": "Solstice",
+      "displayName": "Solstice",
+      "aliases": [],
+      "canProceed": true,
+      "needsExactPlanName": false
+    },
+    {
+      "id": "accepted-icare",
+      "status": "accepted",
+      "canonicalPlan": "iCare",
+      "displayName": "iCare",
+      "requiredWordAliases": [
+        "Aetna Medicaid",
+        "Aetna Medicare"
+      ],
+      "aliases": [
+        "Eye Care",
+        "Eye Care Health",
+        "Eye Care Solutions",
+        "i Care"
+      ],
+      "canProceed": true,
+      "needsExactPlanName": false
+    },
+    {
+      "id": "accepted-sunhealth",
+      "status": "accepted",
+      "canonicalPlan": "SunHealth",
+      "displayName": "SunHealth",
+      "aliases": [],
+      "canProceed": true,
+      "needsExactPlanName": false
+    },
+    {
+      "id": "accepted-envolve",
+      "status": "accepted",
+      "canonicalPlan": "Envolve",
+      "displayName": "Envolve",
+      "aliases": [],
+      "canProceed": true,
+      "needsExactPlanName": false
+    },
+    {
+      "id": "accepted-premier",
+      "status": "accepted",
+      "canonicalPlan": "Premier",
+      "displayName": "Premier",
+      "aliases": [],
+      "canProceed": true,
+      "needsExactPlanName": false
+    },
+    {
+      "id": "accepted-alivi",
+      "status": "accepted",
+      "canonicalPlan": "Alivi",
+      "displayName": "Alivi",
+      "aliases": [],
+      "canProceed": true,
+      "needsExactPlanName": false
+    },
+    {
+      "id": "accepted-guardian",
+      "status": "accepted",
+      "canonicalPlan": "Guardian",
+      "displayName": "Guardian",
+      "aliases": [],
+      "canProceed": true,
+      "needsExactPlanName": false
+    },
+    {
+      "id": "accepted-superior",
+      "status": "accepted",
+      "canonicalPlan": "Superior",
+      "displayName": "Superior",
+      "aliases": [],
+      "canProceed": true,
+      "needsExactPlanName": false
+    },
+    {
+      "id": "accepted-versant",
+      "status": "accepted",
+      "canonicalPlan": "Versant",
+      "displayName": "Versant",
+      "aliases": [],
+      "canProceed": true,
+      "needsExactPlanName": false
+    },
+    {
+      "id": "accepted-self-pay",
+      "status": "accepted",
+      "canonicalPlan": "Self Pay",
+      "displayName": "Self Pay",
+      "aliases": [],
+      "canProceed": true,
+      "needsExactPlanName": false
+    },
+    {
+      "id": "accepted-eyemed-2",
+      "status": "accepted",
+      "canonicalPlan": "EyeMed",
+      "displayName": "EyeMed",
+      "aliases": [
+        "Eye Med",
+        "Eye Med Vision",
+        "EyeMed Vision Care",
+        "Humana",
+        "Aetna",
+        "Unum",
+        "Cigna"
+      ],
+      "canProceed": true,
+      "needsExactPlanName": true
+    },
+    {
+      "id": "accepted-nva-2",
+      "status": "accepted",
+      "canonicalPlan": "NVA",
+      "displayName": "NVA",
+      "aliases": [
+        "National Vision",
+        "National Vision Administrators"
+      ],
+      "canProceed": true,
+      "needsExactPlanName": true
+    },
+    {
+      "id": "accepted-davis-2",
+      "status": "accepted",
+      "canonicalPlan": "Davis",
+      "displayName": "Davis",
+      "aliases": [
+        "Davis Vision",
+        "Superior",
+        "Florida Blue",
+        "BlueView",
+        "Blue View",
+        "Versant"
+      ],
+      "canProceed": true,
+      "needsExactPlanName": true
+    },
+    {
+      "id": "accepted-spectera-2",
+      "status": "accepted",
+      "canonicalPlan": "Spectera",
+      "displayName": "Spectera",
+      "aliases": [
+        "Spectera Vision",
+        "United Healthcare",
+        "United Health Care",
+        "United Vision"
+      ],
+      "canProceed": true,
+      "needsExactPlanName": true
+    },
+    {
+      "id": "accepted-solstice-2",
+      "status": "accepted",
+      "canonicalPlan": "Solstice",
+      "displayName": "Solstice",
+      "aliases": [
+        "Soltice",
+        "Solstice Vision"
+      ],
+      "canProceed": true,
+      "needsExactPlanName": true
+    },
+    {
+      "id": "accepted-icare-2",
+      "status": "accepted",
+      "canonicalPlan": "iCare",
+      "displayName": "iCare",
+      "aliases": [
+        "Eye Care",
+        "Eye Care Health",
+        "Eye Care Solutions",
+        "Aetna Medicare PPO Vision",
+        "Aetna Medicare PPO Vision effective 1/1/2026",
+        "Aetna Medicare HMO & PPO Vision",
+        "Aetna Better Health Medicaid MMA Vision",
+        "Aetna Healthy Kids/Kid Care CHIP Vision",
+        "AvMed Entrust Vision",
+        "Community Care Plan Vision",
+        "Doctors Health Medicare Vision",
+        "Doctors Health Medicare Vision EFFECTIVE 8/1/2023",
+        "Freedom Health Medicare Vision",
+        "Healthsun Vision",
+        "Healthsun Vision ONLY",
+        "Humana Medicaid Vision",
+        "Humana Medicare Vision",
+        "Humana Gold Plus",
+        "i Care",
+        "Miami Children's Health Plan Medicaid Vision",
+        "Miami Children's Health Plan (Medicaid) Vision",
+        "Molina Medicaid Vision",
+        "Optimum Healthplan Medicare Vision",
+        "Preferred Care Network Previously Medica Vision",
+        "Preferred Care Network - Previously Medica Vision",
+        "Simply Healthcare",
+        "Simply Healthcare Medicaid",
+        "Simply Medicaid/Healthy Kids Vision",
+        "Simply Medicare",
+        "Simply Medicare Vision",
+        "Simply Medicaid",
+        "Simply Medcaid",
+        "Freedom",
+        "Optimum",
+        "Optimum Healthcare",
+        "Aetna Better Health",
+        "AvMed"
+      ],
+      "canProceed": true,
+      "needsExactPlanName": true
+    },
+    {
+      "id": "accepted-sunhealth-2",
+      "status": "accepted",
+      "canonicalPlan": "SunHealth",
+      "displayName": "SunHealth",
+      "aliases": [
+        "Sun Health",
+        "SunHealth Vision"
+      ],
+      "canProceed": true,
+      "needsExactPlanName": true
+    },
+    {
+      "id": "accepted-envolve-2",
+      "status": "accepted",
+      "canonicalPlan": "Envolve",
+      "displayName": "Envolve",
+      "aliases": [
+        "Envolve Vision",
+        "Ambetter",
+        "Ambetter Vision",
+        "Ambetter from Sunshine Health",
+        "Children's Medical Services Vision",
+        "Children's Medical Services (Vision)",
+        "Staywell Medicaid Vision",
+        "Sunshine",
+        "Sunshine Medicaid Vision",
+        "Wellcare Medicaid Vision"
+      ],
+      "canProceed": true,
+      "needsExactPlanName": true
+    },
+    {
+      "id": "accepted-premier-2",
+      "status": "accepted",
+      "canonicalPlan": "Premier",
+      "displayName": "Premier",
+      "aliases": [
+        "AmeriHealth",
+        "Devoted",
+        "Devoted Medicare HMO Vision",
+        "Devoted Medicare PPO Vision",
+        "Florida Blue Medicare HMO & PPO Vision",
+        "Solis Medicare Vision",
+        "WellCare Medicare HMO Vision"
+      ],
+      "canProceed": true,
+      "needsExactPlanName": true
+    },
+    {
+      "id": "pending-careplus-medicare-routine-vision",
+      "status": "needs_staff_task",
+      "canonicalPlan": null,
+      "displayName": "CarePlus",
+      "aliases": [
+        "Care Plus",
+        "CarePlus (Medicare) Vision",
+        "CarePlus Medicare Vision",
+        "CarePlus Medicare Routine Vision"
+      ],
+      "callerNotice": "CarePlus Medicare routine vision is pending for these providers.",
+      "canProceed": false,
+      "needsExactPlanName": false
+    },
+    {
+      "id": "accepted-guardian-2",
+      "status": "accepted",
+      "canonicalPlan": "Guardian",
+      "displayName": "Guardian",
+      "aliases": [
+        "Guardian Vision"
+      ],
+      "canProceed": true,
+      "needsExactPlanName": true
+    },
+    {
+      "id": "accepted-vsp-2",
+      "status": "accepted",
+      "canonicalPlan": "VSP",
+      "displayName": "VSP",
+      "aliases": [
+        "MetLife",
+        "Liberty Financial",
+        "Lincoln Financial",
+        "Lincoln Finacial"
+      ],
+      "canProceed": true,
+      "needsExactPlanName": true
+    },
+    {
+      "id": "accepted-oscar",
+      "status": "accepted",
+      "canonicalPlan": "Oscar",
+      "displayName": "Oscar",
+      "aliases": ["Oscar Health"],
+      "callerNotice": "For new patients with Oscar, Davis Vision coverage is automatic through age 18. For patients 19 and older, Davis Vision is included only if they selected Oscar's additional vision option. Without that option, the visit would be self-pay.",
+      "canProceed": true,
+      "needsExactPlanName": false
+    },
+    {
+      "id": "accepted-self-pay-2",
+      "status": "accepted",
+      "canonicalPlan": "Self Pay",
+      "displayName": "Self Pay",
+      "aliases": [
+        "Self Pay",
+        "Selfpay",
+        "Cash Pay",
+        "Cash"
+      ],
+      "canProceed": true,
+      "needsExactPlanName": false
+    }
+  ]
+}

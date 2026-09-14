@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
+from abita_s2s.insurance_state import InsuranceState
+
 if TYPE_CHECKING:
     from abita_s2s.middleware import Candidate, Receipt
 
@@ -49,6 +51,7 @@ class PatientState:
 class CallState:
     call: CallContext
     patient: PatientState = field(default_factory=PatientState)
+    insurance: InsuranceState = field(default_factory=InsuranceState)
 
 
 @dataclass(frozen=True, repr=False)
