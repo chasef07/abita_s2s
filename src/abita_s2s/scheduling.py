@@ -479,11 +479,11 @@ class Scheduling:
             )
         # LiveKit tools are not cancellable. Shield also covers explicit session shutdown.
         self._write_task = asyncio.create_task(
-            self._change(action, slot_ref, reason, referrer, confirmed, old_ref)
+            self._change(action, slot_ref, reason, referrer, confirmed, old_ref, context.function_call.call_id)
         )
         return json.dumps(self._finish(await asyncio.shield(self._write_task)))
 
-    async def _change(self, action, slot_ref, reason, referrer, confirmed, old_ref):
+    async def _change(self, action, slot_ref, reason, referrer, confirmed, old_ref, call_id):
         p = self.state.patient.active
         captured = self._context()
         if not p:
@@ -539,6 +539,7 @@ class Scheduling:
             )
             result = await self.http.cancel(self._cancel_body(p, old))
             outcome = self._cancel_result(result)
+            self._report(p, cancellation=result, old=old, call_id=call_id)
             if outcome["outcome"] == "cancelled":
                 self._remove(p, old, captured)
             elif (
@@ -657,6 +658,7 @@ class Scheduling:
         )
         result = await self.http.book(body)
         outcome = self._book_result(result, description)
+        self._report(p, booking=result, old=old, slot=slot, call_id=call_id)
         if outcome["outcome"] not in ("booked", "partial_booking"):
             if outcome["outcome"] == "uncertain":
                 self._receipts[receipt_key] = MutationReceipt(outcome)
@@ -707,6 +709,7 @@ class Scheduling:
         if self._context() != captured:
             return self._patient_changed(partial, captured)
         cancellation = await self.http.cancel(self._cancel_body(p, old))
+        self._report(p, booking=result, cancellation=cancellation, old=old, slot=slot, call_id=call_id)
         if self._cancel_result(cancellation)["outcome"] != "cancelled":
             return self._patient_changed(partial, captured)
         self._remove(p, old, captured)
@@ -724,6 +727,32 @@ class Scheduling:
                 receipt_key
             ]
         return self._patient_changed(outcome, captured)
+
+    def _report(self, patient, *, call_id, booking=None, cancellation=None, old=None, slot=None):
+        reporter = self.state.reporter
+        if not reporter:
+            return
+        evidence = {"externalPatientId": str(patient.patientId)}
+        if booking is not None:
+            outcome = self._book_result(booking, "the selected time")["outcome"]
+            status = "partial" if outcome == "partial_booking" else outcome
+            evidence["bookingResult"] = {"status": status}
+            if outcome in ("booked", "partial_booking"):
+                evidence["newAppointmentId"] = str(booking.appointmentId)
+                evidence["bookingResult"].update(
+                    appointmentId=booking.appointmentId, date=slot.date, time=slot.time,
+                    provider=provider_name(booking.providerName or slot.provider),
+                )
+        if old:
+            evidence["oldAppointmentId"] = str(old.id)
+            evidence["cancellationResult"] = {
+                "status": self._cancel_result(cancellation)["outcome"]
+                if cancellation is not None else "not_attempted"
+            }
+        evidence["action"] = "RESCHEDULED" if booking is not None and old else (
+            "BOOKED" if booking is not None else "CANCELLED"
+        )
+        reporter.appointment(evidence, call_id=call_id)
 
     def _reconcile_receipts(self):
         """Apply observed writes to a reloaded patient, without a second calendar state."""

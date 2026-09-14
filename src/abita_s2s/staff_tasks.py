@@ -69,7 +69,7 @@ class StaffTasks:
         await asyncio.gather(*self._deliveries.values(), return_exceptions=True)
 
     async def submit(
-        self, category: Category, urgency: Urgency, summary: str, message: str
+        self, category: Category, urgency: Urgency, summary: str, message: str, *, call_id: str | None = None
     ) -> dict:
         if self._closed:
             return _result("failed", "This call has ended. No request was sent.")
@@ -93,6 +93,7 @@ class StaffTasks:
             task = asyncio.create_task(
                 self._deliver(
                     payload,
+                    call_id=call_id,
                     uncertain=previous is not None
                     and previous["outcome"] == "ambiguous",
                 )
@@ -189,7 +190,17 @@ class StaffTasks:
             payload["inboundOfficePhone"] = inbound
         return payload
 
-    async def _deliver(self, payload: dict, *, uncertain: bool = False) -> dict:
+    async def _deliver(self, payload: dict, *, uncertain: bool = False, call_id: str | None = None) -> dict:
+        result = await self._send(payload, uncertain=uncertain)
+        if self.state.reporter:
+            evidence = {"outcome": result["outcome"], "category": payload["category"],
+                        "urgency": payload["urgency"]}
+            if "taskId" in result:
+                evidence["taskId"] = result["taskId"]
+            self.state.reporter.record("staff_task", evidence, call_id=call_id)
+        return result
+
+    async def _send(self, payload: dict, *, uncertain: bool = False) -> dict:
         for _ in range(2):
             try:
                 async with asyncio.timeout(10.0):

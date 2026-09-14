@@ -1,6 +1,7 @@
 """Resolve the office and compose one voice session per LiveKit job."""
 
 import asyncio
+import logging
 import os
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -22,6 +23,7 @@ from abita_s2s.offices import (
     get_office_profile_by_phone,
 )
 from abita_s2s.registration_middleware import RegistrationMiddleware
+from abita_s2s.reporting import CallReporter
 from abita_s2s.scheduling import Scheduling
 from abita_s2s.scheduling_http import SchedulingHTTP
 from abita_s2s.staff_tasks import StaffTasks
@@ -74,43 +76,92 @@ async def start_voice_call(ctx: JobContext) -> None:
     scheduling: Scheduling | None = None
     staff_tasks: StaffTasks | None = None
 
+    state = CallState(call=call)
+
+    async def drain_writes() -> None:
+        results = await asyncio.gather(
+            *(
+                owner.aclose()
+                for owner in (scheduling, insurance, staff_tasks)
+                if owner is not None
+            ),
+            return_exceptions=True,
+        )
+        for result in results:
+            if isinstance(result, asyncio.CancelledError):
+                raise RuntimeError("An accepted mutation was cancelled during shutdown")  # noqa: TRY004 - shutdown failure, not invalid input
+            if isinstance(result, BaseException):
+                raise result
+
     async def close_client() -> None:
-        # Close admission to every write owner, then drain all writes before HTTP.
         try:
-            results = await asyncio.gather(
-                *(owner.aclose() for owner in (scheduling, insurance, staff_tasks) if owner is not None),
-                return_exceptions=True,
-            )
-            for result in results:
-                if isinstance(result, BaseException):
-                    raise result
+            if state.reporter:
+                # Fallback for failure before a primary AgentSession was registered.
+                await state.reporter.finish()
+            else:
+                await drain_writes()
         finally:
             await client.aclose()
 
     ctx.add_shutdown_callback(close_client)
-    state = CallState(call=call)
-    session = AgentSession[CallState](
-        userdata=state,
-        llm=create_model(config),
-        vad=None,
-        turn_handling={"turn_detection": "realtime_llm"},
-    )
-    resolver = PatientResolver(state, PatientMiddleware(client, config))
-    ctx.add_shutdown_callback(resolver.aclose)
-    sip_api = None
-    if not ctx.is_fake_job():
-        sip_api = api.LiveKitAPI(failover=False)
-        ctx.add_shutdown_callback(sip_api.aclose)
-    control = CallControl(state, client, ctx.room, sip_api.sip if sip_api else None)
+    if config.interaction_url and not ctx.is_fake_job():
+        if call.caller_phone:
+            state.reporter = CallReporter(call, client, config, drain_writes)
+        else:
+            logging.getLogger(__name__).error(
+                "Product call reporting unavailable: caller phone missing"
+            )
+    try:
+        session = AgentSession[CallState](
+            userdata=state,
+            llm=create_model(config),
+            vad=None,
+            turn_handling={"turn_detection": "realtime_llm"},
+        )
+        resolver = PatientResolver(state, PatientMiddleware(client, config))
+        ctx.add_shutdown_callback(resolver.aclose)
+        sip_api = None
+        if not ctx.is_fake_job():
+            sip_api = api.LiveKitAPI(failover=False)
+            ctx.add_shutdown_callback(sip_api.aclose)
+        control = CallControl(state, client, ctx.room, sip_api.sip if sip_api else None)
 
-    resolver.start_phone_lookup()
-    insurance = InsuranceRegistration(state, resolver, RegistrationMiddleware(client, config))
-    scheduling = Scheduling(state, SchedulingHTTP(client, config))
-    staff_tasks = StaffTasks(state, resolver, client, config)
-    await session.start(
-        agent=AbitaAgent(office, OfficeKnowledge(client, config), resolver,
-                        insurance=insurance, scheduling=scheduling, staff_tasks=staff_tasks,
-                        call_control=control),
-        room=ctx.room,
-        room_options=room_options,
-    )
+        resolver.start_phone_lookup()
+        insurance = InsuranceRegistration(
+            state, resolver, RegistrationMiddleware(client, config)
+        )
+        scheduling = Scheduling(state, SchedulingHTTP(client, config))
+        staff_tasks = StaffTasks(state, resolver, client, config)
+        await session.start(
+            agent=AbitaAgent(
+                office,
+                OfficeKnowledge(client, config),
+                resolver,
+                insurance=insurance,
+                scheduling=scheduling,
+                staff_tasks=staff_tasks,
+                call_control=control,
+            ),
+            room=ctx.room,
+            room_options=room_options,
+        )
+        if state.reporter:
+            state.reporter.started = True
+    except Exception:
+        if state.reporter:
+            try:
+                await state.reporter.finish()
+            except Exception:  # noqa: BLE001 - preserve the original startup failure
+                logging.getLogger(__name__).error(
+                    "Startup failure closeout was not acknowledged"
+                )
+        raise
+
+
+async def finish_voice_call(ctx: JobContext) -> None:
+    try:
+        state = ctx.primary_session.userdata
+    except RuntimeError:
+        return  # Startup's registered cleanup owns the minimal failed closeout.
+    if state.reporter:
+        await state.reporter.finish(lambda: ctx.make_session_report().to_dict())

@@ -5,7 +5,7 @@ import json
 import unittest
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 from livekit.agents import AgentSession, llm
@@ -74,6 +74,7 @@ def verified(state, patient_id="chart-jane", visit="medical", **extra):
 class SchedulingTests(unittest.IsolatedAsyncioTestCase):
     def owner(self, responses, *, state=None):
         state = state or call_state(None)
+        state.reporter = Mock()
         if state.patient.active is None:
             verified(state)
         requests = []
@@ -95,7 +96,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def tool(self, owner, name, **args):
         return json.loads(
-            await getattr(owner, name)(SimpleNamespace(userdata=owner.state), **args)
+            await getattr(owner, name)(SimpleNamespace(userdata=owner.state, function_call=SimpleNamespace(call_id="native-call-id")), **args)
         )
 
     async def slots(self, owner, **args):
@@ -291,6 +292,11 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["outcome"], "partial_booking")
         self.assertIn("note did not save", result["answer"])
         self.assertEqual((await self.book(owner, ref))["outcome"], "partial_booking")
+        owner.state.reporter.appointment.assert_called_once()
+        evidence = owner.state.reporter.appointment.call_args.args[0]
+        self.assertEqual(evidence["bookingResult"]["status"], "partial")
+        self.assertEqual(evidence["newAppointmentId"], "888")
+        self.assertNotIn("private-signed-slot", json.dumps(evidence))
         body = requests[1][1]
         self.assertEqual(body["bookingToken"], "private-signed-slot")
         self.assertEqual(body["patientId"], "chart-jane")
@@ -423,6 +429,14 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 (await self.tool(owner, "reschedule_appointment", **args))["outcome"],
                 result["outcome"],
             )
+            checkpoints = [c.args[0] for c in owner.state.reporter.appointment.call_args_list]
+            self.assertEqual(len(checkpoints), 2)
+            self.assertEqual(checkpoints[0]["cancellationResult"]["status"], "not_attempted")
+            self.assertEqual(checkpoints[1]["cancellationResult"]["status"],
+                             "cancelled" if status == "cancelled" else "uncertain")
+            self.assertTrue(all(c["externalPatientId"] == "chart-jane" for c in checkpoints))
+            self.assertTrue(all(c["action"] == "RESCHEDULED" for c in checkpoints))
+            self.assertNotIn("private-reschedule", json.dumps(checkpoints))
             self.assertEqual(requests[1][1]["rescheduleToken"], "private-reschedule")
             self.assertEqual(requests[1][1]["appointmentTypeId"], 1007)
             self.assertEqual(
@@ -548,6 +562,10 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result["outcome"], "partial_reschedule")
         self.assertEqual(owner.state.patient.active.appointments, [])
+        evidence = owner.state.reporter.appointment.call_args.args[0]
+        self.assertEqual(evidence["externalPatientId"], "chart-jane")
+        self.assertEqual(evidence["cancellationResult"]["status"], "not_attempted")
+        self.assertEqual(owner.state.reporter.appointment.call_args.kwargs["call_id"], "native-call-id")
         self.assertEqual(len(requests), 2)
         owner.state.patient.revision += 1
         verified(owner.state)

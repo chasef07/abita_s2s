@@ -8,6 +8,7 @@ from abita_s2s.insurance_state import InsuranceState
 
 if TYPE_CHECKING:
     from abita_s2s.middleware import Candidate, Receipt
+    from abita_s2s.reporting import CallReporter
 
 
 @dataclass(frozen=True, repr=False)
@@ -52,6 +53,7 @@ class CallState:
     call: CallContext
     patient: PatientState = field(default_factory=PatientState)
     insurance: InsuranceState = field(default_factory=InsuranceState)
+    reporter: "CallReporter | None" = None
 
 
 @dataclass(frozen=True, repr=False)

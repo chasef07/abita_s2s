@@ -3,12 +3,12 @@
 from dotenv import load_dotenv
 from livekit.agents import AgentServer, JobContext, cli
 
-from abita_s2s.runtime.session_startup import start_voice_call
+from abita_s2s.runtime.session_startup import finish_voice_call, start_voice_call
 
 server = AgentServer()
 
 
-@server.rtc_session(agent_name="abita-s2s")
+@server.rtc_session(agent_name="abita-s2s", on_session_end=finish_voice_call)
 async def entrypoint(ctx: JobContext) -> None:
     await start_voice_call(ctx)
 

@@ -152,6 +152,9 @@ class CallControl(EndCallTool):
                 )
                 return result("failed", "No SIP transfer was sent." + retry)
             self.status = "ambiguous"
+        finally:
+            if self.state.reporter:
+                self.state.reporter.transfer_status = self.status
         return result(
             "ambiguous", "Transfer may be in progress. Do not retry or end the call."
         )

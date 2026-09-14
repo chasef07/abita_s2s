@@ -3,6 +3,7 @@
 import asyncio
 import json
 import unittest
+from unittest.mock import Mock
 
 import httpx
 from test_patient_resolution import CONFIG, call_state, receipt, search
@@ -76,6 +77,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         self.addAsyncCleanup(client.aclose)
         state = call_state()
+        state.reporter = Mock()
         resolver = PatientResolver(state, PatientMiddleware(client, CONFIG))
         self.addAsyncCleanup(resolver.aclose)
         owner = InsuranceRegistration(
@@ -93,6 +95,9 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_full_creation_validates_identity_and_caches_duplicate(self):
         state, _, owner = await self.prepared([created()])
         result = await owner.add(registration())
+        state.reporter.record.assert_called_once_with(
+            "registration", {"outcome": "created", "externalPatientId": "new-chart"}, call_id=None
+        )
         self.assertEqual(result["outcome"], "created")
         self.assertEqual(state.patient.active.patientId, "new-chart")
         self.assertIsNone(state.patient.active.insPlanId)
