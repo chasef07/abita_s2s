@@ -149,6 +149,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.run_tool("transfer_call"))["outcome"], "failed")
         self.assertEqual((await self.run_tool("transfer_call"))["outcome"], "blocked")
         self.control.attempts = 0
+        self.control.status = "idle"
         self.sip.transfer_sip_participant.return_value = (
             api.TransferSIPParticipantResponse(status=api.STS_TRANSFER_ONGOING)
         )
@@ -225,8 +226,10 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             requests.append(json.loads(request.content))
             return httpx.Response(409)
 
-        self.control.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-        self.addAsyncCleanup(self.control.client.aclose)
+        self.control.admission.client = httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        )
+        self.addAsyncCleanup(self.control.admission.client.aclose)
         with patch.dict(
             "os.environ",
             {
@@ -261,8 +264,10 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
                 },
             )
 
-        self.control.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-        self.addAsyncCleanup(self.control.client.aclose)
+        self.control.admission.client = httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        )
+        self.addAsyncCleanup(self.control.admission.client.aclose)
         with patch.dict(
             "os.environ",
             {
@@ -299,10 +304,10 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.control.status = "idle"
             self.control.attempts = 0
-            self.control.client = httpx.AsyncClient(
+            self.control.admission.client = httpx.AsyncClient(
                 transport=httpx.MockTransport(lambda request, reply=response: reply)
             )
-            self.addAsyncCleanup(self.control.client.aclose)
+            self.addAsyncCleanup(self.control.admission.client.aclose)
             with patch.dict(
                 "os.environ",
                 {
@@ -399,8 +404,10 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
                 },
             )
 
-        self.control.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-        self.addAsyncCleanup(self.control.client.aclose)
+        self.control.admission.client = httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        )
+        self.addAsyncCleanup(self.control.admission.client.aclose)
         with patch.dict(
             "os.environ",
             {
@@ -425,3 +432,49 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.sip.transfer_sip_participant.assert_awaited_once()
         self.assertEqual(self.events, ["announcement_done", "refer"])
         self.assertEqual(self.control.status, "accepted")
+
+    async def test_invalid_admission_config_is_retryable_without_writes(self):
+        self.state.call = replace(self.state.call, called_office_key="spring-hill")
+        self.control.admission.client.post = AsyncMock()
+        with patch.dict(
+            "os.environ",
+            {
+                "ACUITY_HANDOFF_URL": "https://[invalid",
+                "ACUITY_HANDOFF_SECRET": "offline",
+            },
+            clear=True,
+        ):
+            first = await self.run_tool("transfer_call")
+            self.assertEqual(first["outcome"], "failed")
+            self.assertIn("once more", first["answer"])
+            second = await self.run_tool("transfer_call")
+            self.assertIn("Do not retry", second["answer"])
+            self.assertEqual(
+                (await self.run_tool("transfer_call"))["outcome"], "blocked"
+            )
+        self.control.admission.client.post.assert_not_awaited()
+        self.sip.transfer_sip_participant.assert_not_awaited()
+
+    async def test_cancel_during_admission_fences_transfer_and_end_call(self):
+        self.state.call = replace(self.state.call, called_office_key="spring-hill")
+        self.control.admission.client.post = AsyncMock(
+            side_effect=asyncio.CancelledError()
+        )
+        with patch.dict(
+            "os.environ",
+            {
+                "ACUITY_HANDOFF_URL": "https://handoff.example/admit",
+                "ACUITY_HANDOFF_SECRET": "offline",
+            },
+            clear=True,
+        ):
+            try:
+                await self.run_tool("transfer_call")
+            except (IndexError, asyncio.CancelledError):
+                pass
+            self.assertEqual(
+                (await self.run_tool("transfer_call"))["outcome"], "ambiguous"
+            )
+            self.assertEqual((await self.run_tool("end_call"))["outcome"], "blocked")
+        self.control.admission.client.post.assert_awaited_once()
+        self.sip.transfer_sip_participant.assert_not_awaited()

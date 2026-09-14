@@ -1,6 +1,10 @@
 # Call control migration
 
 `CallControl` owns transfer state and guards the inherited LiveKit `EndCallTool`.
+A separate `HandoffAdmission` owns HTTP configuration, the frozen request payload,
+and destination validation. Each transfer uses a local preparing/admitting/transferring
+phase; persistent retryable/failed outcomes distinguish retry eligibility without
+changing the actual attempt count.
 The registered tools have no patient prerequisites. They remain available for
 emergency and named-staff requests without requiring identity collection.
 
