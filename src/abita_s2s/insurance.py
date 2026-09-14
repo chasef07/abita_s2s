@@ -329,18 +329,37 @@ class InsuranceRegistration:
                 ) == normalize(checked.plan):
                     return result
                 break
-        payload = {
-            "patientId": active.patientId,
-            "dob": active.dob,
-            "insPlanId": active.insPlanId or "",
-            "respPartyId": active.respPartyId or "",
-            "oldInsurance": active.insuranceCarrier or "",
-            "insurance": checked.plan,
-            "coverageType": checked.coverage_type,
-            "subscriberNum": member_id,
-        }
 
         async def update():
+            references = active
+            if not references.insPlanId or not references.respPartyId:
+                references = await self._resolver.read_insurance(active)
+                if (
+                    references is None
+                    or not references.insPlanId
+                    or not references.respPartyId
+                    or (
+                        active.insuranceCarrier is not None
+                        and normalize(references.insuranceCarrier or "")
+                        != normalize(active.insuranceCarrier)
+                    )
+                    or accepted_insurance(self.state) is not checked
+                ):
+                    return reply(
+                        "needs_staff_review",
+                        "Current insurance details could not be verified. No insurance change was sent; ask office staff for help.",
+                        "staff_help",
+                    )
+            payload = {
+                "patientId": active.patientId,
+                "dob": active.dob,
+                "insPlanId": references.insPlanId,
+                "respPartyId": references.respPartyId,
+                "oldInsurance": references.insuranceCarrier or "",
+                "insurance": checked.plan,
+                "coverageType": checked.coverage_type,
+                "subscriberNum": member_id,
+            }
             result = await self._middleware.update(checked.office_key, payload)
             if (
                 not isinstance(result, UpdatedReceipt)
@@ -357,6 +376,7 @@ class InsuranceRegistration:
                         "insuranceCarrier": result.newInsurance,
                         "insuranceCarrierId": None,
                         "insPlanId": None,
+                        "respPartyId": references.respPartyId,
                         "routing": result.routing,
                         "allowedProviders": result.allowedProviders,
                         "routingAmbiguous": result.routingAmbiguous,

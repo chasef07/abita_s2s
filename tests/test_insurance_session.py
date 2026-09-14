@@ -9,7 +9,7 @@ import httpx
 from livekit.agents import AgentSession, llm
 from livekit.agents.llm.utils import build_strict_openai_schema
 from test_insurance_registration import created, registration, updated
-from test_patient_resolution import CONFIG, call_state, search
+from test_patient_resolution import CONFIG, call_state, receipt, search
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.identity import PatientResolver
@@ -63,6 +63,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
         bodies = [
             search(),
             created(),
+            receipt("new-chart", insuranceCarrier="Aetna"),
             updated(patientId="new-chart", newInsurance="VSP"),
         ]
         requests = []
@@ -145,6 +146,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                 [
                     "/api/patient/resolve",
                     "/api/add-patient",
+                    "/api/patient/resolve",
                     "/api/patient/update-insurance",
                 ],
             )

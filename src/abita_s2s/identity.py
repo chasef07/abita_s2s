@@ -290,6 +290,29 @@ class PatientResolver:
         self._previous_id = None
         return self._facts(receipt, "switched" if switched else "verified")
 
+    async def read_insurance(self, expected: Receipt) -> Receipt | None:
+        """Reload private backend references without replacing current appointment state."""
+        if self._closed or self.state.patient.active is not expected:
+            return None
+        token = self._begin_lookup()
+        try:
+            receipt = await self._middleware.resolve(
+                self.state.call.called_office_key, {"patientId": expected.patientId}
+            )
+            if (
+                not self._current(token)
+                or self.state.patient.active is not expected
+                or not isinstance(receipt, Receipt)
+                or receipt.patientId != expected.patientId
+                or exact_name(receipt.name) != exact_name(expected.name)
+                or not dob_matches(receipt.dob, expected.dob)
+            ):
+                return None
+            return receipt
+        finally:
+            if self._token is token:
+                self._token = None
+
     def refresh_insurance(self, expected: Receipt, updated: Receipt) -> bool:
         """Apply validated coverage to the same patient, fencing older patient reads."""
         if (

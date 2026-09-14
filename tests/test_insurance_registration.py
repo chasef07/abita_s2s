@@ -325,7 +325,13 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_new_plan_can_be_changed_back_without_replaying_an_old_receipt(self):
         state, _, owner = self.owner(
-            [updated(), updated(newInsurance="VSP"), updated()]
+            [
+                updated(),
+                receipt(insuranceCarrier="Aetna", insPlanId="aetna-plan"),
+                updated(newInsurance="VSP"),
+                receipt(insuranceCarrier="VSP", insPlanId="vsp-plan"),
+                updated(),
+            ]
         )
         state.patient.active = Receipt.model_validate(receipt(preauthRequired=False))
         for plan, coverage in [
@@ -337,8 +343,66 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 (await owner.update("member-example"))["outcome"], "updated"
             )
-        self.assertEqual(len(self.requests), 3)
+        self.assertEqual(len(self.requests), 5)
         self.assertEqual(self.requests[-1][1]["oldInsurance"], "VSP")
+        writes = [
+            body for path, body in self.requests if path.endswith("update-insurance")
+        ]
+        self.assertEqual(
+            [body["insPlanId"] for body in writes],
+            ["private-plan", "aetna-plan", "vsp-plan"],
+        )
+        self.assertTrue(insurance_ready(state, "medical"))
+
+    async def test_unverified_references_never_dispatch_an_insurance_write(self):
+        for fresh in [
+            receipt(insuranceCarrier="Aetna", insPlanId=None),
+            receipt(insuranceCarrier="Aetna", respPartyId=None),
+            receipt(insuranceCarrier="Unexpected Plan"),
+            receipt(patient_id="other-chart", insuranceCarrier="Aetna"),
+            receipt(name="Other", insuranceCarrier="Aetna"),
+            receipt(dob="02/03/1981", insuranceCarrier="Aetna"),
+            {"status": "not_found"},
+        ]:
+            state, _, owner = self.owner([fresh])
+            state.patient.active = Receipt.model_validate(
+                receipt(insuranceCarrier="Aetna", insPlanId=None)
+            )
+            owner.check("VSP", "routine_vision")
+            self.assertEqual(
+                (await owner.update("member-example"))["outcome"],
+                "needs_staff_review",
+            )
+            self.assertEqual(
+                [path for path, _ in self.requests], ["/api/patient/resolve"]
+            )
+            self.assertFalse(state.insurance.write_uncertain)
+
+    async def test_changed_context_during_reference_refresh_never_dispatches_write(
+        self,
+    ):
+        for correction in ("patient", "plan"):
+            entered, finish = asyncio.Event(), asyncio.Event()
+
+            async def reload(request, entered=entered, finish=finish):
+                entered.set()
+                await finish.wait()
+                return httpx.Response(200, json=receipt(insuranceCarrier="Aetna"))
+
+            state, resolver, owner = self.owner([reload])
+            state.patient.active = Receipt.model_validate(
+                receipt(insuranceCarrier="Aetna", insPlanId=None)
+            )
+            owner.check("VSP", "routine_vision")
+            task = asyncio.create_task(owner.update("member-example"))
+            await entered.wait()
+            if correction == "patient":
+                await resolver.resolve("John", None)
+            else:
+                owner.check("Aetna", "medical")
+            finish.set()
+            self.assertEqual((await task)["outcome"], "needs_staff_review")
+            self.assertEqual(len(self.requests), 1)
 
     async def test_http_failure_and_deadline_never_repeat_write(self):
         for delayed in [False, True]:
