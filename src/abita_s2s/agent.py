@@ -2,11 +2,13 @@
 
 import json
 import logging
+from typing import Literal
 
 from livekit.agents import Agent, RunContext, function_tool
 from livekit.agents.llm import ToolFlag
 
 from abita_s2s.identity import PatientResolver
+from abita_s2s.insurance import InsuranceRegistration, Registration, staff
 from abita_s2s.knowledge import OfficeKnowledge
 from abita_s2s.offices import OfficeProfile
 from abita_s2s.prompt import load_prompt
@@ -21,6 +23,7 @@ class AbitaAgent(Agent):
         office: OfficeProfile,
         knowledge: OfficeKnowledge,
         resolver: PatientResolver | None = None,
+        insurance: InsuranceRegistration | None = None,
     ) -> None:
         super().__init__(
             instructions=(
@@ -31,6 +34,7 @@ class AbitaAgent(Agent):
         self._greeting = office.greeting
         self._knowledge = knowledge
         self._resolver = resolver
+        self._insurance = insurance
 
     @function_tool(flags=ToolFlag.CANCELLABLE)
     async def resolve_patient(
@@ -57,6 +61,59 @@ class AbitaAgent(Agent):
         return json.dumps(
             await self._resolver.resolve(firstName, dob), ensure_ascii=False
         )
+
+    @function_tool
+    async def check_insurance(
+        self, context: RunContext[CallState], plan: str,
+        coverageType: Literal["medical", "routine_vision"],
+    ) -> str:
+        """Check office participation for the caller's plan and triaged visit type.
+
+        Use before registration or a requested insurance change. Follow clarification
+        or staff-review instructions; acceptance does not establish active benefits.
+        """
+        if self._insurance is None or self._insurance.state is not context.userdata:
+            return json.dumps(staff())
+        return json.dumps(self._insurance.check(plan, coverageType))
+
+    @function_tool
+    async def add_patient(
+        self, context: RunContext[CallState], firstName: str, lastName: str, dob: str,
+        phone: str | None, inboundPhoneConfirmed: Literal[True] | None,
+        email: str | None, street: str, aptSuite: str | None, city: str, state: str,
+        zip: str, sex: Literal["male", "female"], subscriberName: str,
+        insuranceMemberId: str, ssnLast4: str | None,
+        newPatientConfirmed: Literal[True] | None, readBack: Literal[True] | None,
+    ) -> str:
+        """Create a chart after complete resolution, accepted coverage and confirmation.
+
+        Confirm first registration, callback number, and the full identity, contact,
+        address and insurance read-back before setting confirmation flags true.
+        Use the patient's details, not the caller's. DOB uses MM/DD/YYYY.
+        Pass phone:null only when the inbound callback number was confirmed.
+        Request SSN last four once for insured routine vision; use null if unavailable
+        or declined, and skip for self-pay. Never repeat SSN in read-back.
+        Claim success only from this receipt; never retry full or partial creation.
+        """
+        if self._insurance is None or self._insurance.state is not context.userdata:
+            return json.dumps(staff())
+        registration = Registration(**{k: v for k, v in locals().items() if k not in ("self", "context")})
+        return json.dumps(await self._insurance.add(registration))
+
+    @function_tool
+    async def update_insurance(
+        self, context: RunContext[CallState], insuranceMemberId: str,
+    ) -> str:
+        """Change the active verified patient's coverage only when the caller requests it.
+
+        First use check_insurance for the new plan and correct visit type. Supply the
+        card member ID, or self pay after Self Pay is accepted. Use add_patient for
+        registration. Claim success only from an updated receipt; never retry an
+        uncertain result or repeat a completed write.
+        """
+        if self._insurance is None or self._insurance.state is not context.userdata:
+            return json.dumps(staff())
+        return json.dumps(await self._insurance.update(insuranceMemberId))
 
     @function_tool
     async def search_office_knowledge(

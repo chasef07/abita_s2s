@@ -1,6 +1,6 @@
 """Insurance consumer contract. Acceptance is participation, never active benefits."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
@@ -23,13 +23,16 @@ class AcceptedInsurance:
 class InsuranceState:
     accepted: AcceptedInsurance | None = None
     # Full/partial creation and uncertain updates must block scheduling until resolved.
-    registration_patient_id: str | None = None
-    registration_status: Literal["created", "partial"] | None = None
+    registrations: dict[str, Literal["created", "partial"]] = field(
+        default_factory=dict
+    )
     write_pending: bool = False
     write_uncertain: bool = False
 
 
-def accepted_insurance(state: "CallState", coverage_type: CoverageType | None = None) -> AcceptedInsurance | None:
+def accepted_insurance(
+    state: "CallState", coverage_type: CoverageType | None = None
+) -> AcceptedInsurance | None:
     """Return only acceptance for the current office, identity and requested visit type.
 
     New registration requires the resolver's exact complete-search absence object.
@@ -46,7 +49,11 @@ def accepted_insurance(state: "CallState", coverage_type: CoverageType | None = 
         return None
     if patient.active:
         return checked if checked.patient_id == patient.active.patientId else None
-    return checked if checked.absence is not None and checked.absence is patient.absence else None
+    return (
+        checked
+        if checked.absence is not None and checked.absence is patient.absence
+        else None
+    )
 
 
 def insurance_ready(state: "CallState", coverage_type: CoverageType) -> bool:
@@ -56,7 +63,6 @@ def insurance_ready(state: "CallState", coverage_type: CoverageType) -> bool:
     active = state.patient.active
     if not active or active.preauthRequired or active.routingAmbiguous:
         return False
-    if (state.insurance.registration_patient_id == active.patientId
-            and state.insurance.registration_status == "partial"):
+    if state.insurance.registrations.get(active.patientId) == "partial":
         return False
     return accepted_insurance(state, coverage_type) is not None

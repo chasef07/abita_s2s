@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
@@ -113,9 +114,22 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             self.assertRaisesRegex(RuntimeError, "model startup failed"),
         ):
             await start_voice_call(ctx)
-        self.assertEqual(callbacks, [client.aclose])
+        self.assertEqual(len(callbacks), 1)
         await callbacks[0]()
         client.aclose.assert_awaited_once()
+
+    async def test_http_cleanup_drains_registration_write_before_closing_client(self):
+        ctx, args = await self.run_startup(True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"})
+        owner = args["agent"]._insurance
+        finish = asyncio.Event()
+        owner._task = asyncio.create_task(finish.wait())
+        close_client = ctx.add_shutdown_callback.call_args_list[0].args[0]
+        shutdown = asyncio.create_task(close_client())
+        await asyncio.sleep(0)
+        self.assertFalse(owner._middleware._client.is_closed)
+        finish.set()
+        await shutdown
+        self.assertTrue(owner._middleware._client.is_closed)
 
     async def test_greeting_uses_office_profile(self):
         agent = AbitaAgent(SPRING_HILL, Mock())

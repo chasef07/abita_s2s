@@ -290,6 +290,43 @@ class PatientResolver:
         self._previous_id = None
         return self._facts(receipt, "switched" if switched else "verified")
 
+    def refresh_insurance(self, expected: Receipt, updated: Receipt) -> bool:
+        """Apply validated coverage to the same patient, fencing older patient reads."""
+        if (
+            self._closed
+            or self.state.patient.active is not expected
+            or updated.patientId != expected.patientId
+            or updated.name != expected.name
+            or updated.dob != expected.dob
+        ):
+            return False
+        self._token = None
+        self.state.patient.active = updated
+        self.state.patient.revision += 1
+        return True
+
+    def activate_created(self, absence: PatientAbsence, receipt: Receipt) -> bool:
+        """Promote a validated creation receipt only for its still-current absence."""
+        if (
+            self._closed
+            or self.state.patient.active is not None
+            or self.state.patient.absence is not absence
+            or absence.office_key != self.state.call.called_office_key
+            or not dob_matches(absence.dob, receipt.dob)
+            or not any(
+                exact_name(absence.first_name) == exact_name(n)
+                for n in first_names(receipt.name)
+            )
+        ):
+            return False
+        self._token = None
+        self.state.patient.active = receipt
+        self.state.patient.absence = None
+        self.state.patient.revision += 1
+        self._pending = (None, None)
+        self._previous_id = None
+        return True
+
     def _facts(self, receipt: Receipt, outcome: str) -> dict:
         result = reply(
             outcome,
