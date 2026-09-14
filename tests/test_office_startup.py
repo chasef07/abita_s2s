@@ -145,6 +145,17 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         await shutdown
         self.assertTrue(owner.http.client.is_closed)
 
+    async def test_shutdown_drains_staff_delivery_before_closing_transport(self):
+        ctx, args = await self.run_startup(True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"})
+        owner = args["agent"]._staff_tasks
+        order = []
+        with (
+            patch.object(owner, "aclose", new=AsyncMock(side_effect=lambda: order.append("staff"))),
+            patch.object(owner._client, "aclose", new=AsyncMock(side_effect=lambda: order.append("http"))),
+        ):
+            await ctx.add_shutdown_callback.call_args_list[0].args[0]()
+        self.assertEqual(order, ["staff", "http"])
+
     async def test_greeting_uses_office_profile(self):
         agent = AbitaAgent(SPRING_HILL, Mock())
         handle = AsyncMock()
