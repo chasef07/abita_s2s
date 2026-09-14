@@ -1,7 +1,8 @@
 # Abita S2S
 
 Python LiveKit worker using OpenAI GPT-Live. One job owns one call.
-This scaffold has no patient, scheduling, Product, or transfer integrations.
+Incoming calls preload private patient evidence from middleware. Patient
+verification tools, scheduling, Product, and transfers are not migrated yet.
 
 ## Setup
 
@@ -51,10 +52,10 @@ Reference: [LiveKit GPT-Live plugin](https://docs.livekit.io/agents/models/realt
 
 Edit the Markdown files in `src/abita_s2s/prompts/`:
 
-- `speaker.md`: voice persona, opening greeting, and when to delegate.
+- `speaker.md`: voice persona and when to delegate. Greetings live in office profiles.
 - `thinker.md`: instructions for delegated reasoning and future tools.
 
-These are temporary voice-test placeholders awaiting the real Abita prompts.
+These are migration drafts; some tools described in them are not connected yet.
 `prompt.py` loads them relative to the package, independent of the working
 directory. They ship in the built wheel. Missing or empty files fail visibly.
 New agents load the files again; restart the worker after editing prompts.
@@ -84,7 +85,7 @@ Console jobs require `ABITA_CONSOLE_OFFICE` set to `spring-hill`, `crystal-river
 `hollywood`, `sweetwater`, or `north-miami-beach-optical`; this setting is ignored
 for real calls. The agent receives the resolved immutable office profile.
 
-Patient/call state, Product registration, and lookup remain future migration work.
+Patient verification and Product registration remain future migration work.
 No SIP trunk or dispatch configuration has been changed.
 
 ```sh
@@ -106,8 +107,44 @@ missing caller ID remains unknown. Console sessions have unique local call IDs
 and no fabricated SIP metadata. `session_started_at` records worker entry time;
 Product call-start timestamp parity will be handled with Product integration.
 
-This is state infrastructure only. Patient matching, registration, backend lookup,
+Pre-call middleware lookup is connected. Patient matching, registration,
 and model-facing tools are not implemented yet. `activate_verified_patient`
 expects identity evidence already checked by the future resolution workflow.
 Chart creation and other writes require separate receipt/commit handling.
 Care and action records will be added with insurance and scheduling tools.
+
+## Middleware and pre-call lookup
+
+`middleware.py` owns the HTTP patient read and validates the current middleware
+response contract. `runtime/precall_lookup.py` stores that evidence in private
+state; it does not activate a patient or expose records to the models. Hydrated
+records retain appointments, insurance, and private tokens without extra DTO copies.
+A phone candidate remains different from an identity-verified active patient.
+
+Set `SANDBOX_AMD_API_URL` and `SANDBOX_AMD_API_TOKEN` for incoming test calls.
+`ABITA_MIDDLEWARE_ENV` defaults to `sandbox`, with the existing sandbox backend's
+`spring_hill` office identifier. Sandbox configuration cannot reuse the configured
+production origin or token. To explicitly select production reads, set
+`ABITA_MIDDLEWARE_ENV=production`, `AMD_API_URL`, and `AMD_API_TOKEN`. Named LiveKit
+deployments cannot select production. Tokens are sent as the existing middleware
+Authorization value, without an added Bearer prefix. HTTPS is required.
+
+Each production office specifies its canonical middleware number, separate from
+incoming trunk aliases. Console sessions have no caller number, so they skip lookup
+and need no middleware credentials. Calls with no caller ID also skip lookup.
+Missing required middleware configuration fails startup rather than choosing a
+fallback environment.
+
+Lookup runs alongside voice startup. Each HTTP attempt has a 10-second deadline;
+there is at most one retry for network/timeouts, 408/429/5xx, or a middleware error
+response. Invalid data and rejected requests are not retried. Failed reads remain
+failures, never empty patient matches. Request diagnostics contain IDs, timing,
+status, and outcome, not patient data, response bodies, or auth tokens.
+
+Caller disconnect or session closure cancels outstanding lookup immediately.
+Startup failure and job shutdown close the HTTP client. Stale results are rejected
+by the patient-state read token. The client only implements phone resolution;
+name/DOB verification and the model-facing resolve_patient tool are next.
+
+Validation uses HTTP fixtures and mocked LiveKit lifecycle events. No live
+middleware or GPT-Live/SIP test has been run for this slice.

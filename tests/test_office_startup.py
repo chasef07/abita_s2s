@@ -3,8 +3,13 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from abita_s2s.agent import AbitaAgent
-from abita_s2s.config import Config
-from abita_s2s.offices import SPRING_HILL, OFFICES, get_office_profile, get_office_profile_by_phone
+from abita_s2s.config import Config, MiddlewareConfig
+from abita_s2s.offices import (
+    OFFICES,
+    SPRING_HILL,
+    get_office_profile,
+    get_office_profile_by_phone,
+)
 from abita_s2s.runtime.session_startup import start_voice_call
 
 
@@ -18,14 +23,22 @@ class OfficeRoutingTests(unittest.TestCase):
             "spring-hill": ("+17275919997", "+18135484830"),
             "crystal-river": ("+13523202007",),
             "hollywood": ("+19542872010",),
-            "sweetwater": ("+17864657475", "+17864654845", "+17866134310",
-                           "+17864657479", "+17864654836", "+17864654882"),
+            "sweetwater": (
+                "+17864657475",
+                "+17864654845",
+                "+17866134310",
+                "+17864657479",
+                "+17864654836",
+                "+17864654882",
+            ),
             "north-miami-beach-optical": ("+13055095333",),
         }
         self.assertEqual({o.key for o in OFFICES}, set(expected))
         for key, numbers in expected.items():
             for number in numbers:
-                self.assertIs(get_office_profile_by_phone(number), get_office_profile(key))
+                self.assertIs(
+                    get_office_profile_by_phone(number), get_office_profile(key)
+                )
         for demo in ("+14843989071", "+18027878312", "+13207388132"):
             with self.assertRaises(ValueError):
                 get_office_profile_by_phone(demo)
@@ -43,30 +56,60 @@ class OfficeRoutingTests(unittest.TestCase):
 
 class StartupTests(unittest.IsolatedAsyncioTestCase):
     async def run_startup(self, fake, trunk="+18135484830", env=None):
-        participant = SimpleNamespace(identity="caller", attributes={"sip.trunkPhoneNumber": trunk, "sip.phoneNumber": "+15555550101", "sip.callID": "sip-test"})
+        participant = SimpleNamespace(
+            identity="caller",
+            attributes={
+                "sip.trunkPhoneNumber": trunk,
+                "sip.phoneNumber": "+15555550101",
+                "sip.callID": "sip-test",
+            },
+        )
         ctx = SimpleNamespace(
             is_fake_job=lambda: fake,
             connect=AsyncMock(),
             wait_for_participant=AsyncMock(return_value=participant),
-            room=SimpleNamespace(name="test-room"),
+            room=SimpleNamespace(name="test-room", on=Mock(), off=Mock()),
+            add_shutdown_callback=Mock(),
         )
-        session = SimpleNamespace(start=AsyncMock())
+        session = SimpleNamespace(start=AsyncMock(), on=Mock(), off=Mock())
         session_type = Mock(return_value=session)
+        http = SimpleNamespace(aclose=AsyncMock())
         session_generic = MagicMock()
         session_generic.__getitem__.return_value = session_type
         with (
             patch.dict("os.environ", env or {}, clear=True),
-            patch("abita_s2s.runtime.session_startup.load_config", return_value=Config("offline")),
+            patch(
+                "abita_s2s.runtime.session_startup.load_config",
+                return_value=Config("offline"),
+            ),
             patch("abita_s2s.runtime.session_startup.create_model"),
+            patch(
+                "abita_s2s.runtime.session_startup.load_middleware_config",
+                return_value=MiddlewareConfig(
+                    "https://sandbox.example", "test-token", "spring_hill"
+                ),
+            ),
+            patch(
+                "abita_s2s.runtime.session_startup.httpx.AsyncClient", return_value=http
+            ),
+            patch("abita_s2s.runtime.session_startup.MiddlewareClient"),
+            patch(
+                "abita_s2s.runtime.session_startup.precall_lookup",
+                new_callable=AsyncMock,
+            ),
             patch("abita_s2s.runtime.session_startup.AgentSession", session_generic),
         ):
             await start_voice_call(ctx)
+        for callback in ctx.add_shutdown_callback.call_args_list:
+            await callback.args[0]()
         args = session.start.call_args.kwargs
         args["userdata"] = session_type.call_args.kwargs["userdata"]
         return ctx, args
 
     async def test_sip_ignores_console_override_and_binds_caller(self):
-        ctx, args = await self.run_startup(False, env={"ABITA_CONSOLE_OFFICE": "invalid"})
+        ctx, args = await self.run_startup(
+            False, env={"ABITA_CONSOLE_OFFICE": "invalid"}
+        )
         ctx.connect.assert_awaited_once()
         self.assertEqual(args["room_options"].participant_identity, "caller")
         self.assertEqual(args["agent"]._greeting, SPRING_HILL.greeting)
@@ -80,9 +123,15 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
     async def test_console_requires_explicit_office(self):
         with self.assertRaisesRegex(ValueError, "ABITA_CONSOLE_OFFICE"):
             await self.run_startup(True)
-        ctx, args = await self.run_startup(True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"})
-        _, other_args = await self.run_startup(True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"})
-        self.assertNotEqual(args["userdata"].call.call_id, other_args["userdata"].call.call_id)
+        ctx, args = await self.run_startup(
+            True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"}
+        )
+        _, other_args = await self.run_startup(
+            True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"}
+        )
+        self.assertNotEqual(
+            args["userdata"].call.call_id, other_args["userdata"].call.call_id
+        )
         self.assertIsNone(args["userdata"].call.caller_phone)
         self.assertIsNone(args["userdata"].call.sip_call_id)
         ctx.connect.assert_not_awaited()
@@ -90,18 +139,31 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_sip_never_falls_back_for_unknown_trunk(self):
         with self.assertRaises(ValueError):
-            await self.run_startup(False, trunk="", env={"ABITA_CONSOLE_OFFICE": "spring-hill"})
+            await self.run_startup(
+                False, trunk="", env={"ABITA_CONSOLE_OFFICE": "spring-hill"}
+            )
 
     async def test_greeting_uses_office_profile(self):
         agent = AbitaAgent(SPRING_HILL)
         handle = AsyncMock()
+
         class Speech:
             def __await__(self):
                 return handle().__await__()
+
             def exception(self):
                 return None
+
         session = Mock()
         session.generate_reply.return_value = Speech()
-        with patch.object(AbitaAgent, "session", new_callable=unittest.mock.PropertyMock, return_value=session):
+        with patch.object(
+            AbitaAgent,
+            "session",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=session,
+        ):
             await agent.on_enter()
-        self.assertIn(SPRING_HILL.greeting, session.generate_reply.call_args.kwargs["instructions"])
+        self.assertIn(
+            SPRING_HILL.greeting,
+            session.generate_reply.call_args.kwargs["instructions"],
+        )

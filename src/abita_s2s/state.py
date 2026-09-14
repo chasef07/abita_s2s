@@ -1,8 +1,13 @@
 """Per-call application facts, independent of customer policy and LiveKit."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from abita_s2s.middleware import HydratedPatient
 
 
 @dataclass(frozen=True, repr=False)
@@ -41,7 +46,7 @@ class VerifiedPatient:
 @dataclass(frozen=True, repr=False)
 class CandidateLookup:
     status: Literal["not_attempted", "found", "none", "failed"] = "not_attempted"
-    candidates: tuple[PatientCandidate, ...] = ()
+    candidates: tuple[PatientCandidate | "HydratedPatient", ...] = ()
     failure_reason: str | None = None
 
     def __post_init__(self) -> None:
