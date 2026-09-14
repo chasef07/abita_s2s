@@ -11,10 +11,11 @@ from unittest.mock import AsyncMock, Mock, patch
 import httpx
 from livekit import api, rtc
 from livekit.agents import AgentSession, llm
-from test_patient_resolution import call_state
+from test_patient_resolution import call_state, receipt
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.call_control import CallControl
+from abita_s2s.middleware import Receipt
 from abita_s2s.offices import SPRING_HILL
 
 
@@ -247,8 +248,15 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(requests[0]["officeKey"], "spring-hill")
         self.sip.transfer_sip_participant.assert_not_awaited()
 
-    async def test_product_success_and_bounded_explicit_retry(self):
-        self.state.call = replace(self.state.call, called_office_key="spring-hill")
+    async def test_caregiver_product_handoff_preserves_caller_contact_on_retry(self):
+        self.state.call = replace(
+            self.state.call,
+            called_office_key="spring-hill",
+            caller_phone="+15555550101",
+        )
+        self.state.patient.active = Receipt.model_validate(
+            receipt("child-jane", "Jane", "01/02/2015")
+        )
         requests = []
 
         def handler(request):
@@ -279,10 +287,20 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             first = await self.run_tool("transfer_call")
             self.assertEqual(first["outcome"], "failed")
             self.assertIn("once more", first["answer"])
+            self.state.patient.active = Receipt.model_validate(
+                receipt("child-john", "John", "03/04/2017")
+            )
             self.state.patient.revision += 1
             self.assertEqual(
                 (await self.run_tool("transfer_call"))["outcome"], "accepted"
             )
+        self.assertEqual(
+            requests[0]["contact"],
+            {
+                "phone": "+15555550101",
+                "phoneSource": "livekit.sip.callerPhoneNumber",
+            },
+        )
         self.assertEqual(requests[0], requests[1])
         self.assertEqual(
             self.sip.transfer_sip_participant.call_args.args[0].transfer_to,

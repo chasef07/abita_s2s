@@ -86,11 +86,6 @@ class HandoffAdmission:
                     "phone": call.caller_phone or "",
                     "phoneSource": "livekit.sip.callerPhoneNumber",
                 }
-                if self.state.patient.active is not None:
-                    contact.update(
-                        displayName=self.state.patient.active.name,
-                        nameSource="abita.patient-context",
-                    )
                 self._payload = {
                     **identity,
                     "contact": contact,
