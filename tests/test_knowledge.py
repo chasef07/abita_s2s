@@ -238,13 +238,12 @@ class KnowledgeTests(unittest.IsolatedAsyncioTestCase):
 
 
 class KnowledgeConfigTests(unittest.TestCase):
-    def test_configuration_requires_pair_and_secure_endpoint(self):
+    def test_configuration_requires_secret_and_secure_endpoint(self):
         base = {
             "OPENAI_API_KEY": "offline",
             "ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET": "private-secret",
         }
         for url in (
-            "",
             "http://product.example/search",
             "file:///tmp/knowledge",
             "https://user:password@product.example/search",
@@ -259,6 +258,13 @@ class KnowledgeConfigTests(unittest.TestCase):
                 self.assertRaises(ValueError),
             ):
                 load_config()
+        with patch.dict("os.environ", base, clear=True):
+            self.assertIsNone(load_config().knowledge_url)
+        with (
+            patch.dict("os.environ", {"OPENAI_API_KEY": "offline", "ACUITY_PRODUCT_KNOWLEDGE_URL": CONFIG.knowledge_url}, clear=True),
+            self.assertRaises(ValueError),
+        ):
+            load_config()
         for url in (
             CONFIG.knowledge_url,
             "http://127.0.0.1:8000/search",

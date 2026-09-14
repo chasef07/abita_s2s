@@ -6,6 +6,7 @@ import logging
 from livekit.agents import Agent, RunContext, function_tool
 from livekit.agents.llm import ToolFlag
 
+from abita_s2s.call_control import CallControl
 from abita_s2s.identity import PatientResolver
 from abita_s2s.knowledge import OfficeKnowledge
 from abita_s2s.offices import OfficeProfile
@@ -21,8 +22,10 @@ class AbitaAgent(Agent):
         office: OfficeProfile,
         knowledge: OfficeKnowledge,
         resolver: PatientResolver | None = None,
+        call_control: CallControl | None = None,
     ) -> None:
         super().__init__(
+            tools=[call_control] if call_control else [],
             instructions=(
                 load_prompt("speaker")
                 + f"\n\nCurrent office: {office.display_name} ({office.key})."
@@ -72,6 +75,10 @@ class AbitaAgent(Agent):
             context.userdata.call.called_office_key, query
         )
         return json.dumps(result, ensure_ascii=False)
+
+    async def on_exit(self) -> None:
+        if self._resolver is not None:
+            await self._resolver.aclose()
 
     async def on_enter(self) -> None:
         handle = self.session.generate_reply(

@@ -27,9 +27,9 @@ def load_config() -> Config:
     product_secret = (
         os.environ.get("ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET", "").strip() or None
     )
-    if bool(knowledge_url) != bool(product_secret):
+    if knowledge_url and not product_secret:
         raise ValueError(
-            "Set both ACUITY_PRODUCT_KNOWLEDGE_URL and ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET"
+            "ACUITY_PRODUCT_KNOWLEDGE_URL requires ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET"
         )
     if knowledge_url:
         url = urlsplit(knowledge_url)

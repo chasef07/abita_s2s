@@ -64,9 +64,14 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             patch.dict("os.environ", env or {}, clear=True),
             patch("abita_s2s.runtime.session_startup.load_config", return_value=Config("offline")),
             patch("abita_s2s.runtime.session_startup.create_model"),
+            patch("abita_s2s.runtime.session_startup.api.LiveKitAPI", return_value=SimpleNamespace(sip=Mock(), aclose=AsyncMock())) as sip_api,
             patch("abita_s2s.runtime.session_startup.AgentSession", session_generic),
         ):
             await start_voice_call(ctx)
+            if fake:
+                sip_api.assert_not_called()
+            else:
+                sip_api.assert_called_once_with(failover=False)
         args = session.start.call_args.kwargs
         args["userdata"] = session_type.call_args.kwargs["userdata"]
         return ctx, args
@@ -75,6 +80,8 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         ctx, args = await self.run_startup(False, env={"ABITA_CONSOLE_OFFICE": "invalid"})
         ctx.connect.assert_awaited_once()
         self.assertEqual(args["room_options"].participant_identity, "caller")
+        self.assertTrue(args["room_options"].close_on_disconnect)
+        self.assertTrue(args["room_options"].delete_room_on_close)
         self.assertEqual(args["agent"]._greeting, SPRING_HILL.greeting)
         call = args["userdata"].call
         self.assertEqual(call.call_id, "sip-test")
