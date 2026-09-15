@@ -1,4 +1,4 @@
-name: Abita new patient intake
+name: Abita patient intake and resolution
 scenarios:
   - label: New patient provides complete intake
     instructions: >
@@ -44,3 +44,99 @@ scenarios:
     userdata:
       office: spring-hill
       caller_phone: "+12025550147"
+
+  # Sandbox prerequisite: exactly one chart on +12025550148:
+  # Maya Singleproof, DOB 05/12/1985, with a complete patient receipt.
+  # These comments describe required fixtures; scenario userdata does not seed them.
+  - label: Existing patient promotes the single phone lookup match
+    instructions: >
+      You are Maya Singleproof, a fictional existing patient at Abita Eye Group
+      in Spring Hill. You are calling from the phone number on your chart.
+      Open with: "Hi, I'm an existing patient. Can you find my chart?"
+      Let the receptionist lead. When asked for the patient's first name, say
+      "Maya." Do not volunteer your last name or date of birth.
+      If asked, your last name is Singleproof and your DOB is May 12, 1985.
+      You only want to locate your existing chart today. Once the receptionist
+      confirms finding it, thank them and finish. Do not request registration,
+      an appointment, insurance changes, a transfer, or a staff message.
+      If the chart cannot be found, acknowledge the explanation and end.
+    agent_expectations: >
+      Uses the startup context indicating one possible phone lookup profile.
+      Asks only for the patient's first name and immediately calls resolve_patient
+      with firstName "Maya" and dob null. Does not ask for last name, name spelling,
+      or DOB before attempting this match. The tool returns verified for Maya
+      Singleproof and promotes that chart to the active patient using the loaded
+      phone lookup record. Does not perform a first-name/DOB search unnecessarily.
+      Confirms finding the chart only after successful resolution, then ends when
+      the caller is finished. Does not call add_patient or modify any record.
+      A verbal claim without successful tool resolution does not pass.
+    userdata:
+      office: spring-hill
+      caller_phone: "+12025550148"
+
+  # Sandbox prerequisite: exactly two charts on +12025550149:
+  # Nora Sharedproof, DOB 03/08/1982, and Eli Sharedproof, DOB 11/21/2008.
+  # Both charts must return complete patient receipts when loaded by patient ID.
+  - label: Existing patient promotes one of two phone lookup matches
+    instructions: >
+      You are Nora Sharedproof calling Abita Eye Group in Spring Hill on behalf
+      of your son, Eli Sharedproof, who is an existing patient. Both your charts
+      share the phone number you are calling from.
+      Open with: "Hi, I'm calling for my son. He's an existing patient.
+      Can you find his chart?"
+      Let the receptionist lead. When asked for the patient's first name, say
+      "Eli." Do not volunteer his last name or date of birth.
+      If asked, his DOB is November 21, 2008, and his last name is Sharedproof.
+      If asked for your own name, say Nora, but make clear that Eli is the patient.
+      Correct the receptionist if they treat Nora as the patient.
+      You only want to locate Eli's chart today. Once it is found, thank the
+      receptionist and finish. Do not request registration, an appointment,
+      insurance changes, a transfer, or a staff message.
+      If the chart cannot be found, acknowledge the explanation and end.
+    agent_expectations: >
+      Uses the startup context indicating two possible phone lookup profiles.
+      Asks for the patient's first name without reading either candidate's name
+      aloud. Calls resolve_patient with firstName "Eli" and dob null as soon as
+      the name is supplied. Selects Eli from the loaded phone candidates and
+      promotes Eli Sharedproof, never Nora, to the active patient. May load Eli's
+      full record by patient ID if the phone result contains only candidates.
+      Does not ask for DOB solely because two profiles share the phone number;
+      the supplied first name uniquely distinguishes them. Confirms finding
+      Eli's chart only after a verified tool result and ends when the caller is
+      finished. Does not call add_patient or modify any record. Resolving Nora
+      or claiming success without successful resolution does not pass.
+    userdata:
+      office: spring-hill
+      caller_phone: "+12025550149"
+
+  # Sandbox prerequisite: an existing chart for Owen Dobproof, DOB 09/04/1976,
+  # uniquely returned by firstName + DOB, with a complete patient receipt.
+  # Omit caller_phone to exercise unavailable caller ID and no phone lookup.
+  - label: Existing patient promotes by first name and DOB without phone lookup
+    instructions: >
+      You are Owen Dobproof, a fictional existing patient at Abita Eye Group
+      in Spring Hill. Your caller ID is unavailable.
+      Open with: "Hi, I'm already a patient there. Can you find my chart?"
+      Let the receptionist lead. When asked for your first name and date of
+      birth, say "Owen, September 4, 1976." If asked separately, provide only
+      the requested detail. Do not volunteer your last name or a phone number.
+      If asked, your last name is Dobproof. You have visited this practice before
+      and do not want a new chart created.
+      You only want to locate your existing chart today. Once the receptionist
+      confirms finding it, thank them and finish. Do not request an appointment,
+      insurance changes, a transfer, or a staff message.
+      If the chart cannot be found, acknowledge the explanation and end.
+    agent_expectations: >
+      Recognizes the caller as an existing patient despite unavailable caller ID.
+      Collects first name and DOB, then calls resolve_patient with firstName
+      "Owen" and dob "09/04/1976". Does not call resolve_patient with only a
+      first name when startup context says no phone profiles are available.
+      Searches by first name and DOB, loads the uniquely matched patient record,
+      and promotes Owen Dobproof to the active patient with a verified result.
+      Does not require a last name, phone number, or separate DOB read-back.
+      Does not treat absent caller ID as evidence that the patient is new.
+      Confirms finding the chart only after successful resolution, then ends
+      when the caller is finished. Does not call add_patient or modify any record.
+      A verbal claim without successful tool resolution does not pass.
+    userdata:
+      office: spring-hill

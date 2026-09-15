@@ -122,6 +122,27 @@ class PatientResolver:
     def close_admission(self) -> None:
         self._closed = True
 
+    async def phone_lookup_context(self) -> str | None:
+        """Expose only the startup lookup hint, never candidate identities."""
+        if self._precall is not None:
+            await asyncio.gather(self._precall, return_exceptions=True)
+        if self._closed or self.state.patient.active or self._pending != (None, None):
+            return None
+        count = len(self.state.patient.lookup.candidates)
+        if count:
+            return (
+                f"Startup phone lookup found {count} possible patient profile(s). "
+                "For an existing patient, ask for the patient's first name, then "
+                "call resolve_patient with firstName and dob:null unless DOB was "
+                "already provided. These profiles are not yet verified. Follow "
+                "later resolve_patient results; use new-patient intake if the caller says they are new."
+            )
+        return (
+            "Startup phone lookup has no available patient profiles. For an existing "
+            "patient, ask for the patient's first name and date of birth, then call "
+            "resolve_patient. This does not mean the patient is new."
+        )
+
     async def aclose(self) -> None:
         self._closed = True
         self._token = None

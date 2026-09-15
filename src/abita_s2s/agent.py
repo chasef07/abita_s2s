@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Literal
 
-from livekit.agents import Agent, RunContext, function_tool
+from livekit.agents import Agent, RunContext, function_tool, llm
 from livekit.agents.llm import ToolFlag
 
 from abita_s2s.call_control import CallControl
@@ -30,13 +30,18 @@ class AbitaAgent(Agent):
         scheduling: Scheduling | None = None,
         staff_tasks: StaffTasks | None = None,
         call_control: CallControl | None = None,
+        phone_lookup_context: str | None = None,
     ) -> None:
         tools = list(scheduling.tools) if scheduling else []
         if office.staff_tasks_enabled:
             tools.append(function_tool(self.create_staff_task))
         if call_control:
             tools.append(call_control)
+        chat_ctx = llm.ChatContext.empty()
+        if phone_lookup_context:
+            chat_ctx.add_message(role="assistant", content=phone_lookup_context)
         super().__init__(tools=tools,
+            chat_ctx=chat_ctx,
             instructions=(
                 load_prompt("speaker")
                 + f"\n\nCurrent office: {office.display_name} ({office.key})."
@@ -55,7 +60,10 @@ class AbitaAgent(Agent):
     ) -> str:
         """Resolve existing patients only; do not call for callers who say they are new.
 
-        For existing patients, call with firstName and dob:null if unknown.
+        With possible phone lookup profiles, call immediately with the patient's
+        firstName and dob:null unless DOB was already provided. Without phone
+        profiles, collect firstName and DOB before calling. The tool matches
+        loaded phone profiles first, then searches by first name and DOB as needed.
 
         Include a supplied DOB without separate confirmation and follow the returned next step.
         Same-name patient switches require DOB. If unresolved, clarify first-name spelling
