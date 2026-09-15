@@ -53,7 +53,9 @@ class AbitaAgent(Agent):
     async def resolve_patient(
         self, context: RunContext[CallState], firstName: str | None, dob: str | None
     ) -> str:
-        """Call immediately with the supplied patient's firstName and dob:null if unknown.
+        """Resolve existing patients only; do not call for callers who say they are new.
+
+        For existing patients, call with firstName and dob:null if unknown.
 
         Include a supplied DOB without separate confirmation and follow the returned next step.
         Same-name patient switches require DOB. If unresolved, clarify first-name spelling
@@ -96,18 +98,32 @@ class AbitaAgent(Agent):
         phone: str | None, inboundPhoneConfirmed: Literal[True] | None,
         email: str | None, street: str, aptSuite: str | None, city: str, state: str,
         zip: str, sex: Literal["male", "female"], subscriberName: str,
-        insuranceMemberId: str, ssnLast4: str | None,
-        newPatientConfirmed: Literal[True] | None, readBack: Literal[True] | None,
+        insuranceMemberId: str, readBack: Literal[True] | None,
     ) -> str:
-        """Create a chart after complete resolution, accepted coverage and confirmation.
+        """Create a new patient chart and attach insurance from completed intake.
 
-        Confirm first registration, callback number, and the full identity, contact,
-        address and insurance read-back before setting confirmation flags true.
-        Use the patient's details, not the caller's. DOB uses MM/DD/YYYY.
-        Pass phone:null only when the inbound callback number was confirmed.
-        Request SSN last four once for insured routine vision; use null if unavailable
-        or declined, and skip for self-pay. Never repeat SSN in read-back.
-        Claim success only from this receipt; never retry full or partial creation.
+        Requires accepted insurance for the visit type and caller confirmation of
+        the final read-back. No existing-chart lookup is required.
+        Returns created, partial, or a required next step/failure. Partial means the
+        chart exists but insurance is not confirmed. Do not repeat chart creation
+        after a created, partial, or uncertain result.
+
+        Args:
+            firstName: Patient's first name.
+            lastName: Patient's last name.
+            dob: Patient's date of birth in MM/DD/YYYY.
+            phone: Patient's callback number; null only when the inbound number was confirmed.
+            inboundPhoneConfirmed: True if the caller approved the inbound number for the file; otherwise null.
+            email: Patient's email address, or null if unavailable or declined.
+            street: Street number and street name.
+            aptSuite: Apartment, unit, or suite; null if none.
+            city: City of the patient's address.
+            state: Two-letter state abbreviation.
+            zip: ZIP code of the patient's address.
+            sex: Patient's sex for registration.
+            subscriberName: Name on the insurance card; reuse the patient's name if confirmed as theirs.
+            insuranceMemberId: Member ID on the insurance card; use "self pay" for self-pay.
+            readBack: True only after the caller confirms the complete final read-back; otherwise null.
         """
         if self._insurance is None or self._insurance.state is not context.userdata:
             return json.dumps(staff())
@@ -126,8 +142,6 @@ class AbitaAgent(Agent):
             sex=sex,
             subscriberName=subscriberName,
             insuranceMemberId=insuranceMemberId,
-            ssnLast4=ssnLast4,
-            newPatientConfirmed=newPatientConfirmed,
             readBack=readBack,
         )
         return json.dumps(

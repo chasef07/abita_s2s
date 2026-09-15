@@ -15,10 +15,21 @@ def checksums(directory: Path) -> dict[str, str]:
     }
 
 
-def prompt_digest(files: dict[str, str]) -> str:
+def content_digest(files: dict[str, str]) -> str:
     return hashlib.sha256(
         json.dumps(files, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
+
+
+def eval_checksums(directory: Path) -> dict[str, str]:
+    files = {
+        path.relative_to(directory).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(directory.rglob("*"))
+        if path.is_file() and path.suffix in (".yaml", ".yml")
+    }
+    if not files:
+        raise ValueError("Release requires at least one eval scenario file")
+    return files
 
 
 def identity() -> dict:
@@ -30,10 +41,13 @@ def identity() -> dict:
     if (
         data["agent_version"] != version("abita-s2s")
         or data["prompts_version"] != data["agent_version"]
+        or data["evals_version"] != data["agent_version"]
+        or not data["eval_files"]
+        or content_digest(data["eval_files"]) != data["evals_sha256"]
         or files != data["prompt_files"]
-        or prompt_digest(files) != data["prompts_sha256"]
+        or content_digest(files) != data["prompts_sha256"]
     ):
-        raise ValueError("Installed release version or prompt checksum mismatch")
+        raise ValueError("Installed release version, prompt or eval checksum mismatch")
     return data
 
 

@@ -1,0 +1,46 @@
+name: Abita new patient intake
+scenarios:
+  - label: New patient provides complete intake
+    instructions: >
+      You are a fictional new patient calling Abita Eye Group in Spring Hill.
+      Open with: "Hi, I'm a new patient and I'd like to get registered."
+      You have never registered or visited this practice before.
+      Let the receptionist lead: provide details only when asked. Do not volunteer
+      a checklist or remind the receptionist to collect missing information.
+      Your full name is Selena Intakeproof. When asked to spell it, say
+      S-E-L-E-N-A, I-N-T-A-K-E-P-R-O-O-F. Your DOB is April 16, 1992.
+      Your full address is 1428 Test Meadow Lane, apartment 4B, Spring Hill,
+      Florida 34609. Your sex is female. Your callback number is 202-555-0147.
+      Your email is selena.intakeproof@example.com.
+      Your insurance is Aetna commercial PPO medical coverage, not Medicare,
+      Medicaid, or a routine vision plan. You are the subscriber, Selena Intakeproof.
+      Your member ID is ABT09152601. Spell it as A-B-T-0-9-1-5-2-6-0-1 if asked.
+      Your visit reason is mild dry eyes for several weeks, with no pain,
+      sudden vision changes, or other urgent symptoms. You have no referring doctor.
+      Confirm accurate read-backs and correct
+      any inaccurate detail. Explicitly approve registration when asked.
+      You only want to complete intake today; you will call back to pick an
+      appointment. Once registration succeeds, thank the receptionist and finish.
+      If registration fails, acknowledge the explanation and end without requesting
+      a transfer, staff message, or another registration attempt.
+    agent_expectations: >
+      Recognizes a new-patient intake request and leads collection of all information.
+      Asks the caller to spell their full name and asks for DOB. Does not call resolve_patient or check for an existing chart. Collects full street address including apartment,
+      city, state, and ZIP; sex; callback number; email; visit reason; insurance plan,
+      subscriber name, and member ID. Checks office insurance acceptance for the
+      medical visit. Does not invent missing details. Reads back the full registration
+      information and obtains confirmation before calling add_patient exactly once.
+      The add_patient arguments preserve every supplied value, including apartment
+      and alphanumeric member ID. Claims completed registration only if the tool
+      confirms it, and explains any partial result accurately. Does not book an
+      appointment or submit a staff request. Successful intake includes successful
+      chart creation with insurance attached.
+      Does not request SSN digits or a separate first-registration confirmation.
+      Collects each detail once without repeated name-spelling requests or
+      section-by-section confirmations. Gives one full read-back at the end,
+      resolving any uncertainty there. Asks whether the patient's name or someone
+      else's is on the insurance card, reusing the patient's collected name when
+      appropriate instead of asking for a subscriber name.
+    userdata:
+      office: spring-hill
+      caller_phone: "+12025550147"

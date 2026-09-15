@@ -76,6 +76,7 @@ if __name__ == "__main__":
     commit, version = manifest["git_commit"], manifest["agent_version"]
     if run("git", "rev-parse", "HEAD") != commit:
         raise ValueError("Publish must run at the built commit")
-    prompt = directory / f"prompts-v{version}.tar.gz"
-    publish(f"prompts-v{version}", commit, [prompt, directory / "release.json"])
+    for component in ("prompts", "evals"):
+        asset = directory / f"{component}-v{version}.tar.gz"
+        publish(f"{component}-v{version}", commit, [asset, directory / "release.json"])
     publish(f"v{version}", commit, sorted(directory.iterdir()))

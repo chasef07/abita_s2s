@@ -43,8 +43,6 @@ class Registration(Record):
     sex: Literal["male", "female"]
     subscriberName: str
     insuranceMemberId: str
-    ssnLast4: str | None
-    newPatientConfirmed: Literal[True] | None
     readBack: Literal[True] | None
 
 
@@ -141,22 +139,6 @@ class InsuranceRegistration:
                 "already_active",
                 "A verified patient is already active. Resolve the intended patient before creating a chart.",
             )
-        absence = self.state.patient.absence
-        if (
-            absence is None
-            or exact_name(absence.first_name) != exact_name(r.firstName)
-            or not dob_matches(absence.dob, r.dob)
-        ):
-            self.state.insurance.accepted = None
-            return reply(
-                "needs_resolution",
-                "Resolve this patient's first name and DOB before registration. A failed or partial lookup does not authorize a new chart.",
-            )
-        if not r.newPatientConfirmed:
-            return reply(
-                "needs_confirmation",
-                "Has the patient ever registered with this practice? Confirm this is the first registration.",
-            )
         checked = accepted_insurance(self.state)
         if checked is None:
             return reply(
@@ -189,16 +171,6 @@ class InsuranceRegistration:
                 "needs_registration_details",
                 "Collect the patient's full identity, address, and insurance policyholder and member ID, then confirm a full read-back.",
             )
-        if (
-            not self_pay
-            and checked.coverage_type == "routine_vision"
-            and r.ssnLast4 is not None
-            and not re.fullmatch(r"\d{4}", r.ssnLast4)
-        ):
-            return reply(
-                "needs_registration_details",
-                "Use only SSN last four, or null when declined or unavailable.",
-            )
         if not r.readBack:
             address = ", ".join(
                 v for v in (r.street, r.aptSuite, r.city, r.state, r.zip) if v
@@ -208,18 +180,11 @@ class InsuranceRegistration:
                 if self_pay
                 else f"Coverage is {checked.plan}, policyholder {r.subscriberName}, member ID {r.insuranceMemberId}."
             )
-            ssn = (
-                " SSN last four were recorded without repeating them."
-                if not self_pay
-                and checked.coverage_type == "routine_vision"
-                and r.ssnLast4
-                else ""
-            )
             return reply(
                 "needs_read_back",
                 f"Confirm {r.firstName} {r.lastName}, DOB {r.dob}, {r.sex}; address {address}; callback {digits}"
                 + (f"; email {r.email}" if r.email else "")
-                + f". {coverage}{ssn} Is all of that correct?",
+                + f". {coverage} Is all of that correct?",
             )
         payload = {
             k: getattr(r, k)
@@ -245,8 +210,6 @@ class InsuranceRegistration:
             payload["email"] = r.email
         if checked.coverage_type == "routine_vision":
             payload["coverageType"] = "routine_vision"
-            if not self_pay and r.ssnLast4:
-                payload["ssn"] = r.ssnLast4
 
         async def create():
             result = await self._middleware.create(checked.office_key, payload)
@@ -255,7 +218,7 @@ class InsuranceRegistration:
                     self.state.insurance.write_uncertain = True
                 answer = staff(result.status)
             else:
-                answer = self._created(result, r, absence, checked)
+                answer = self._created(result, r, checked)
             if self.state.reporter:
                 evidence = {"outcome": answer["outcome"]}
                 if answer["outcome"] in ("created", "partial"):
@@ -269,7 +232,7 @@ class InsuranceRegistration:
         return await self._run_write(create)
 
     def _created(
-        self, result: CreationReceipt, r: Registration, absence, checked
+        self, result: CreationReceipt, r: Registration, checked
     ) -> dict:
         # Validate both complete names without inventing backend identifier formats.
         expected = {
@@ -295,7 +258,10 @@ class InsuranceRegistration:
             appointments=[],
         )
         self.state.insurance.registrations[result.patientId] = result.status
-        activated = self._resolver.activate_created(absence, patient)
+        activated = (
+            accepted_insurance(self.state) is checked
+            and self._resolver.activate_created(checked.patient_revision, patient)
+        )
         if activated and self.state.insurance.accepted is checked:
             self.state.insurance.accepted = replace(
                 checked,
