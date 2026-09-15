@@ -15,12 +15,14 @@ def publish(tag, commit, files):
         run("git", "fetch", "origin", f"refs/tags/{tag}")
         if run("git", "rev-parse", "FETCH_HEAD^{commit}") != commit:
             raise ValueError("Immutable release tag belongs to a different commit")
-    else:
-        run("git", "push", "origin", f"{commit}:refs/tags/{tag}")
     listing = json.loads(
         run("gh", "api", "repos/{owner}/{repo}/releases", "--paginate", "--slurp")
     )
     release = next((r for page in listing for r in page if r["tag_name"] == tag), None)
+    if not refs:
+        if release is not None:
+            raise ValueError("Existing release has no tag; restore its original tag before publishing")
+        run("git", "push", "origin", f"{commit}:refs/tags/{tag}")
     if release is None:
         run(
             "gh",

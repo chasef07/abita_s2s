@@ -64,7 +64,7 @@ jobs:
           from pathlib import Path
           Path('livekit.toml').write_text('[project]\nsubdomain = ' + json.dumps(os.environ['SUBDOMAIN']) + '\n[agent]\nid = ' + json.dumps(os.environ['ABITA_S2S_AGENT_ID']) + '\n')
           PY
-      - run: python scripts/deploy.py "$ACTION" --config livekit.toml --release dist --commit "$COMMIT" --version "$VERSION"
+      - run: uv run --locked python scripts/deploy.py "$ACTION" --config livekit.toml --release dist --commit "$COMMIT" --version "$VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: deployment-record-${{ github.run_id }}

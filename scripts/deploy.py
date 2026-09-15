@@ -14,6 +14,8 @@ import subprocess
 import time
 import tomllib
 
+from abita_s2s.release import checksums, prompt_digest
+
 KEYS = ("agent_version", "prompts_version", "git_commit", "prompts_sha256")
 
 
@@ -62,15 +64,8 @@ def validate_release(directory: Path, commit: str):
     }
     if checked != expected_assets:
         raise ValueError("Release checksum list is incomplete or unexpected")
-    files = {
-        name: hashlib.sha256(
-            (Path("src/abita_s2s/prompts") / name).read_bytes()
-        ).hexdigest()
-        for name in ("speaker.md", "thinker.md")
-    }
-    sha = hashlib.sha256(
-        json.dumps(files, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    files = checksums(Path("src/abita_s2s/prompts"))
+    sha = prompt_digest(files)
     if (
         manifest["agent_version"] != version
         or manifest["prompts_version"] != version

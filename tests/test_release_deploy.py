@@ -134,6 +134,25 @@ class ReleaseTests(unittest.TestCase):
                     publish_release.publish("v1.0.0", "a" * 40, [path])
             self.assertFalse(any("upload" in c for c in calls))
 
+    def test_publisher_never_recreates_missing_tag_for_existing_release(self):
+        for draft in (False, True):
+            with self.subTest(draft=draft):
+                calls = []
+
+                def command(*args):
+                    calls.append(args)
+                    if args[:2] == ("gh", "api"):
+                        return json.dumps([[{
+                            "tag_name": "v1.0.0", "draft": draft, "assets": [],
+                        }]])
+                    return ""
+
+                with patch.object(publish_release, "run", side_effect=command):
+                    with self.assertRaises(ValueError):
+                        publish_release.publish("v1.0.0", "b" * 40, [])
+                self.assertFalse(any(c[:2] == ("git", "push") for c in calls))
+                self.assertFalse(any(c[:2] == ("gh", "release") for c in calls))
+
 
 class DeployTests(unittest.TestCase):
     def setUp(self):

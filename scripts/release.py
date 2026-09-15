@@ -13,6 +13,7 @@ import tarfile
 import tomllib
 
 from abita_s2s.model_config import SPEAKER_MODEL, THINKER_MODEL
+from abita_s2s.release import checksums, prompt_digest
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -36,18 +37,13 @@ def prepare(commit: str, output: Path):
     version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
     if not re.fullmatch(r"\d+\.\d+\.\d+", version):
         raise ValueError("Use a stable major.minor.patch release version")
-    files = {
-        name: digest(ROOT / "src/abita_s2s/prompts" / name)
-        for name in ("speaker.md", "thinker.md")
-    }
+    files = checksums(ROOT / "src/abita_s2s/prompts")
     manifest = {
         "agent_version": version,
         "prompts_version": version,
         "git_commit": commit,
         "prompt_files": files,
-        "prompts_sha256": hashlib.sha256(
-            json.dumps(files, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest(),
+        "prompts_sha256": prompt_digest(files),
         "uv_lock_sha256": digest(ROOT / "uv.lock"),
         "models": {"speaker": SPEAKER_MODEL, "thinker": THINKER_MODEL},
     }

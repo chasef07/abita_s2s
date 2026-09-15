@@ -203,10 +203,3 @@ backend, audio and SIP behavior still require verification.
 
 Caller-approved staff delivery uses the existing Product service credential and
 optional `ACUITY_PRODUCT_HANDOFF_URL`.
-
-## Builds and releases
-
-See [release and startup operations](docs/releases.md) for locked CI/container
-builds, paired immutable prompt/agent artifacts, explicit staging configuration,
-and gated deployment/promotion/rollback. Cloud execution requires a separately
-provisioned Python agent; no production target is configured in this repository.
