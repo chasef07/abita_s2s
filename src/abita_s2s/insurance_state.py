@@ -22,6 +22,9 @@ class AcceptedInsurance:
 @dataclass(repr=False)
 class InsuranceState:
     accepted: AcceptedInsurance | None = None
+    # Once the caller checks/corrects a chart's plan, old on-file coverage cannot
+    # rescue a rejected or stale check, including after resolving that chart again.
+    checked_patients: set[tuple[str, str]] = field(default_factory=set)
     # Full/partial creation and uncertain updates must block scheduling until resolved.
     registrations: dict[str, Literal["created", "partial"]] = field(
         default_factory=dict
@@ -65,4 +68,14 @@ def insurance_ready(state: "CallState", coverage_type: CoverageType) -> bool:
         return False
     if state.insurance.registrations.get(active.patientId) == "partial":
         return False
-    return accepted_insurance(state, coverage_type) is not None
+    checked = state.insurance.accepted
+    if checked is not None and checked.patient_id == active.patientId:
+        return accepted_insurance(state, coverage_type) is not None
+    return bool(
+        active.insuranceCarrier
+        and active.insuranceCarrier.strip()
+        and active.routing
+        and active.patientId not in state.insurance.registrations
+        and (state.call.called_office_key, active.patientId)
+        not in state.insurance.checked_patients
+    )

@@ -124,6 +124,10 @@ class Scheduling:
             p.routing if p else None,
             p.preauthRequired if p else None,
             p.routingAmbiguous if p else None,
+            p.insuranceCarrier if p else None,
+            (self.state.call.called_office_key, p.patientId)
+            in self.state.insurance.checked_patients
+            if p else False,
             self.state.insurance.accepted,
             id(self.state.insurance.accepted),
             self.state.insurance.write_pending,

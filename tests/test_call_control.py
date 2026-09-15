@@ -15,6 +15,7 @@ from test_patient_resolution import call_state, receipt
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.call_control import CallControl
+from abita_s2s.config import load_config
 from abita_s2s.middleware import Receipt
 from abita_s2s.offices import SPRING_HILL
 
@@ -253,11 +254,13 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(
             "os.environ",
             {
+                "OPENAI_API_KEY": "offline",
                 "ACUITY_PRODUCT_HANDOFF_URL": "https://product.example/v1/handoffs",
                 "ABITA_EYE_GROUP_PRODUCT_PRACTICE_ID": "00000000-0000-4000-8000-000000000001",
                 "ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET": "offline",
             },
         ):
+            self.control.admission.config = load_config().handoff
             self.assertEqual(
                 (await self.run_tool("transfer_call"))["outcome"], "ambiguous"
             )
@@ -298,11 +301,13 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(
             "os.environ",
             {
+                "OPENAI_API_KEY": "offline",
                 "ACUITY_PRODUCT_HANDOFF_URL": "https://product.example/v1/handoffs",
                 "ABITA_EYE_GROUP_PRODUCT_PRACTICE_ID": "00000000-0000-4000-8000-000000000001",
                 "ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET": "offline",
             },
         ):
+            self.control.admission.config = load_config().handoff
             first = await self.run_tool("transfer_call")
             self.assertEqual(first["outcome"], "failed")
             self.assertIn("once more", first["answer"])
@@ -348,11 +353,13 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             with patch.dict(
                 "os.environ",
                 {
+                    "OPENAI_API_KEY": "offline",
                     "ACUITY_PRODUCT_HANDOFF_URL": "https://product.example/v1/handoffs",
                     "ABITA_EYE_GROUP_PRODUCT_PRACTICE_ID": "00000000-0000-4000-8000-000000000001",
                     "ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET": "offline",
                 },
             ):
+                self.control.admission.config = load_config().handoff
                 self.assertEqual(
                     (await self.run_tool("transfer_call"))["outcome"], "ambiguous"
                 )
@@ -448,11 +455,13 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(
             "os.environ",
             {
+                "OPENAI_API_KEY": "offline",
                 "ACUITY_HANDOFF_URL": "https://handoff.example/admit",
                 "ACUITY_HANDOFF_SECRET": "offline",
             },
             clear=True,
         ):
+            self.control.admission.config = load_config().handoff
             self.assertEqual(
                 (await self.run_tool("transfer_call"))["outcome"], "accepted"
             )
@@ -476,11 +485,13 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(
             "os.environ",
             {
+                "OPENAI_API_KEY": "offline",
                 "ACUITY_HANDOFF_URL": "https://[invalid",
                 "ACUITY_HANDOFF_SECRET": "offline",
             },
             clear=True,
         ):
+            self.control.admission.config = load_config().handoff
             first = await self.run_tool("transfer_call")
             self.assertEqual(first["outcome"], "failed")
             self.assertIn("once more", first["answer"])
@@ -500,11 +511,13 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(
             "os.environ",
             {
+                "OPENAI_API_KEY": "offline",
                 "ACUITY_HANDOFF_URL": "https://handoff.example/admit",
                 "ACUITY_HANDOFF_SECRET": "offline",
             },
             clear=True,
         ):
+            self.control.admission.config = load_config().handoff
             try:
                 await self.run_tool("transfer_call")
             except (IndexError, asyncio.CancelledError):
