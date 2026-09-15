@@ -26,6 +26,32 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def component_version(component: str, version: str, commit: str, files: dict) -> str:
+    """Reuse the previous published bundle when its complete content matches."""
+    tags = run("git", "tag", "--merged", commit, "--list", f"{component}-v*",
+               "--sort=-version:refname").splitlines()
+    current = tuple(map(int, version.split(".")))
+    for tag in tags:
+        prior = tag.removeprefix(f"{component}-v")
+        if not re.fullmatch(r"\d+\.\d+\.\d+", prior):
+            continue
+        # Ignore this release's tags so publishing cannot change a rebuild.
+        if tuple(map(int, prior.split("."))) >= current:
+            continue
+        directory = "src/abita_s2s/prompts" if component == "prompts" else "evals"
+        paths = run("git", "ls-tree", "-r", "--name-only", tag, "--", directory).splitlines()
+        prior_files = {}
+        for path in paths:
+            name = path.removeprefix(directory + "/")
+            if (component == "prompts" and name in ("speaker.md", "thinker.md")) or (
+                component == "evals" and Path(name).suffix in (".yaml", ".yml")
+            ):
+                data = subprocess.check_output(["git", "show", f"{tag}:{path}"], cwd=ROOT)
+                prior_files[name] = hashlib.sha256(data).hexdigest()
+        return prior if prior_files == files else version
+    return version
+
+
 def prepare(commit: str, output: Path):
     if (
         not re.fullmatch(r"[0-9a-f]{40}", commit)
@@ -34,6 +60,8 @@ def prepare(commit: str, output: Path):
         raise ValueError("Release requires the exact checked-out 40-character commit")
     if run("git", "status", "--porcelain", "--untracked-files=normal"):
         raise ValueError("Release requires a clean checkout")
+    if run("git", "rev-parse", "--is-shallow-repository") == "true":
+        raise ValueError("Release requires full git history and component tags")
     version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
     if not re.fullmatch(r"\d+\.\d+\.\d+", version):
         raise ValueError("Use a stable major.minor.patch release version")
@@ -41,8 +69,8 @@ def prepare(commit: str, output: Path):
     eval_files = eval_checksums(ROOT / "evals")
     manifest = {
         "agent_version": version,
-        "prompts_version": version,
-        "evals_version": version,
+        "prompts_version": component_version("prompts", version, commit, files),
+        "evals_version": component_version("evals", version, commit, eval_files),
         "git_commit": commit,
         "prompt_files": files,
         "prompts_sha256": content_digest(files),
@@ -66,6 +94,8 @@ def prepare(commit: str, output: Path):
         ("prompts", ROOT / "src/abita_s2s/prompts", files),
         ("evals", ROOT / "evals", eval_files),
     ):
+        if manifest[f"{label}_version"] != version:
+            continue
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w") as archive:
             entries = {name: (directory / name).read_bytes() for name in names}

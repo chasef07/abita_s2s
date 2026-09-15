@@ -5,6 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import tarfile
 import unittest
@@ -22,6 +23,69 @@ builder = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
 
 
+class ComponentVersionTests(unittest.TestCase):
+    def test_versions_follow_content_independently_using_real_git_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            def git(*args):
+                return subprocess.check_output(["git", *args], cwd=root, text=True).strip()
+            git("init", "-q")
+            git("config", "user.name", "Release test")
+            git("config", "user.email", "release@example.test")
+            prompts = root / "src/abita_s2s/prompts"
+            prompts.mkdir(parents=True)
+            for name in ("speaker.md", "thinker.md"):
+                (prompts / name).write_text(name + "\n")
+            evals = root / "evals"
+            evals.mkdir()
+            (evals / "scenario.yaml").write_text("name: original\n")
+            git("add", ".")
+            git("commit", "-qm", "Initial bundles")
+            git("tag", "prompts-v0.3.2")
+            git("tag", "evals-v0.3.2")
+            with patch.object(builder, "ROOT", root):
+                def versions():
+                    commit = git("rev-parse", "HEAD")
+                    return (
+                        builder.component_version("prompts", "0.3.3", commit, package.checksums(prompts)),
+                        builder.component_version("evals", "0.3.3", commit, package.eval_checksums(evals)),
+                    )
+                self.assertEqual(versions(), ("0.3.2", "0.3.2"))
+                (prompts / "speaker.md").write_text("changed\n")
+                self.assertEqual(versions(), ("0.3.3", "0.3.2"))
+                (evals / "added.yml").write_text("name: added\n")
+                self.assertEqual(versions(), ("0.3.3", "0.3.3"))
+                (prompts / "speaker.md").write_text("speaker.md\n")
+                self.assertEqual(versions(), ("0.3.2", "0.3.3"))
+                (evals / "added.yml").unlink()
+                (evals / "results.json").write_text("{}")
+                self.assertEqual(versions(), ("0.3.2", "0.3.2"))
+                git("add", ".")
+                git("commit", "-qm", "Agent-only release")
+                git("tag", "prompts-v0.3.3")
+                git("tag", "evals-v0.3.3")
+                self.assertEqual(versions(), ("0.3.2", "0.3.2"))
+                (evals / "scenario.yaml").unlink()
+                (evals / "replacement.yaml").write_text("name: original\n")
+                self.assertEqual(versions(), ("0.3.2", "0.3.3"))
+
+    def test_reused_release_must_be_published_with_matching_content(self):
+        manifest = {"prompts_version": "0.3.2", "prompts_sha256": "a" * 64}
+        def command(*args):
+            if args[1:3] == ("release", "view"):
+                return "false"
+            self.assertEqual(args[1:3], ("release", "download"))
+            (Path(args[-1]) / "release.json").write_text(json.dumps(manifest))
+            return ""
+        with patch.object(publish_release, "run", side_effect=command):
+            publish_release.verify_reused_component("prompts", "0.3.2", manifest)
+            with self.assertRaisesRegex(ValueError, "content mismatch"):
+                publish_release.verify_reused_component("prompts", "0.3.2", {**manifest, "prompts_sha256": "wrong"})
+        with patch.object(publish_release, "run", return_value="true"):
+            with self.assertRaisesRegex(ValueError, "already be published"):
+                publish_release.verify_reused_component("prompts", "0.3.2", manifest)
+
+
 class ReleaseTests(unittest.TestCase):
     def test_installed_manifest_rejects_version_and_checksum_mismatch(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -32,8 +96,8 @@ class ReleaseTests(unittest.TestCase):
             files = package.checksums(root / "prompts")
             manifest = dict(
                 agent_version="1.0.0",
-                prompts_version="1.0.0",
-                evals_version="1.0.0",
+                prompts_version="0.8.0",
+                evals_version="0.9.0",
                 eval_files={"scenarios.yaml": "b" * 64},
                 evals_sha256=package.content_digest({"scenarios.yaml": "b" * 64}),
                 prompt_files=files,
@@ -48,8 +112,8 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(package.identity(), manifest)
                 for key, value in (
                     ("agent_version", "2.0.0"),
-                    ("prompts_version", "2.0.0"),
-                    ("evals_version", "2.0.0"),
+                    ("prompts_version", "invalid"),
+                    ("evals_version", "invalid"),
                     ("evals_sha256", "wrong"),
                     ("eval_files", {}),
                     ("prompts_sha256", "wrong"),
@@ -78,6 +142,10 @@ class ReleaseTests(unittest.TestCase):
             (root / "evals/result.json").write_text("not a scenario")
 
             def git(*args):
+                if args[1] == "tag":
+                    return ""
+                if args[1:] == ("rev-parse", "--is-shallow-repository"):
+                    return "false"
                 if args[1] == "rev-parse":
                     return "a" * 40
                 if args[1] == "status":
@@ -108,6 +176,11 @@ class ReleaseTests(unittest.TestCase):
                     builder.prepare("a" * 40, root / "out")
                 changed, _ = builder.prepare("a" * 40, root / "changed")
                 self.assertNotEqual(manifest["evals_sha256"], changed["evals_sha256"])
+                with patch.object(builder, "component_version", return_value="0.9.0"):
+                    reused, _ = builder.prepare("a" * 40, root / "reused")
+                self.assertEqual(reused["prompts_version"], "0.9.0")
+                self.assertEqual(reused["evals_version"], "0.9.0")
+                self.assertEqual(list((root / "reused").glob("*.tar.gz")), [])
                 self.assertEqual(manifest["prompts_sha256"], changed["prompts_sha256"])
                 (root / "evals/scenarios.yaml").unlink()
                 with self.assertRaisesRegex(ValueError, "at least one eval"):

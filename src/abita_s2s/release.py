@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 from importlib.metadata import version
 from pathlib import Path
 
@@ -40,8 +41,8 @@ def identity() -> dict:
     files = checksums(PACKAGE / "prompts")
     if (
         data["agent_version"] != version("abita-s2s")
-        or data["prompts_version"] != data["agent_version"]
-        or data["evals_version"] != data["agent_version"]
+        or not re.fullmatch(r"\d+\.\d+\.\d+", data["prompts_version"])
+        or not re.fullmatch(r"\d+\.\d+\.\d+", data["evals_version"])
         or not data["eval_files"]
         or content_digest(data["eval_files"]) != data["evals_sha256"]
         or files != data["prompt_files"]
