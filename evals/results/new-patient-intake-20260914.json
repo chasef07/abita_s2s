@@ -1,0 +1,1205 @@
+{
+  "version": 1,
+  "run": {
+    "id": "SR_zmdi5gU9aGLn",
+    "project_id": "p_3ix7gzvuwmc",
+    "status": "STATUS_COMPLETED",
+    "agent_description": "",
+    "error": "",
+    "created_at": "2026-09-15T03:53:36.287289Z",
+    "jobs": [
+      {
+        "id": "SRJ_LMbE6ipaBSMP",
+        "status": "STATUS_FAILED",
+        "instructions": "You are a fictional new patient calling Abita Eye Group in Spring Hill. Open with: \"Hi, I'm a new patient and I'd like to get registered.\" You have never registered or visited this practice before. Let the receptionist lead: provide details only when asked. Do not volunteer a checklist or remind the receptionist to collect missing information. Your full name is Selena Intakeproof. When asked to spell it, say S-E-L-E-N-A, I-N-T-A-K-E-P-R-O-O-F. Your DOB is April 16, 1992. Your full address is 1428 Test Meadow Lane, apartment 4B, Spring Hill, Florida 34609. Your sex is female. Your callback number is 202-555-0147. Your email is selena.intakeproof@example.com. Your insurance is Aetna commercial PPO medical coverage, not Medicare, Medicaid, or a routine vision plan. You are the subscriber, Selena Intakeproof. Your member ID is ABT09152601. Spell it as A-B-T-0-9-1-5-2-6-0-1 if asked. Your visit reason is mild dry eyes for several weeks, with no pain, sudden vision changes, or other urgent symptoms. You have no referring doctor. If asked for SSN digits, decline. Confirm accurate read-backs and correct any inaccurate detail. Explicitly approve registration when asked. You only want to complete intake today; you will call back to pick an appointment. Once registration succeeds, thank the receptionist and finish. If registration fails, acknowledge the explanation and end without requesting a transfer, staff message, or another registration attempt.\n",
+        "error": "The agent failed to collect the majority of the required information (address, sex, email, insurance details) and did not complete the registration process. Instead, the agent prematurely ended the call by asking the user to call back later.",
+        "agent_expectations": "Recognizes a new-patient intake request and leads collection of all information. Asks the caller to spell their full name and asks for DOB. Completes patient lookup before creating a chart. Collects full street address including apartment, city, state, and ZIP; sex; callback number; email; visit reason; insurance plan, subscriber name, and member ID. Checks office insurance acceptance for the medical visit. Does not invent missing details. Reads back the full registration information and obtains confirmation before calling add_patient exactly once. The add_patient arguments preserve every supplied value, including apartment and alphanumeric member ID. Claims completed registration only if the tool confirms it, and explains any partial result accurately. Does not book an appointment or submit a staff request. Successful intake includes successful chart creation with insurance attached.\n",
+        "label": "New patient provides complete intake",
+        "tags": [],
+        "room_name": "sim-SRJ_LMbE6ipaBSMP-qukRQWLQ",
+        "started_at": "2026-09-15T03:53:47.842736Z",
+        "ended_at": "2026-09-15T03:56:19.093755Z",
+        "room_id": "RM_3Ve46ZiwxLeQ",
+        "usage": {
+          "text_turns_count": 0,
+          "audio_turns_count": 13
+        },
+        "metrics": {
+          "stt": {
+            "wer": 0.24,
+            "words": 75,
+            "word_errors": 18,
+            "cer": 0.0591716,
+            "chars": 338,
+            "char_errors": 20,
+            "entity_recognition": 0.6666667,
+            "entities_uttered": 9,
+            "entities_recognized": 6,
+            "entity_recall": 0.4,
+            "entities_acquired_uttered": 5,
+            "entities_acquired_recognized": 2
+          },
+          "tts": {
+            "wer": 0.04054054,
+            "words": 148,
+            "word_errors": 6,
+            "cer": 0.028610354,
+            "chars": 734,
+            "char_errors": 21,
+            "entity_recognition": 0,
+            "entities_uttered": 1,
+            "entities_recognized": 0,
+            "entities_acquired_uttered": 0,
+            "entities_acquired_recognized": 0
+          },
+          "conversation": {
+            "turn_taking_score": 0.5742745,
+            "heard_e2e_latency_p50_ms": 1985,
+            "heard_e2e_latency_p95_ms": 2481,
+            "heard_e2e_latency_p99_ms": 2512,
+            "eot_misprediction_count": 2,
+            "overlap_ratio": 0.030891068,
+            "overlap_speech_ms": 2854,
+            "total_speech_ms": 92396,
+            "awkward_silence_count": 0,
+            "unanswered_turns": 2,
+            "false_interruption_count": 0
+          },
+          "turns": [
+            {
+              "index": 1,
+              "role": "ASSISTANT",
+              "start_ms": 0,
+              "end_ms": 3520,
+              "conciseness": 1,
+              "eot_misprediction": false,
+              "awkward_silence": false,
+              "unanswered": false
+            },
+            {
+              "index": 2,
+              "role": "USER",
+              "start_ms": 4990,
+              "end_ms": 9670,
+              "eot_misprediction": false,
+              "awkward_silence": false,
+              "unanswered": false
+            },
+            {
+              "index": 3,
+              "role": "ASSISTANT",
+              "start_ms": 9376,
+              "end_ms": 9792,
+              "heard_e2e_latency_ms": -294,
+              "turn_taking_score": 0.42644364,
+              "conciseness": 1,
+              "eot_misprediction": true,
+              "awkward_silence": false,
+              "unanswered": false
+            },
+            {
+              "index": 4,
+              "role": "USER",
+              "start_ms": 11661,
+              "end_ms": 13161,
+              "eot_misprediction": false,
+              "awkward_silence": false,
+              "unanswered": false
+            },
+            {
+              "index": 5,
+              "role": "ASSISTANT",
+              "start_ms": 15680,
+              "end_ms": 22240,
+              "heard_e2e_latency_ms": 2519,
+              "turn_taking_score": 0.653959,
+              "conciseness": 1,
+              "eot_misprediction": false,
+              "awkward_silence": false,
+              "unanswered": false
+            },
+            {
+              "index": 6,
+              "role": "USER",
+              "start_ms": 24044,
+              "end_ms": 27104,
+              "eot_misprediction": false,
+              "awkward_silence": false,
+              "unanswered": false
+            },
+            {
+              "index": 7,
+              "role": "ASSISTANT",
+              "start_ms": 29472,
+              "end_ms": 31744,
+              "heard_e2e_latency_ms": 2368,
+              "turn_taking_score": 0.7544298,
+              "conciseness": 1,
+              "eot_misprediction": false,
+              "awkward_silence": false,
+              "unanswered": false
+            },
+            {
+              "index": 8,
+              "role": "USER",
+              "start_ms": 33271,
+              "end_ms": 36119,
+              "eot_misprediction": false,
+              "awkward_silence": false,
+              "unanswered": false
+            },
+            {
+              "index": 9,
+              "role": "ASSISTANT",
+              "start_ms": 33344,
+              "end_ms": 35904,
+              "heard_e2e_latency_ms": -2775,
+              "turn_taking_score": 0,
+              "conciseness": 1,
+              "eot_misprediction": true,
+              "awkward_silence": false,
+              "unanswered": false
+            },
+            {
+              "index": 10,
+              "role": "USER",
+              "start_ms": 37503,
+              "end_ms": 51103,
+              "eot_misprediction": false,
+              "awkward_silence": false,
+              "unanswered": false
+            },
+            {
+              "index": 11,
+              "role": "ASSISTANT",
+              "start_ms": 52608,
+              "end_ms": 59328,
+              "heard_e2e_latency_ms": 1505,
+              "turn_taking_score": 1,
+              "conciseness": 1,
+              "eot_misprediction": false,
+              "awkward_silence": false,
+              "unanswered": false
+            },
+            {
+              "index": 12,
+              "role": "USER",
+              "start_ms": 61328,
+              "end_ms": 71928,
+              "eot_misprediction": false,
+              "awkward_silence": false,
+              "unanswered": false
+            },
+            {
+              "index": 13,
+              "role": "ASSISTANT",
+              "start_ms": 73760,
+              "end_ms": 79968,
+              "heard_e2e_latency_ms": 1832,
+              "turn_taking_score": 1,
+              "conciseness": 1,
+              "eot_misprediction": false,
+              "awkward_silence": false,
+              "unanswered": false
+            },
+            {
+              "index": 14,
+              "role": "USER",
+              "start_ms": 81575,
+              "end_ms": 86215,
+              "eot_misprediction": false,
+              "awkward_silence": false,
+              "unanswered": false
+            },
+            {
+              "index": 15,
+              "role": "ASSISTANT",
+              "start_ms": 87808,
+              "end_ms": 90816,
+              "heard_e2e_latency_ms": 1593,
+              "turn_taking_score": 1,
+              "conciseness": 1,
+              "eot_misprediction": false,
+              "awkward_silence": false,
+              "unanswered": false
+            },
+            {
+              "index": 16,
+              "role": "USER",
+              "start_ms": 92432,
+              "end_ms": 103147,
+              "turn_taking_score": 0,
+              "eot_misprediction": false,
+              "awkward_silence": false,
+              "unanswered": true
+            },
+            {
+              "index": 17,
+              "role": "USER",
+              "start_ms": 110662,
+              "end_ms": 113542,
+              "eot_misprediction": false,
+              "awkward_silence": false,
+              "unanswered": false
+            },
+            {
+              "index": 18,
+              "role": "ASSISTANT",
+              "start_ms": 115680,
+              "end_ms": 125248,
+              "heard_e2e_latency_ms": 2138,
+              "turn_taking_score": 0.90791255,
+              "conciseness": 0.5,
+              "eot_misprediction": false,
+              "awkward_silence": false,
+              "unanswered": false
+            },
+            {
+              "index": 19,
+              "role": "USER",
+              "start_ms": 126630,
+              "end_ms": 129870,
+              "turn_taking_score": 0,
+              "eot_misprediction": false,
+              "awkward_silence": false,
+              "unanswered": true
+            }
+          ],
+          "judge_model": "google/gemma-4-31b-it",
+          "has_remote_session": true,
+          "t0": "2026-09-15T03:54:06.162Z",
+          "conciseness": 0.9444444,
+          "unnecessary_tool_calls": false,
+          "information_loss": true,
+          "redundant_statements": true,
+          "poor_question_quality": false,
+          "conversation_progression": 0
+        }
+      }
+    ],
+    "agent_name": "simulation-vtaoa0gh",
+    "scenario_group": {
+      "name": "Abita new patient intake",
+      "scenarios": [
+        {
+          "label": "New patient provides complete intake",
+          "instructions": "You are a fictional new patient calling Abita Eye Group in Spring Hill. Open with: \"Hi, I'm a new patient and I'd like to get registered.\" You have never registered or visited this practice before. Let the receptionist lead: provide details only when asked. Do not volunteer a checklist or remind the receptionist to collect missing information. Your full name is Selena Intakeproof. When asked to spell it, say S-E-L-E-N-A, I-N-T-A-K-E-P-R-O-O-F. Your DOB is April 16, 1992. Your full address is 1428 Test Meadow Lane, apartment 4B, Spring Hill, Florida 34609. Your sex is female. Your callback number is 202-555-0147. Your email is selena.intakeproof@example.com. Your insurance is Aetna commercial PPO medical coverage, not Medicare, Medicaid, or a routine vision plan. You are the subscriber, Selena Intakeproof. Your member ID is ABT09152601. Spell it as A-B-T-0-9-1-5-2-6-0-1 if asked. Your visit reason is mild dry eyes for several weeks, with no pain, sudden vision changes, or other urgent symptoms. You have no referring doctor. If asked for SSN digits, decline. Confirm accurate read-backs and correct any inaccurate detail. Explicitly approve registration when asked. You only want to complete intake today; you will call back to pick an appointment. Once registration succeeds, thank the receptionist and finish. If registration fails, acknowledge the explanation and end without requesting a transfer, staff message, or another registration attempt.\n",
+          "agent_expectations": "Recognizes a new-patient intake request and leads collection of all information. Asks the caller to spell their full name and asks for DOB. Completes patient lookup before creating a chart. Collects full street address including apartment, city, state, and ZIP; sex; callback number; email; visit reason; insurance plan, subscriber name, and member ID. Checks office insurance acceptance for the medical visit. Does not invent missing details. Reads back the full registration information and obtains confirmation before calling add_patient exactly once. The add_patient arguments preserve every supplied value, including apartment and alphanumeric member ID. Claims completed registration only if the tool confirms it, and explains any partial result accurately. Does not book an appointment or submit a staff request. Successful intake includes successful chart creation with insurance attached.\n",
+          "tags": {},
+          "userdata": ""
+        }
+      ]
+    },
+    "ended_at": "2026-09-15T03:56:38.962844Z",
+    "job_count": 1,
+    "passed_count": 0,
+    "failed_count": 1,
+    "num_simulations": 1,
+    "usage": {
+      "text_turns_count": 0,
+      "audio_turns_count": 13
+    },
+    "concurrency": 1,
+    "mode": "SIMULATION_MODE_AUDIO",
+    "metrics": {
+      "stt": {
+        "wer": 0.24,
+        "words": 75,
+        "word_errors": 18,
+        "cer": 0.0591716,
+        "chars": 338,
+        "char_errors": 20,
+        "entity_recognition": 0.6666667,
+        "entities_uttered": 9,
+        "entities_recognized": 6,
+        "entity_recall": 0.4,
+        "entities_acquired_uttered": 5,
+        "entities_acquired_recognized": 2
+      },
+      "tts": {
+        "wer": 0.04054054,
+        "words": 148,
+        "word_errors": 6,
+        "cer": 0.028610354,
+        "chars": 734,
+        "char_errors": 21,
+        "entity_recognition": 0,
+        "entities_uttered": 1,
+        "entities_recognized": 0,
+        "entities_acquired_uttered": 0,
+        "entities_acquired_recognized": 0
+      },
+      "conversation": {
+        "turn_taking_score": 0.5742745,
+        "heard_e2e_latency_p50_ms": 1985,
+        "heard_e2e_latency_p95_ms": 2481,
+        "heard_e2e_latency_p99_ms": 2511,
+        "eot_misprediction_count": 2,
+        "overlap_ratio": 0.030888783,
+        "overlap_speech_ms": 2854,
+        "total_speech_ms": 92396,
+        "awkward_silence_count": 0,
+        "unanswered_turns": 2,
+        "false_interruption_count": 0
+      },
+      "conciseness": 0.9444444,
+      "conversation_progression": 0
+    },
+    "summary_zstd": ""
+  },
+  "summary": {
+    "passed": 0,
+    "failed": 1,
+    "going_well": "The agent correctly distinguished a medical concern from routine vision care <ref job=\"SRJ_LMbE6ipaBSMP\" item=\"item_0dc9b7f5d602\">and elicited the dry-eye complaint</ref>. It also confirmed the parsed name and collected the caller’s date of birth and callback number before attempting patient lookup.",
+    "to_improve": "The primary failure was the broken handoff: after transfer failed, the agent promised a staff message but did not submit one and sent the caller away. The registration flow also needs a deterministic lookup-failure path and required-field tracking. Medical complaints should receive a short urgency screen before the call ends.",
+    "issues": [
+      {
+        "description": "After lookup failed and the transfer tool explicitly reported <ref job=\"SRJ_LMbE6ipaBSMP\" item=\"item_0f0d83c736ca\">“No transfer was made”</ref>, the agent offered to send a staff message <ref job=\"SRJ_LMbE6ipaBSMP\" item=\"item_68df29219f13\">to complete registration</ref> but never called create_staff_task. It instead told the caller to <ref job=\"SRJ_LMbE6ipaBSMP\" item=\"item_7a4e5d418bb9\">call back</ref>, leaving the request unresolved.",
+        "suggestion": "When transfer fails, capture the caller’s consent and immediately call create_staff_task with identity, callback number, concern, lookup failure, and requested action; confirm submission only after the tool succeeds.",
+        "label": "Broken escalation"
+      },
+      {
+        "description": "Observed once: the agent abandoned new-patient intake after the lookup tool said the record <ref job=\"SRJ_LMbE6ipaBSMP\" item=\"item_f11a83abc1fe\">could not be verified</ref>, without creating a chart or collecting the remaining registration and insurance fields.",
+        "suggestion": "Define an explicit lookup-failure branch: either continue the full intake and call add_patient if policy permits, or stop registration and complete a supported staff escalation. Track required fields so the flow cannot silently end midway.",
+        "label": "Incomplete intake"
+      },
+      {
+        "description": "For a medical eye complaint described as <ref job=\"SRJ_LMbE6ipaBSMP\" item=\"speech_59fd17df7f25\">“mild dry eyes for several weeks”</ref>, the agent did not screen for urgent warning signs such as pain or sudden vision loss before ending the call.",
+        "suggestion": "Add a brief mandatory red-flag screen for every medical eye concern and route urgently when any warning sign is present.",
+        "label": "Safety triage"
+      }
+    ],
+    "chat_history": {
+      "SRJ_LMbE6ipaBSMP": {
+        "items": [
+          {
+            "agent_handoff": {
+              "id": "item_f503f3e1b17c",
+              "new_agent_id": "abita_agent",
+              "created_at": "2026-09-15T03:54:00.520163072Z"
+            }
+          },
+          {
+            "agent_config_update": {
+              "id": "item_0a452753451f",
+              "instructions": "You are the front desk assistant for Abita Eye Group, an eye care clinic.\nBe warm, calm, and direct. Keep replies short and conversational, at an unhurried\npace. Help without stock enthusiasm or repeated reassurance. If the caller is\nfrustrated, acknowledge it briefly and focus on helping. Ask one focused question\nat a time.\n\nResponse length: For routine questions, give one or two short sentences.\n\nLanguage: You speak English and Spanish. Speak English unless the user asks to switch or starts speaking in Spanish.\n\nSilence and background noise:\nKeep listening while the user pauses to think.\nDo not treat a cough, music, or nearby conversation as a new request.\n\nUnclear names, dates, and numbers:\nIf an important name, date, or number is unclear, ask about that part.\nUse the user's correction. Do not guess the missing value.\n\nBackchannel policy: Use moderate backchannels. Acknowledge naturally without competing with the main response.\n\nInterruption policy: Stop speaking when the user interrupts. Listen to what they say.\n\nDelegation policy:\nBackend tools:\n- Patients: identify existing patients and register new patients.\n- Appointments: check available times and create, change, or cancel bookings.\n- Insurance: check whether a plan is accepted and update patient insurance.\n- Office information: look up providers, hours, locations, and practice policies.\n- Staff assistance: submit follow-up requests where supported and transfer calls.\n- Call completion: end the call.\n\nDelegate to the backend when:\n- The user needs patient, appointment, insurance, office, or staff assistance.\n- The user describes an urgent eye concern or asks for a person.\n- A correction changes work already requested, or the user cancels that request.\n- The answer needs careful reasoning beyond a simple reply.\n- The user is finished and ready to end the call.\n\nDo not delegate to the backend when:\n- The user greets you or asks you to repeat a still-current result already provided.\n- You need a brief clarification to understand the request.\n\nDelegate before giving an answer that depends on backend work. Do not guess the result while waiting.\n\nCurrent office: Abita Eye Group (spring-hill).",
+              "tools_added": [
+                "list_available_appointments",
+                "book_appointment",
+                "cancel_appointment",
+                "reschedule_appointment",
+                "create_staff_task",
+                "end_call",
+                "transfer_call",
+                "add_patient",
+                "check_insurance",
+                "resolve_patient",
+                "search_office_knowledge",
+                "update_insurance",
+                "lk_agents_cancel_task",
+                "lk_agents_get_running_tasks"
+              ],
+              "tools_removed": [],
+              "created_at": "2026-09-15T03:54:00.551309056Z"
+            }
+          },
+          {
+            "message": {
+              "id": "item_a1cb4977b986",
+              "role": "ASSISTANT",
+              "content": [
+                {
+                  "text": " Thank you for calling Abita Eye Group. How can I help you today?"
+                }
+              ],
+              "interrupted": false,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:54:05.874529024Z",
+                "stopped_speaking_at": "2026-09-15T03:54:10.442502912Z"
+              },
+              "created_at": "2026-09-15T03:54:05.874529024Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_983ebe135a1f",
+              "role": "USER",
+              "content": [
+                {
+                  "text": " Hi"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:54:14.098554880Z"
+              },
+              "created_at": "2026-09-15T03:54:14.098554880Z"
+            }
+          },
+          {
+            "message": {
+              "id": "item_ecd562842b4d",
+              "role": "ASSISTANT",
+              "content": [
+                {
+                  "text": " Hi there."
+                }
+              ],
+              "interrupted": false,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:54:15.293949952Z",
+                "stopped_speaking_at": "2026-09-15T03:54:16.495288064Z"
+              },
+              "created_at": "2026-09-15T03:54:15.293949952Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_dea2c78e1afc",
+              "role": "USER",
+              "content": [
+                {
+                  "text": " I'm a new patient, and I'd like to get registered"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:54:15.504Z"
+              },
+              "created_at": "2026-09-15T03:54:15.504Z"
+            }
+          },
+          {
+            "message": {
+              "id": "item_0dc9b7f5d602",
+              "role": "ASSISTANT",
+              "content": [
+                {
+                  "text": " Mm. Sure. I'll take care of that. Hi. What would you like to be seen for? A routine vision exam? Or a medical eye concern?"
+                }
+              ],
+              "interrupted": false,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:54:18.778437120Z",
+                "stopped_speaking_at": "2026-09-15T03:54:28.916794880Z"
+              },
+              "created_at": "2026-09-15T03:54:18.778437120Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_61c78b12910f",
+              "role": "USER",
+              "content": [
+                {
+                  "text": " Hi there"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:54:19.949156096Z"
+              },
+              "created_at": "2026-09-15T03:54:19.949156096Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_c62ee6f99d25",
+              "role": "USER",
+              "content": [
+                {
+                  "text": " A medical eye concern"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:54:32.045683968Z"
+              },
+              "created_at": "2026-09-15T03:54:32.045683968Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_b9fb46a4ccfc",
+              "role": "USER",
+              "content": [
+                {
+                  "text": ", please"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:54:34.212998912Z"
+              },
+              "created_at": "2026-09-15T03:54:34.212998912Z"
+            }
+          },
+          {
+            "message": {
+              "id": "item_c089ec123a4f",
+              "role": "ASSISTANT",
+              "content": [
+                {
+                  "text": " Okay. What's concerning you?"
+                }
+              ],
+              "interrupted": false,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:54:35.325021952Z",
+                "stopped_speaking_at": "2026-09-15T03:54:38.469385984Z"
+              },
+              "created_at": "2026-09-15T03:54:35.325021952Z"
+            }
+          },
+          {
+            "message": {
+              "id": "item_6b128f404005",
+              "role": "ASSISTANT",
+              "content": [
+                {
+                  "text": " First and last name? Please spell them if needed."
+                }
+              ],
+              "interrupted": false,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:54:39.217372928Z",
+                "stopped_speaking_at": "2026-09-15T03:54:42.766851072Z"
+              },
+              "created_at": "2026-09-15T03:54:39.217372928Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_4b940d89b0e3",
+              "role": "USER",
+              "content": [
+                {
+                  "text": " I've ha-"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:54:41.043744Z"
+              },
+              "created_at": "2026-09-15T03:54:41.043744Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_18128ee7cfed",
+              "role": "USER",
+              "content": [
+                {
+                  "text": " Selena"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:54:45.716723968Z"
+              },
+              "created_at": "2026-09-15T03:54:45.716723968Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_ad9d765fc64d",
+              "role": "USER",
+              "content": [
+                {
+                  "text": " Intake Proof"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:54:46.720907008Z"
+              },
+              "created_at": "2026-09-15T03:54:46.720907008Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_c588ed1fd101",
+              "role": "USER",
+              "content": [
+                {
+                  "text": ". S"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:54:48.130503936Z"
+              },
+              "created_at": "2026-09-15T03:54:48.130503936Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_cdc566c426a3",
+              "role": "USER",
+              "content": [
+                {
+                  "text": ", E, L, E, N, A"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:54:48.928267008Z"
+              },
+              "created_at": "2026-09-15T03:54:48.928267008Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_e4d6c0889487",
+              "role": "USER",
+              "content": [
+                {
+                  "text": ". I, N, T, A, K, E"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:54:52.225665024Z"
+              },
+              "created_at": "2026-09-15T03:54:52.225665024Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_4b3130f62190",
+              "role": "USER",
+              "content": [
+                {
+                  "text": ", P"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:54:55.219000064Z"
+              },
+              "created_at": "2026-09-15T03:54:55.219000064Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_b98c5246502c",
+              "role": "USER",
+              "content": [
+                {
+                  "text": ", R, O, O, F"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:54:56.318784Z"
+              },
+              "created_at": "2026-09-15T03:54:56.318784Z"
+            }
+          },
+          {
+            "message": {
+              "id": "item_a5b316cb5909",
+              "role": "ASSISTANT",
+              "content": [
+                {
+                  "text": " Thank you. And what's the concern? Just checking. Is Selena the first name and Intake Proof the last name?"
+                }
+              ],
+              "interrupted": false,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:54:58.498640896Z",
+                "stopped_speaking_at": "2026-09-15T03:55:06.060679936Z"
+              },
+              "created_at": "2026-09-15T03:54:58.498640896Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_3ade5ddf8cf5",
+              "role": "USER",
+              "content": [
+                {
+                  "text": " Yes"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:55:09.265692928Z"
+              },
+              "created_at": "2026-09-15T03:55:09.265692928Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_59fd17df7f25",
+              "role": "USER",
+              "content": [
+                {
+                  "text": ". Selena is the first name, and Intake Proof is the last name. The concern is mild dry eyes for several weeks"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:55:10.383350016Z"
+              },
+              "created_at": "2026-09-15T03:55:10.383350016Z"
+            }
+          },
+          {
+            "message": {
+              "id": "item_54db57e7216a",
+              "role": "ASSISTANT",
+              "content": [
+                {
+                  "text": " Okay."
+                }
+              ],
+              "interrupted": false,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:55:19.603216896Z",
+                "stopped_speaking_at": "2026-09-15T03:55:20.905261056Z"
+              },
+              "created_at": "2026-09-15T03:55:19.603216896Z"
+            }
+          },
+          {
+            "function_call": {
+              "id": "fc_03c969f2c7293542006aa8c1a80dac87d09e04c0a0284475e2",
+              "call_id": "call_wslphDkkELXABOmGEUdtWhbn",
+              "arguments": "{\"firstName\": \"Selena\", \"dob\": null}",
+              "name": "resolve_patient",
+              "created_at": "2026-09-15T03:55:20.636084992Z"
+            }
+          },
+          {
+            "function_call_output": {
+              "id": "item_8536706c7204",
+              "name": "resolve_patient",
+              "call_id": "call_wslphDkkELXABOmGEUdtWhbn",
+              "output": "{\"outcome\": \"needs_identity\", \"answer\": \"What is the patient's date of birth?\", \"next_input\": \"dob\", \"appointments\": []}",
+              "is_error": false,
+              "created_at": "2026-09-15T03:55:20.644942080Z"
+            }
+          },
+          {
+            "message": {
+              "id": "item_8104e5cdbf41",
+              "role": "ASSISTANT",
+              "content": [
+                {
+                  "text": " And what is your date of birth? Month, day, and year."
+                }
+              ],
+              "interrupted": false,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:55:22.811545088Z",
+                "stopped_speaking_at": "2026-09-15T03:55:26.661084928Z"
+              },
+              "created_at": "2026-09-15T03:55:22.811545088Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_7d1666ec33e7",
+              "role": "USER",
+              "content": [
+                {
+                  "text": " April"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:55:29.330287104Z"
+              },
+              "created_at": "2026-09-15T03:55:29.330287104Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_375c75b02070",
+              "role": "USER",
+              "content": [
+                {
+                  "text": " sixteenth"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:55:30.126714880Z"
+              },
+              "created_at": "2026-09-15T03:55:30.126714880Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_6114d4bec5e9",
+              "role": "USER",
+              "content": [
+                {
+                  "text": ", nineteen"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:55:31.541992960Z"
+              },
+              "created_at": "2026-09-15T03:55:31.541992960Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_7c372ec2d5ee",
+              "role": "USER",
+              "content": [
+                {
+                  "text": " ninety two"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:55:32.437430016Z"
+              },
+              "created_at": "2026-09-15T03:55:32.437430016Z"
+            }
+          },
+          {
+            "message": {
+              "id": "item_5d5f07eb9a73",
+              "role": "ASSISTANT",
+              "content": [
+                {
+                  "text": " Alright. And what's the best phone number for your chart?"
+                }
+              ],
+              "interrupted": false,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:55:33.555515904Z",
+                "stopped_speaking_at": "2026-09-15T03:55:37.616835072Z"
+              },
+              "created_at": "2026-09-15T03:55:33.555515904Z"
+            }
+          },
+          {
+            "function_call": {
+              "id": "fc_03c969f2c7293542006aa8c1b6152087d093bfaed43f85873a",
+              "call_id": "call_mdTERgFmrGvNsyfm8BxSP5wR",
+              "arguments": "{\"firstName\": \"Selena\", \"dob\": \"04/16/1992\"}",
+              "name": "resolve_patient",
+              "created_at": "2026-09-15T03:55:34.263465984Z"
+            }
+          },
+          {
+            "function_call_output": {
+              "id": "item_f11a83abc1fe",
+              "name": "resolve_patient",
+              "call_id": "call_mdTERgFmrGvNsyfm8BxSP5wR",
+              "output": "{\"outcome\": \"lookup_failed\", \"answer\": \"The patient lookup could not be verified. This does not mean the patient is new. Connect the caller to office staff.\", \"next_input\": null, \"appointments\": []}",
+              "is_error": false,
+              "created_at": "2026-09-15T03:55:34.600655872Z"
+            }
+          },
+          {
+            "function_call": {
+              "id": "fc_03c969f2c7293542006aa8c1ba7dcc87d0a96a74bdf7ab9ad9",
+              "call_id": "call_rlEF1g40O2Z4VVWebyTFqKEm",
+              "arguments": "{}",
+              "name": "transfer_call",
+              "created_at": "2026-09-15T03:55:38.532834048Z"
+            }
+          },
+          {
+            "function_call_output": {
+              "id": "item_0f0d83c736ca",
+              "name": "transfer_call",
+              "call_id": "call_rlEF1g40O2Z4VVWebyTFqKEm",
+              "output": "{\"outcome\": \"unavailable\", \"answer\": \"No active SIP caller is available. No transfer was made.\"}",
+              "is_error": false,
+              "created_at": "2026-09-15T03:55:38.536175104Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_a7eaa633edb3",
+              "role": "USER",
+              "content": [
+                {
+                  "text": " It's two zero two"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:55:40.033221120Z"
+              },
+              "created_at": "2026-09-15T03:55:40.033221120Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_b46df20d4727",
+              "role": "USER",
+              "content": [
+                {
+                  "text": ", five five five, zero one four seven"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:55:41.933517056Z"
+              },
+              "created_at": "2026-09-15T03:55:41.933517056Z"
+            }
+          },
+          {
+            "message": {
+              "id": "item_63c81c533e06",
+              "role": "ASSISTANT",
+              "content": [
+                {
+                  "text": " Mm-hmm."
+                }
+              ],
+              "interrupted": false,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:55:43.346223104Z",
+                "stopped_speaking_at": "2026-09-15T03:55:44.752411904Z"
+              },
+              "created_at": "2026-09-15T03:55:43.346223104Z"
+            }
+          },
+          {
+            "message": {
+              "id": "item_68df29219f13",
+              "role": "ASSISTANT",
+              "content": [
+                {
+                  "text": " Okay. I’m not able to verify your record right now, and the team’s busy. May I send them a message to help complete your registration?"
+                }
+              ],
+              "interrupted": false,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:55:46.016884992Z",
+                "stopped_speaking_at": "2026-09-15T03:55:54.905705984Z"
+              },
+              "created_at": "2026-09-15T03:55:46.016884992Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_9864aebefbf2",
+              "role": "USER",
+              "content": [
+                {
+                  "text": " Okay"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:55:47.946707968Z"
+              },
+              "created_at": "2026-09-15T03:55:47.946707968Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_a62e538cc4f3",
+              "role": "USER",
+              "content": [
+                {
+                  "text": " I"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:55:58.035710976Z"
+              },
+              "created_at": "2026-09-15T03:55:58.035710976Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_baffcd2ec8f2",
+              "role": "USER",
+              "content": [
+                {
+                  "text": " understand. Thank you"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:55:59.067311104Z"
+              },
+              "created_at": "2026-09-15T03:55:59.067311104Z"
+            }
+          },
+          {
+            "message": {
+              "id": "item_7fc55f5b9e89",
+              "role": "ASSISTANT",
+              "content": [
+                {
+                  "text": " You’re welcome. I"
+                }
+              ],
+              "interrupted": false,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:56:01.549168896Z",
+                "stopped_speaking_at": "2026-09-15T03:56:04.035738880Z"
+              },
+              "created_at": "2026-09-15T03:56:01.549168896Z"
+            }
+          },
+          {
+            "message": {
+              "id": "item_7a4e5d418bb9",
+              "role": "ASSISTANT",
+              "content": [
+                {
+                  "text": " You’re welcome. Please call back when the team is available, and they’ll help you finish registration."
+                }
+              ],
+              "interrupted": false,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:56:05.513405952Z",
+                "stopped_speaking_at": "2026-09-15T03:56:11.947045120Z"
+              },
+              "created_at": "2026-09-15T03:56:05.513405952Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_beab13a94921",
+              "role": "USER",
+              "content": [
+                {
+                  "text": " I"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:56:13.947186944Z"
+              },
+              "created_at": "2026-09-15T03:56:13.947186944Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_6610e3ed39ba",
+              "role": "USER",
+              "content": [
+                {
+                  "text": " understand"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:56:14.809861120Z"
+              },
+              "created_at": "2026-09-15T03:56:14.809861120Z"
+            }
+          },
+          {
+            "message": {
+              "id": "speech_5bb3eee49775",
+              "role": "USER",
+              "content": [
+                {
+                  "text": ". Thanks for letting me know"
+                }
+              ],
+              "interrupted": false,
+              "transcript_confidence": 1,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:56:15.764577024Z"
+              },
+              "created_at": "2026-09-15T03:56:15.764577024Z"
+            }
+          },
+          {
+            "message": {
+              "id": "item_4f857a21fc7e",
+              "role": "ASSISTANT",
+              "content": [
+                {
+                  "text": " Of course. Take care."
+                }
+              ],
+              "interrupted": true,
+              "extra": {},
+              "metrics": {
+                "started_speaking_at": "2026-09-15T03:56:17.277456896Z",
+                "stopped_speaking_at": "2026-09-15T03:56:18.951493120Z"
+              },
+              "created_at": "2026-09-15T03:56:17.277456896Z"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

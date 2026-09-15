@@ -61,7 +61,6 @@ class InsuranceStream(llm.LLMStream):
 class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
     async def test_registered_tools_create_update_duplicate_and_correction(self):
         bodies = [
-            search(),
             created(),
             receipt("new-chart", insuranceCarrier="Aetna"),
             updated(patientId="new-chart", newInsurance="VSP"),
@@ -86,12 +85,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                 with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
                     await session.start(agent=agent)
                 cases = [
-                    ("add_patient", registration().model_dump(), "needs_resolution"),
-                    (
-                        "resolve_patient",
-                        {"firstName": "Jane", "dob": "01/02/1980"},
-                        "not_found",
-                    ),
+                    ("add_patient", registration().model_dump(), "needs_insurance"),
                     (
                         "check_insurance",
                         {"plan": "Aetna", "coverageType": "medical"},
@@ -144,7 +138,6 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 [r[0] for r in requests],
                 [
-                    "/api/patient/resolve",
                     "/api/add-patient",
                     "/api/patient/resolve",
                     "/api/patient/update-insurance",

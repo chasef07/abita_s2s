@@ -38,7 +38,7 @@ def accepted_insurance(
 ) -> AcceptedInsurance | None:
     """Return only acceptance for the current office, identity and requested visit type.
 
-    New registration requires the resolver's exact complete-search absence object.
+    New registration uses caller-confirmed identity without a chart lookup.
     A subsequent resolution, patient switch, plan correction or visit-type check
     invalidates it. Consumers must use this function, not the stored field.
     """
@@ -54,7 +54,7 @@ def accepted_insurance(
         return checked if checked.patient_id == patient.active.patientId else None
     return (
         checked
-        if checked.absence is not None and checked.absence is patient.absence
+        if checked.patient_id is None and checked.absence is patient.absence
         else None
     )
 

@@ -53,7 +53,9 @@ class AbitaAgent(Agent):
     async def resolve_patient(
         self, context: RunContext[CallState], firstName: str | None, dob: str | None
     ) -> str:
-        """Call immediately with the supplied patient's firstName and dob:null if unknown.
+        """Resolve existing patients only; do not call for callers who say they are new.
+
+        For existing patients, call with firstName and dob:null if unknown.
 
         Include a supplied DOB without separate confirmation and follow the returned next step.
         Same-name patient switches require DOB. If unresolved, clarify first-name spelling
@@ -99,11 +101,14 @@ class AbitaAgent(Agent):
         insuranceMemberId: str, ssnLast4: str | None,
         newPatientConfirmed: Literal[True] | None, readBack: Literal[True] | None,
     ) -> str:
-        """Create a chart after complete resolution, accepted coverage and confirmation.
+        """Create a new patient chart from caller-confirmed intake; no existing-chart lookup.
 
+        Requires accepted insurance for the visit type and complete intake.
         Confirm first registration, callback number, and the full identity, contact,
         address and insurance read-back before setting confirmation flags true.
         Use the patient's details, not the caller's. DOB uses MM/DD/YYYY.
+        subscriberName is the name on the insurance card; reuse the patient's
+        collected name when they confirm it is theirs.
         Pass phone:null only when the inbound callback number was confirmed.
         Request SSN last four once for insured routine vision; use null if unavailable
         or declined, and skip for self-pay. Never repeat SSN in read-back.

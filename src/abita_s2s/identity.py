@@ -152,6 +152,9 @@ class PatientResolver:
         ):
             return await self._await_resolution(self._task, self._token)
         self._pending = (first_name, dob)
+        checked = self.state.insurance.accepted
+        if checked is not None and checked.patient_id is None:
+            self.state.insurance.accepted = None
         active = self.state.patient.active
         if active and (
             (
@@ -342,18 +345,12 @@ class PatientResolver:
         self.state.patient.revision += 1
         return True
 
-    def activate_created(self, absence: PatientAbsence, receipt: Receipt) -> bool:
-        """Promote a validated creation receipt only for its still-current absence."""
+    def activate_created(self, patient_revision: int, receipt: Receipt) -> bool:
+        """Promote a validated creation receipt only in its original patient context."""
         if (
             self._closed
             or self.state.patient.active is not None
-            or self.state.patient.absence is not absence
-            or absence.office_key != self.state.call.called_office_key
-            or not dob_matches(absence.dob, receipt.dob)
-            or not any(
-                exact_name(absence.first_name) == exact_name(n)
-                for n in first_names(receipt.name)
-            )
+            or self.state.patient.revision != patient_revision
         ):
             return False
         self._token = None

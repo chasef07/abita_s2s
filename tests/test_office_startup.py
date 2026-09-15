@@ -1,5 +1,10 @@
 import asyncio
 import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
@@ -18,6 +23,19 @@ from abita_s2s.runtime.session_startup import finish_voice_call, start_voice_cal
 
 
 class OfficeRoutingTests(unittest.TestCase):
+    def test_imported_entrypoint_loads_local_environment_without_overriding_exports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, ".env.local").write_text("OPENAI_API_KEY=offline-file-key\n")
+            env = {k: v for k, v in os.environ.items() if k != "OPENAI_API_KEY"}
+            for exported, expected in ((None, "offline-file-key"), ("offline-exported-key", "offline-exported-key")):
+                if exported:
+                    env["OPENAI_API_KEY"] = exported
+                result = subprocess.run(
+                    [sys.executable, "-c", "import abita_s2s.main; import os; assert os.environ['OPENAI_API_KEY'] == " + repr(expected)],
+                    cwd=directory, env=env, capture_output=True, text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_aliases_select_same_office(self):
         for phone in (*SPRING_HILL.trunk_numbers, "(727) 591-9997", "1-813-548-4830"):
             self.assertIs(get_office_profile_by_phone(phone), SPRING_HILL)
@@ -51,7 +69,7 @@ class OfficeRoutingTests(unittest.TestCase):
 
 
 class StartupTests(unittest.IsolatedAsyncioTestCase):
-    async def run_startup(self, fake, trunk="+18135484830", env=None, config=None, model_error=None):
+    async def run_startup(self, fake, trunk="+18135484830", env=None, config=None, model_error=None, simulation=None):
         participant = SimpleNamespace(identity="caller", attributes={"sip.trunkPhoneNumber": trunk, "sip.phoneNumber": "+15555550101", "sip.callID": "sip-test"})
         ctx = SimpleNamespace(
             is_fake_job=lambda: fake,
@@ -71,14 +89,53 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             patch("abita_s2s.runtime.session_startup.api.LiveKitAPI", return_value=SimpleNamespace(sip=Mock(), aclose=AsyncMock())) as sip_api,
             patch("abita_s2s.runtime.session_startup.AgentSession", session_generic),
         ):
-            await start_voice_call(ctx)
-            if fake:
+            await start_voice_call(ctx, simulation=simulation)
+            if fake or simulation is not None:
                 sip_api.assert_not_called()
             else:
                 sip_api.assert_called_once_with(failover=False)
         args = session.start.call_args.kwargs
         args["userdata"] = session_type.call_args.kwargs["userdata"]
         return ctx, args
+
+    async def test_simulation_uses_sandbox_and_non_sip_participant(self):
+        sim = SimpleNamespace(
+            userdata=lambda: {"office": "spring-hill"},
+            simulation_job_id="simulation-intake",
+        )
+        ctx, args = await self.run_startup(
+            False, trunk="", simulation=sim,
+            env={
+                "SANDBOX_AMD_API_URL": "https://abita-middleware-sandbox-test.run.app",
+                "SANDBOX_AMD_API_TOKEN": "sandbox-token",
+            },
+            config=Config(
+                "offline", middleware_url="https://production.test",
+                middleware_token="production-token", product_secret="product-token",
+                interaction_url="https://product.test/v1/ai/interactions",
+                staff_tasks_url="https://product.test/v1/tasks",
+            ),
+        )
+        ctx.wait_for_participant.assert_awaited_once_with()
+        self.assertEqual(args["room_options"].participant_identity, "caller")
+        state = args["userdata"]
+        self.assertEqual(state.call.call_id, "simulation-intake")
+        self.assertIsNone(state.call.sip_call_id)
+        self.assertIsNone(state.call.caller_phone)
+        self.assertIsNone(state.reporter)
+        config = args["agent"]._insurance._middleware._config
+        self.assertEqual(config.middleware_token, "sandbox-token")
+        self.assertEqual(config.middleware_url, "https://abita-middleware-sandbox-test.run.app")
+        self.assertIsNone(config.staff_tasks_url)
+        self.assertIsNone(config.product_secret)
+
+    async def test_simulation_rejects_missing_or_non_sandbox_backend(self):
+        sim = SimpleNamespace(userdata=lambda: {"office": "spring-hill"})
+        for url in ("", "https://production.test", "https://abita-middleware-sandbox-test.run.app.evil.test"):
+            with self.subTest(url=url), self.assertRaisesRegex(ValueError, "SANDBOX_AMD"):
+                await self.run_startup(False, simulation=sim, env={
+                    "SANDBOX_AMD_API_URL": url, "SANDBOX_AMD_API_TOKEN": "test",
+                })
 
     async def test_sip_ignores_console_override_and_binds_caller(self):
         ctx, args = await self.run_startup(False, env={"ABITA_CONSOLE_OFFICE": "invalid"})

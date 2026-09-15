@@ -141,17 +141,6 @@ class InsuranceRegistration:
                 "already_active",
                 "A verified patient is already active. Resolve the intended patient before creating a chart.",
             )
-        absence = self.state.patient.absence
-        if (
-            absence is None
-            or exact_name(absence.first_name) != exact_name(r.firstName)
-            or not dob_matches(absence.dob, r.dob)
-        ):
-            self.state.insurance.accepted = None
-            return reply(
-                "needs_resolution",
-                "Resolve this patient's first name and DOB before registration. A failed or partial lookup does not authorize a new chart.",
-            )
         if not r.newPatientConfirmed:
             return reply(
                 "needs_confirmation",
@@ -255,7 +244,7 @@ class InsuranceRegistration:
                     self.state.insurance.write_uncertain = True
                 answer = staff(result.status)
             else:
-                answer = self._created(result, r, absence, checked)
+                answer = self._created(result, r, checked)
             if self.state.reporter:
                 evidence = {"outcome": answer["outcome"]}
                 if answer["outcome"] in ("created", "partial"):
@@ -269,7 +258,7 @@ class InsuranceRegistration:
         return await self._run_write(create)
 
     def _created(
-        self, result: CreationReceipt, r: Registration, absence, checked
+        self, result: CreationReceipt, r: Registration, checked
     ) -> dict:
         # Validate both complete names without inventing backend identifier formats.
         expected = {
@@ -295,7 +284,10 @@ class InsuranceRegistration:
             appointments=[],
         )
         self.state.insurance.registrations[result.patientId] = result.status
-        activated = self._resolver.activate_created(absence, patient)
+        activated = (
+            accepted_insurance(self.state) is checked
+            and self._resolver.activate_created(checked.patient_revision, patient)
+        )
         if activated and self.state.insurance.accepted is checked:
             self.state.insurance.accepted = replace(
                 checked,

@@ -110,26 +110,22 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("ssn", payload)
         self.assertNotIn("new-chart", json.dumps(result))
 
-    async def test_lookup_failure_partial_and_absent_phone_do_not_authorize_creation(
-        self,
-    ):
-        for body in [
-            {"status": "error"},
-            search(complete=False),
-            {"status": "not_found"},
-        ]:
-            state, resolver, owner = self.owner(
-                [body, body] if body.get("status") == "error" else [body]
-            )
-            await resolver.resolve("Jane", "01/02/1980")
-            owner.check("Aetna", "medical")
-            self.assertEqual(
-                (await owner.add(registration()))["outcome"], "needs_resolution"
-            )
-            self.assertIsNone(state.patient.active)
-            self.assertEqual(
-                len(self.requests), 2 if body.get("status") == "error" else 1
-            )
+    async def test_new_patient_creation_without_any_lookup(self):
+        state, _, owner = self.owner([created()])
+        self.assertIsNone(state.patient.absence)
+        self.assertEqual(owner.check("Aetna", "medical")["outcome"], "accepted")
+        self.assertEqual(
+            (await owner.add(registration(newPatientConfirmed=None)))["outcome"],
+            "needs_confirmation",
+        )
+        self.assertEqual(self.requests, [])
+        result = await owner.add(registration())
+        self.assertEqual(result["outcome"], "created")
+        self.assertEqual(state.patient.active.patientId, "new-chart")
+        self.assertTrue(insurance_ready(state, "medical"))
+        self.assertEqual([path for path, _ in self.requests], ["/api/add-patient"])
+        self.assertEqual(await owner.add(registration()), result)
+        self.assertEqual(len(self.requests), 1)
 
     async def test_confirmations_and_callback_and_readback(self):
         state, _, owner = await self.prepared([], plan="VSP", coverage="routine_vision")
@@ -242,7 +238,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         await resolver.resolve("John", None)
         self.assertIsNone(accepted_insurance(state))
         self.assertEqual(
-            (await owner.add(registration()))["outcome"], "needs_resolution"
+            (await owner.add(registration()))["outcome"], "needs_insurance"
         )
         self.assertEqual(len(self.requests), 1)
 

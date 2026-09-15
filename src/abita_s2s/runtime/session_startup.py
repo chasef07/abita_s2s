@@ -3,6 +3,7 @@
 import asyncio
 import os
 import logging
+import re
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -12,7 +13,7 @@ from livekit.agents import AgentSession, JobContext, room_io
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.call_control import CallControl
-from abita_s2s.config import load_config
+from abita_s2s.config import Config, load_config
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.knowledge import OfficeKnowledge
@@ -102,14 +103,38 @@ async def start_session(session, ctx, room_options, agent):
         await asyncio.gather(task, return_exceptions=True)
 
 
-async def start_voice_call(ctx: JobContext) -> None:
+async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
     config = load_config()
     session_started_at = datetime.now(UTC)
     room_options = room_io.RoomOptions(
         close_on_disconnect=True,
         delete_room_on_close=True,
     )
-    if ctx.is_fake_job():
+    if simulation is not None:
+        sandbox_url = os.environ.get("SANDBOX_AMD_API_URL", "").strip()
+        sandbox_token = os.environ.get("SANDBOX_AMD_API_TOKEN", "").strip()
+        if not re.fullmatch(r"https://abita-middleware-sandbox-[a-z0-9.-]+\.run\.app/?", sandbox_url) or not sandbox_token:
+            raise ValueError("Simulations require SANDBOX_AMD_API_URL and SANDBOX_AMD_API_TOKEN")
+        config = Config(
+            openai_api_key=config.openai_api_key,
+            voice=config.voice,
+            middleware_url=sandbox_url,
+            middleware_token=sandbox_token,
+        )
+        data = simulation.userdata()
+        office = get_office_profile(data["office"])
+        await ctx.connect()
+        participant = await ctx.wait_for_participant()
+        room_options.participant_identity = participant.identity
+        call = CallContext(
+            call_id=simulation.simulation_job_id,
+            session_started_at=session_started_at,
+            customer_key="abita",
+            called_office_key=office.key,
+            caller_phone=data.get("caller_phone"),
+            room_name=ctx.room.name,
+        )
+    elif ctx.is_fake_job():
         office_key = os.environ.get("ABITA_CONSOLE_OFFICE", "").strip()
         if not office_key:
             raise ValueError("Console mode requires ABITA_CONSOLE_OFFICE")
@@ -231,7 +256,7 @@ async def start_voice_call(ctx: JobContext) -> None:
         )
         resolver = PatientResolver(state, PatientMiddleware(client, config))
         sip_api = None
-        if not ctx.is_fake_job():
+        if not ctx.is_fake_job() and simulation is None:
             sip_api = api.LiveKitAPI(failover=False)
         control = CallControl(
             state, client, ctx.room, sip_api.sip if sip_api else None, handoff=config.handoff

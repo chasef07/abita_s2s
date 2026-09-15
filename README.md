@@ -211,9 +211,11 @@ cross-call, and replayed reads cannot activate a patient. The HTTP owner permits
 one retry for eligible read failures within a ten-second total deadline and does
 not follow redirects. The LiveKit tool is cancellable; it does not block interruptions.
 
-A definitive complete no-match is stored as private absence evidence for later
-registration work. Failed, partial, ambiguous, or invalid hydrated results never
-establish absence. A new lookup or patient transition invalidates that evidence.
+Callers who say they are new proceed directly through full intake and `add_patient`;
+no existing-chart lookup is required. Registration requires caller confirmation,
+complete details, accepted insurance, and a confirmed read-back. Existing-patient
+work still uses `resolve_patient`.
+
 Verified state retains backend references, on-file insurance, routing, appointments,
 and appointment-load status. Appointment-load failure remains visible and allows
 reloading. The model receives only the verified name, insurance carrier, DOB-on-file
