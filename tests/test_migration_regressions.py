@@ -162,6 +162,27 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(owner.state.patient.active.patientId, "chart-jane")
                 self.assertFalse(insurance_ready(owner.state, "medical"))
 
+    async def test_absent_patients_check_does_not_block_returning_patient(self):
+        state = call_state(None)
+        responses = [
+            search(), search(candidate()),
+            receipt(routing="bach_only", preauthRequired=False), inventory(),
+        ]
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=responses.pop(0))
+        )) as client:
+            resolver = PatientResolver(state, PatientMiddleware(client, CONFIG))
+            owner = Scheduling(state, SchedulingHTTP(client, CONFIG), now=lambda: NOW)
+            self.addAsyncCleanup(resolver.aclose)
+            self.addAsyncCleanup(owner.aclose)
+            self.assertEqual((await resolver.resolve("John", "03/04/1981"))["outcome"], "not_found")
+            insurance = InsuranceRegistration(state, resolver, None)
+            insurance.check("Self Pay", "medical")
+            self.assertIsNone(state.insurance.accepted.patient_id)
+            self.assertEqual((await resolver.resolve("Jane", "01/02/1980"))["outcome"], "verified")
+            self.assertEqual((await owner.availability("medical"))["outcome"], "found")
+            self.assertEqual(responses, [])
+
     async def test_corrected_plan_blocks_cached_slots_but_not_exact_cancellation(self):
         owner, resolver, requests = await self.resolved_owner(
             [

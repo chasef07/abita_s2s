@@ -69,7 +69,7 @@ def insurance_ready(state: "CallState", coverage_type: CoverageType) -> bool:
     if state.insurance.registrations.get(active.patientId) == "partial":
         return False
     checked = state.insurance.accepted
-    if checked is not None and checked.patient_id in (None, active.patientId):
+    if checked is not None and checked.patient_id == active.patientId:
         return accepted_insurance(state, coverage_type) is not None
     return bool(
         active.insuranceCarrier
