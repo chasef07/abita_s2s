@@ -17,7 +17,7 @@ scenarios:
       Your member ID is ABT09152601. Spell it as A-B-T-0-9-1-5-2-6-0-1 if asked.
       Your visit reason is mild dry eyes for several weeks, with no pain,
       sudden vision changes, or other urgent symptoms. You have no referring doctor.
-      If asked for SSN digits, decline. Confirm accurate read-backs and correct
+      Confirm accurate read-backs and correct
       any inaccurate detail. Explicitly approve registration when asked.
       You only want to complete intake today; you will call back to pick an
       appointment. Once registration succeeds, thank the receptionist and finish.
@@ -35,6 +35,7 @@ scenarios:
       confirms it, and explains any partial result accurately. Does not book an
       appointment or submit a staff request. Successful intake includes successful
       chart creation with insurance attached.
+      Does not request SSN digits or a separate first-registration confirmation.
       Collects each detail once without repeated name-spelling requests or
       section-by-section confirmations. Gives one full read-back at the end,
       resolving any uncertainty there. Asks whether the patient's name or someone

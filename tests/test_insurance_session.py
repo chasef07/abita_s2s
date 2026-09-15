@@ -208,6 +208,8 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
         schema = build_strict_openai_schema(agent.add_patient)["function"]["parameters"]
         self.assertEqual(set(schema["properties"]), set(registration().model_dump()))
         self.assertNotIn("registration", schema["properties"])
+        self.assertNotIn("ssnLast4", schema["properties"])
+        self.assertNotIn("newPatientConfirmed", schema["properties"])
 
     async def test_registered_creation_survives_session_interruption(self):
         entered, finish = asyncio.Event(), asyncio.Event()

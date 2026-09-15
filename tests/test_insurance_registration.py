@@ -32,8 +32,6 @@ def registration(**changes):
             "sex": "female",
             "subscriberName": "Jane Doe",
             "insuranceMemberId": "member-example",
-            "ssnLast4": None,
-            "newPatientConfirmed": True,
             "readBack": True,
         }
         | changes
@@ -114,10 +112,6 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         state, _, owner = self.owner([created()])
         self.assertIsNone(state.patient.absence)
         self.assertEqual(owner.check("Aetna", "medical")["outcome"], "accepted")
-        self.assertEqual(
-            (await owner.add(registration(newPatientConfirmed=None)))["outcome"],
-            "needs_confirmation",
-        )
         self.assertEqual(self.requests, [])
         result = await owner.add(registration())
         self.assertEqual(result["outcome"], "created")
@@ -127,39 +121,34 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await owner.add(registration()), result)
         self.assertEqual(len(self.requests), 1)
 
-    async def test_confirmations_and_callback_and_readback(self):
+    async def test_callback_and_readback(self):
         state, _, owner = await self.prepared([], plan="VSP", coverage="routine_vision")
-        self.assertEqual(
-            (await owner.add(registration(newPatientConfirmed=None)))["outcome"],
-            "needs_confirmation",
-        )
         self.assertEqual(
             (await owner.add(registration(inboundPhoneConfirmed=None)))["outcome"],
             "needs_callback",
         )
-        result = await owner.add(registration(readBack=None, ssnLast4="9876"))
+        result = await owner.add(registration(readBack=None))
         self.assertEqual(result["outcome"], "needs_read_back")
-        self.assertNotIn("9876", result["answer"])
         self.assertIn("member-example", result["answer"])
         self.assertEqual(len(self.requests), 1)
         self.assertIsNone(state.patient.active)
 
-    async def test_self_pay_omits_ssn_and_insured_vision_sends_optional_last_four(self):
-        for plan, member, ssn in [
-            ("Self Pay", "self pay", None),
-            ("VSP", "member-example", "1234"),
+    async def test_self_pay_and_insured_vision_omit_ssn(self):
+        for plan, member in [
+            ("Self Pay", "self pay"),
+            ("VSP", "member-example"),
         ]:
             state, _, owner = await self.prepared(
                 [created()], plan=plan, coverage="routine_vision"
             )
             await owner.add(
                 registration(
-                    ssnLast4="1234", phone="5555550999", inboundPhoneConfirmed=None
+                    phone="5555550999", inboundPhoneConfirmed=None
                 )
             )
             body = self.requests[-1][1]
             self.assertEqual(body["subscriberNum"], member)
-            self.assertEqual(body.get("ssn"), ssn)
+            self.assertNotIn("ssn", body)
             self.assertEqual(body["coverageType"], "routine_vision")
             self.assertEqual(state.call.caller_phone, "+15555550101")
             self.assertEqual(state.patient.active.phone, "5555550999")

@@ -71,8 +71,6 @@ submitting, without guessing. Apply volunteered corrections when they occur.
    `subscriberName`, then collect the member ID.
    Apply the emergency policy immediately if an urgent concern comes up.
 6. Use `check_insurance` for the plan and visit type, and follow its result.
-   For insured routine vision, request SSN last four once; continue if declined
-   or unavailable. Skip for self-pay and never repeat SSN in the read-back.
 7. Once all details are collected, give one full read-back of the identity,
    address, contact, and insurance details. Clarify any uncertain details and
    obtain confirmation. If the caller corrects something, confirm only the

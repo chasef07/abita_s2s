@@ -98,8 +98,7 @@ class AbitaAgent(Agent):
         phone: str | None, inboundPhoneConfirmed: Literal[True] | None,
         email: str | None, street: str, aptSuite: str | None, city: str, state: str,
         zip: str, sex: Literal["male", "female"], subscriberName: str,
-        insuranceMemberId: str, ssnLast4: str | None,
-        newPatientConfirmed: Literal[True] | None, readBack: Literal[True] | None,
+        insuranceMemberId: str, readBack: Literal[True] | None,
     ) -> str:
         """Create a new patient chart and attach insurance from completed intake.
 
@@ -124,8 +123,6 @@ class AbitaAgent(Agent):
             sex: Patient's sex for registration.
             subscriberName: Name on the insurance card; reuse the patient's name if confirmed as theirs.
             insuranceMemberId: Member ID on the insurance card; use "self pay" for self-pay.
-            ssnLast4: Four digits for insured routine vision only; null if unavailable, declined, or self-pay.
-            newPatientConfirmed: True when the caller says this is their first registration; otherwise null.
             readBack: True only after the caller confirms the complete final read-back; otherwise null.
         """
         if self._insurance is None or self._insurance.state is not context.userdata:
@@ -145,8 +142,6 @@ class AbitaAgent(Agent):
             sex=sex,
             subscriberName=subscriberName,
             insuranceMemberId=insuranceMemberId,
-            ssnLast4=ssnLast4,
-            newPatientConfirmed=newPatientConfirmed,
             readBack=readBack,
         )
         return json.dumps(
