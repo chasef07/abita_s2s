@@ -256,7 +256,7 @@ class DeployTests(unittest.TestCase):
             self.client.execute("stage", self.manifest)
             self.client.execute("rollback", self.manifest, "version-exact")
         command = next(c for c in self.calls if c[0] == "deploy")
-        self.assertEqual(command[1:3], ("--deployment", "staging"))
+        self.assertEqual(command[1:5], ("--id", "CA_python", "--deployment", "staging"))
         for key in deploy.KEYS:
             self.assertIn(f"{key}={self.manifest[key]}", command)
         self.assertIn(
@@ -280,6 +280,7 @@ class DeployTests(unittest.TestCase):
             )
         command = next(c for c in self.calls if c[0] == "deploy")
         self.assertNotIn("--deployment", command)
+        self.assertEqual(command[1:3], ("--id", "CA_python"))
         self.assertIn("--no-default-attributes", command)
         for key in deploy.KEYS:
             self.assertIn(f"{key}={self.manifest[key]}", command)

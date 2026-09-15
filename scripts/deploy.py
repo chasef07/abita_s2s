@@ -149,6 +149,8 @@ class LiveKit:
             ]
             self.command(
                 "deploy",
+                "--id",
+                self.agent,
                 *(["--deployment", "staging"] if action == "stage" else []),
                 "--no-default-attributes",
                 *attrs,
