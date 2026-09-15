@@ -103,6 +103,9 @@ class Scheduling:
             self.reschedule_appointment,
         ]
 
+    def close_admission(self) -> None:
+        self._closed = True
+
     async def aclose(self):
         self._closed = True
         for task in self._read_tasks:

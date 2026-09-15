@@ -119,6 +119,9 @@ class PatientResolver:
             lookup = CandidateLookup("found", tuple(matches))
         self._apply_lookup(token, lookup)
 
+    def close_admission(self) -> None:
+        self._closed = True
+
     async def aclose(self) -> None:
         self._closed = True
         self._token = None

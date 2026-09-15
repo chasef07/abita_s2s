@@ -1,0 +1,38 @@
+name: Publish release
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Exact reviewed 40-character main commit with a new pyproject version
+        required: true
+permissions:
+  contents: write
+concurrency:
+  group: abita-s2s-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.12.13'
+          python-version: '3.13.15'
+      - run: git merge-base --is-ancestor "$COMMIT" origin/main
+        env:
+          COMMIT: ${{ inputs.commit }}
+      - run: uv sync --locked
+      - run: uv run --no-sync ruff check . && uv run --no-sync python -m unittest discover -s tests -q
+      - run: uv run --no-sync python scripts/release.py "$COMMIT"
+        env:
+          COMMIT: ${{ inputs.commit }}
+      - run: docker build -t abita-s2s:release .
+      - run: docker run --rm --network none --entrypoint /app/.venv/bin/python abita-s2s:release -m abita_s2s.release
+      - run: uv run --no-sync python scripts/publish_release.py dist
+        env:
+          GH_TOKEN: ${{ github.token }}
