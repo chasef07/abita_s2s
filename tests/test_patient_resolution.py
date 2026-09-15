@@ -5,6 +5,7 @@ import json
 import unittest
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from unittest.mock import Mock, PropertyMock, patch
 
 import httpx
 from livekit.agents.llm.utils import build_strict_openai_schema
@@ -114,6 +115,62 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(private, json.dumps(result))
         self.assertEqual((await r.resolve("Jane", None))["outcome"], "verified")
         self.assertEqual(len(calls), 1)
+
+    async def test_phone_context_waits_for_lookup_and_keeps_identities_private(self):
+        r, calls = self.resolver([
+            {"status": "multiple_matches", "matches": [candidate(), candidate("child", "John")]}
+        ])
+        r.start_phone_lookup()
+        hint = await r.phone_lookup_context()
+        self.assertIn("2 possible patient", hint)
+        self.assertIn("dob:null", hint)
+        for private in ("Jane", "John", "Doe", "chart-jane", "child", "01/02/1980"):
+            self.assertNotIn(private, hint)
+        self.assertIsNone(r.state.patient.active)
+        self.assertEqual(len(calls), 1)
+
+    async def test_phone_context_without_profiles_requests_first_name_and_dob(self):
+        for body in ({"status": "not_found"}, {"status": "error"}):
+            r, _ = self.resolver([body, body])
+            r.start_phone_lookup()
+            hint = await r.phone_lookup_context()
+            self.assertIn("first name and date of birth", hint)
+            self.assertIn("does not mean the patient is new", hint)
+        r, calls = self.resolver([], call_state(None))
+        self.assertIn("first name and date of birth", await r.phone_lookup_context())
+        self.assertEqual(calls, [])
+
+    async def test_phone_context_is_not_injected_after_interactive_resolution(self):
+        r, _ = self.resolver([receipt()])
+        await self.preload(r)
+        await r.resolve("John", None)
+        self.assertIsNone(await r.phone_lookup_context())
+        await r.resolve("Jane", None)
+        self.assertIsNone(await r.phone_lookup_context())
+
+    async def test_agent_starts_with_phone_hint_and_greeting_does_not_change_context(self):
+        r, _ = self.resolver([receipt()])
+        r.start_phone_lookup()
+        agent = AbitaAgent(
+            SPRING_HILL, None, r, phone_lookup_context=await r.phone_lookup_context()
+        )
+        initial_items = list(agent.chat_ctx.items)
+        greeting = asyncio.get_running_loop().create_future()
+        greeting.set_result(None)
+        session = Mock()
+        session.generate_reply.return_value = greeting
+        with (
+            patch.object(AbitaAgent, "session", new_callable=PropertyMock, return_value=session),
+            patch.object(r, "phone_lookup_context") as lookup_context,
+        ):
+            await agent.on_enter()
+            lookup_context.assert_not_called()
+        session.generate_reply.assert_called_once()
+        self.assertEqual(agent.chat_ctx.items, initial_items)
+        hint = agent.chat_ctx.items[-1].text_content
+        self.assertIn("1 possible patient", hint)
+        self.assertNotIn("Jane", hint)
+        self.assertIsNone(r.state.patient.active)
 
     async def test_no_caller_id_requires_dob_then_hydrates(self):
         r, calls = self.resolver([search(candidate()), receipt()], call_state(None))

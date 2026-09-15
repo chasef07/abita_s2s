@@ -13,13 +13,14 @@ import httpx
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.config import Config
+from abita_s2s.middleware import NotFound
 from abita_s2s.offices import (
     OFFICES,
     SPRING_HILL,
     get_office_profile,
     get_office_profile_by_phone,
 )
-from abita_s2s.runtime.session_startup import finish_voice_call, start_voice_call
+from abita_s2s.runtime.session_startup import finish_voice_call, start_session, start_voice_call
 
 
 class OfficeRoutingTests(unittest.TestCase):
@@ -69,6 +70,33 @@ class OfficeRoutingTests(unittest.TestCase):
 
 
 class StartupTests(unittest.IsolatedAsyncioTestCase):
+    async def test_phone_lookup_finishes_before_session_starts(self):
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def lookup(*args):
+            entered.set()
+            await release.wait()
+            return NotFound(status="not_found")
+
+        async def start_with_context(session, ctx, room_options, agent):
+            self.assertTrue(release.is_set())
+            self.assertEqual(agent._resolver.state.patient.lookup.status, "none")
+            self.assertIn("first name and date of birth", agent.chat_ctx.items[-1].text_content)
+            await start_session(session, ctx, room_options, agent)
+
+        with (
+            patch("abita_s2s.runtime.session_startup.PatientMiddleware.resolve", side_effect=lookup),
+            patch("abita_s2s.runtime.session_startup.start_session", side_effect=start_with_context) as start,
+        ):
+            task = asyncio.create_task(self.run_startup(False))
+            try:
+                await asyncio.wait_for(entered.wait(), 2)
+                start.assert_not_called()
+            finally:
+                release.set()
+                await asyncio.wait_for(task, 2)
+            start.assert_awaited_once()
+
     async def run_startup(self, fake, trunk="+18135484830", env=None, config=None, model_error=None, simulation=None):
         participant = SimpleNamespace(identity="caller", attributes={"sip.trunkPhoneNumber": trunk, "sip.phoneNumber": "+15555550101", "sip.callID": "sip-test"})
         ctx = SimpleNamespace(
