@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/chasef07/abita_s2s/compare/v0.3.1...v0.3.2) (2026-09-15)
+
+
+### Bug Fixes
+
+* use relative LiveKit deployment config path ([dcf412a](https://github.com/chasef07/abita_s2s/commit/dcf412a8f659c282258f3fa99198083521e17e14))
+
 ## [0.3.1](https://github.com/chasef07/abita_s2s/compare/v0.3.0...v0.3.1) (2026-09-15)
 
 
