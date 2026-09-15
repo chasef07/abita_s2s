@@ -5,6 +5,43 @@ Office questions use Product knowledge search. Patient resolution uses the exist
 middleware contract. Insurance, registration, and appointment scheduling have local
 implementations and offline tests; transfers are not migrated yet.
 
+## Releases and LiveKit deployment
+
+Releases follow the same approval point as `abita_agent`: merge the generated
+release PR, then GitHub Actions verifies, publishes, and deploys automatically.
+
+1. A successful `Verify` push run on `main` triggers Release Please to create or
+   update a release PR with the version, changelog, and matching `uv.lock` version.
+2. Merging that PR creates a draft release and immutable tag. The exact release
+   commit passes the full verification workflow before publishing the paired
+   agent/prompt assets and checksums.
+3. The published release deploys automatically to the separately provisioned
+   `abita-s2s` LiveKit agent. Deployment verifies the target dispatch name, release
+   checksums, running replicas, and version attributes. Missing configuration or
+   failed health fails the workflow.
+
+One-time GitHub configuration:
+
+- Install the existing Release Please GitHub App on this repository. Set variable
+  `RELEASE_PLEASE_APP_CLIENT_ID` and secret `RELEASE_PLEASE_APP_PRIVATE_KEY`.
+  Its contents, issues, and pull requests permissions must allow writes. The app
+  token ensures generated release PRs trigger ordinary CI.
+- Set secrets `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET`.
+- Provision the Python agent with its runtime secrets. Set variables
+  `ABITA_S2S_AGENT_ID` to that new agent ID and `ABITA_S2S_PROJECT_SUBDOMAIN` to its
+  project subdomain. The deploy workflow checks the `production` environment;
+  repository secrets and variables may also be configured there.
+
+`Publish release` can resume artifact publication for an exact commit after a
+failed run. `Deploy exact release` can retry a published release, stage it, promote
+a tested staging version, or roll back to an explicitly selected version. All
+deployment operations share one lock. These workflows do not provision agents,
+upload runtime secrets, or change SIP routing.
+
+Release Please creates drafts with tags immediately so the existing immutable
+asset publisher can finish them safely; see its
+[draft and tag options](https://github.com/googleapis/release-please/blob/main/docs/cli.md).
+
 ## Setup
 
 Use Python 3.13 and uv:

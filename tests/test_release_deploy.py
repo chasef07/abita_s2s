@@ -153,6 +153,29 @@ class ReleaseTests(unittest.TestCase):
                 self.assertFalse(any(c[:2] == ("git", "push") for c in calls))
                 self.assertFalse(any(c[:2] == ("gh", "release") for c in calls))
 
+    def test_publisher_finishes_release_please_draft_with_existing_tag(self):
+        calls = []
+
+        def command(*args):
+            calls.append(args)
+            if args[:2] == ("git", "rev-parse"):
+                return "a" * 40
+            if args[:2] == ("gh", "api"):
+                return json.dumps([[{
+                    "tag_name": "v1.0.0", "draft": True, "assets": [],
+                }]])
+            return "existing"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            asset = Path(tmp) / "release.json"
+            asset.write_text("verified release")
+            with patch.object(publish_release, "run", side_effect=command):
+                publish_release.publish("v1.0.0", "a" * 40, [asset])
+        self.assertIn(("gh", "release", "upload", "v1.0.0", str(asset)), calls)
+        self.assertIn(("gh", "release", "edit", "v1.0.0", "--draft=false"), calls)
+        self.assertFalse(any(c[:3] == ("gh", "release", "create") for c in calls))
+        self.assertFalse(any(c[:2] == ("git", "push") for c in calls))
+
 
 class DeployTests(unittest.TestCase):
     def setUp(self):
@@ -249,6 +272,31 @@ class DeployTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.client.wait("staging", self.manifest, seconds=0)
         self.assertFalse(any(c[0] == "promote" for c in self.calls))
+
+    def test_automatic_deploy_uses_default_production_and_exact_attributes(self):
+        with patch.object(self.client, "wait", return_value="version-exact") as wait:
+            self.assertEqual(
+                self.client.execute("deploy", self.manifest), "version-exact"
+            )
+        command = next(c for c in self.calls if c[0] == "deploy")
+        self.assertNotIn("--deployment", command)
+        self.assertIn("--no-default-attributes", command)
+        for key in deploy.KEYS:
+            self.assertIn(f"{key}={self.manifest[key]}", command)
+        wait.assert_called_once_with("production", self.manifest)
+
+    def test_automatic_deploy_rejects_typescript_target_before_mutation(self):
+        self.status["agents"][0]["agentName"] = "abita-agent"
+        with self.assertRaises(ValueError):
+            self.client.execute("deploy", self.manifest)
+        self.assertFalse(any(c[0] == "deploy" for c in self.calls))
+
+    def test_automatic_deploy_reports_failed_health(self):
+        with (
+            patch.object(self.client, "wait", side_effect=ValueError("Unhealthy")),
+            self.assertRaisesRegex(ValueError, "Unhealthy"),
+        ):
+            self.client.execute("deploy", self.manifest)
 
     def test_missing_target_is_gated(self):
         with tempfile.TemporaryDirectory() as tmp:
