@@ -4,7 +4,7 @@ import asyncio
 import json
 import unittest
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 from livekit.agents import AgentSession, llm
@@ -87,6 +87,7 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
     @asynccontextmanager
     async def setup_session(self, handler=None, state=None, config=CONFIG):
         state = state or call_state()
+        state.reporter = Mock()
         # call_state from knowledge tests has no caller contact.
         if state.call.caller_phone is None:
             from dataclasses import replace
@@ -143,6 +144,9 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(first["outcome"], "created")
             self.assertNotIn("taskId", first)
             self.assertNotIn(TASK_ID, json.dumps(first))
+            self.assertTrue(state.reporter.record.call_args.kwargs["call_id"])
+            self.assertEqual(state.reporter.record.call_args.args[0], "staff_task")
+            self.assertEqual(state.reporter.record.call_args.args[1]["taskId"], TASK_ID)
             self.assertEqual(next(iter(owner._deliveries.values())).result()["taskId"], TASK_ID)
             self.assertEqual(
                 (await self.invoke(session, agent))["outcome"], "duplicate"

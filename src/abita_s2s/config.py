@@ -22,6 +22,7 @@ class Config:
     middleware_url: str | None = None
     middleware_token: str | None = field(default=None, repr=False)
     staff_tasks_url: str | None = None
+    interaction_url: str | None = None
     handoff: HandoffConfig | None = None
 
 
@@ -131,6 +132,36 @@ def load_config() -> Config:
             )
         ):
             raise ValueError("AMD_API_URL must use HTTPS (HTTP only on loopback)")
+    # Match the existing agent: named deployments never write simulated calls to Product.
+    interaction_url = None
+    if not os.environ.get("LIVEKIT_AGENT_DEPLOYMENT", "").strip():
+        interaction_url = (
+            os.environ.get("ACUITY_PRODUCT_INTERACTION_URL", "").strip() or None
+        )
+    if interaction_url:
+        target = urlsplit(interaction_url)
+        if (
+            not target.hostname
+            or target.username
+            or target.password
+            or target.query
+            or target.fragment
+            or target.path != "/v1/ai/interactions"
+            or not (
+                target.scheme == "https"
+                or (
+                    target.scheme == "http"
+                    and target.hostname in ("localhost", "127.0.0.1", "::1")
+                )
+            )
+        ):
+            raise ValueError(
+                "ACUITY_PRODUCT_INTERACTION_URL must be an HTTPS /v1/ai/interactions endpoint (HTTP only on loopback)"
+            )
+        if not product_secret:
+            raise ValueError(
+                "ACUITY_PRODUCT_INTERACTION_URL requires ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET"
+            )
     # Admission is optional: missing practice/legacy settings must not block
     # staff tasks, knowledge, or offices with direct transfer destinations.
     practice = os.environ.get("ABITA_EYE_GROUP_PRODUCT_PRACTICE_ID", "").strip()
@@ -168,5 +199,6 @@ def load_config() -> Config:
         middleware_url,
         middleware_token,
         staff_tasks_url,
+        interaction_url,
         handoff,
     )

@@ -71,7 +71,7 @@ class AbitaAgent(Agent):
                     "next_input": "staff_help",
                 }
             )
-        result = await self._resolver.resolve(firstName, dob)
+        result = await self._resolver.resolve(firstName, dob, call_id=context.function_call.call_id)
         if self._scheduling:
             result["appointments"] = self._scheduling.appointments()
         return json.dumps(result, ensure_ascii=False)
@@ -130,7 +130,9 @@ class AbitaAgent(Agent):
             newPatientConfirmed=newPatientConfirmed,
             readBack=readBack,
         )
-        return json.dumps(await self._insurance.add(registration))
+        return json.dumps(
+            await self._insurance.add(registration, call_id=context.function_call.call_id)
+        )
 
     @function_tool
     async def update_insurance(
@@ -145,7 +147,9 @@ class AbitaAgent(Agent):
         """
         if self._insurance is None or self._insurance.state is not context.userdata:
             return json.dumps(staff())
-        return json.dumps(await self._insurance.update(insuranceMemberId))
+        return json.dumps(
+            await self._insurance.update(insuranceMemberId, call_id=context.function_call.call_id)
+        )
 
     @function_tool
     async def search_office_knowledge(
@@ -200,7 +204,9 @@ class AbitaAgent(Agent):
                 }
             )
         return json.dumps(
-            await self._staff_tasks.submit(category, urgency, summary, message)
+            await self._staff_tasks.submit(
+                category, urgency, summary, message, call_id=context.function_call.call_id
+            )
         )
 
     async def on_exit(self) -> None:

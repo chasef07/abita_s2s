@@ -8,12 +8,14 @@ from livekit.agents import AgentServer, JobContext, cli
 
 from abita_s2s.config import load_config
 from abita_s2s.release import identity
-from abita_s2s.runtime.session_startup import SHUTDOWN_PROCESS_SECONDS, start_voice_call
+from abita_s2s.runtime.session_startup import (
+    SHUTDOWN_PROCESS_SECONDS, finish_voice_call, start_voice_call,
+)
 
 server = AgentServer(shutdown_process_timeout=SHUTDOWN_PROCESS_SECONDS)
 
 
-@server.rtc_session(agent_name="abita-s2s")
+@server.rtc_session(agent_name="abita-s2s", on_session_end=finish_voice_call)
 async def entrypoint(ctx: JobContext) -> None:
     await start_voice_call(ctx)
 

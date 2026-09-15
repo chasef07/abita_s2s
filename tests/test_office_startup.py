@@ -1,7 +1,10 @@
 import asyncio
+import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
+import httpx
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.config import Config
@@ -11,7 +14,7 @@ from abita_s2s.offices import (
     get_office_profile,
     get_office_profile_by_phone,
 )
-from abita_s2s.runtime.session_startup import start_voice_call
+from abita_s2s.runtime.session_startup import finish_voice_call, start_voice_call
 
 
 class OfficeRoutingTests(unittest.TestCase):
@@ -48,7 +51,7 @@ class OfficeRoutingTests(unittest.TestCase):
 
 
 class StartupTests(unittest.IsolatedAsyncioTestCase):
-    async def run_startup(self, fake, trunk="+18135484830", env=None):
+    async def run_startup(self, fake, trunk="+18135484830", env=None, config=None, model_error=None):
         participant = SimpleNamespace(identity="caller", attributes={"sip.trunkPhoneNumber": trunk, "sip.phoneNumber": "+15555550101", "sip.callID": "sip-test"})
         ctx = SimpleNamespace(
             is_fake_job=lambda: fake,
@@ -63,8 +66,8 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         session_generic.__getitem__.return_value = session_type
         with (
             patch.dict("os.environ", env or {}, clear=True),
-            patch("abita_s2s.runtime.session_startup.load_config", return_value=Config("offline")),
-            patch("abita_s2s.runtime.session_startup.create_model"),
+            patch("abita_s2s.runtime.session_startup.load_config", return_value=config or Config("offline")),
+            patch("abita_s2s.runtime.session_startup.create_model", side_effect=model_error),
             patch("abita_s2s.runtime.session_startup.api.LiveKitAPI", return_value=SimpleNamespace(sip=Mock(), aclose=AsyncMock())) as sip_api,
             patch("abita_s2s.runtime.session_startup.AgentSession", session_generic),
         ):
@@ -207,3 +210,50 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(AbitaAgent, "session", new_callable=unittest.mock.PropertyMock, return_value=session):
             await agent.on_enter()
         self.assertIn(SPRING_HILL.greeting, session.generate_reply.call_args.kwargs["instructions"])
+
+    async def test_product_closeout_waits_for_accepted_write_and_keeps_native_report(self):
+        payloads = []
+        async def handler(request):
+            payloads.append(json.loads(request.content))
+            return httpx.Response(201, json={"status": "created", "interactionId": "d3665980-68ce-4336-87af-e2ba40ad2e8e"})
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        config = Config("offline", product_secret="test", interaction_url="https://product.test/v1/ai/interactions")
+        with patch("abita_s2s.runtime.session_startup.httpx.AsyncClient", return_value=client):
+            ctx, args = await self.run_startup(False, config=config)
+        state = args["userdata"]
+        ctx.primary_session = SimpleNamespace(userdata=state)
+        report = {"chat_history": {"items": []}, "events": [{"type": "close", "reason": "participant_disconnected"}], "usage": []}
+        ctx.make_session_report = Mock(return_value=SimpleNamespace(to_dict=lambda: report))
+        entered, release = asyncio.Event(), asyncio.Event()
+        async def write():
+            entered.set()
+            await release.wait()
+            state.reporter.appointment({"action": "BOOKED", "externalPatientId": "original-patient", "newAppointmentId": "42", "bookingResult": {"status": "booked"}})
+        args["agent"]._scheduling._write_task = asyncio.create_task(write())
+        await entered.wait()
+        shutdown = asyncio.create_task(finish_voice_call(ctx))
+        await asyncio.sleep(0)
+        self.assertFalse(client.is_closed)
+        self.assertFalse(shutdown.done())
+        release.set()
+        await shutdown
+        await ctx.add_shutdown_callback.call_args_list[0].args[0]()
+        self.assertTrue(client.is_closed)
+        self.assertEqual([p["kind"] for p in payloads], ["START", "OUTCOME_CHECKPOINT", "CLOSEOUT"])
+        self.assertEqual(payloads[-1]["status"], "COMPLETED")
+        self.assertEqual(payloads[-1]["transcript"], report)
+        self.assertEqual(payloads[-1]["appointmentOutcome"]["externalPatientId"], "original-patient")
+        self.assertEqual(payloads[-1]["officePhone"], "+17275919997")
+
+    async def test_model_start_failure_delivers_failed_closeout_before_shutdown(self):
+        payloads = []
+        async def handler(request):
+            payloads.append(json.loads(request.content))
+            return httpx.Response(201, json={"status": "created", "interactionId": "d3665980-68ce-4336-87af-e2ba40ad2e8e"})
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        config = Config("offline", product_secret="test", interaction_url="https://product.test/v1/ai/interactions")
+        with patch("abita_s2s.runtime.session_startup.httpx.AsyncClient", return_value=client), self.assertRaisesRegex(RuntimeError, "model failed"):
+            await self.run_startup(False, config=config, model_error=RuntimeError("model failed"))
+        self.assertEqual([p["kind"] for p in payloads], ["START", "CLOSEOUT"])
+        self.assertEqual(payloads[-1]["status"], "FAILED")
+        self.assertNotIn("transcript", payloads[-1])

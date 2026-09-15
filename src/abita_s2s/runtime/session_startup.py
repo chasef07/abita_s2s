@@ -23,6 +23,7 @@ from abita_s2s.offices import (
     get_office_profile_by_phone,
 )
 from abita_s2s.registration_middleware import RegistrationMiddleware
+from abita_s2s.reporting import CallReporter
 from abita_s2s.scheduling import Scheduling
 from abita_s2s.scheduling_http import SchedulingHTTP
 from abita_s2s.staff_tasks import StaffTasks
@@ -149,8 +150,10 @@ async def start_voice_call(ctx: JobContext) -> None:
     sip_api = None
     control = None
     cleanup_task = None
+    drain_task = None
+    state = CallState(call=call)
 
-    async def cleanup():
+    async def drain():
         owners = [
             o
             for o in (resolver, scheduling, insurance, staff_tasks, control)
@@ -158,14 +161,32 @@ async def start_voice_call(ctx: JobContext) -> None:
         ]
         for owner in owners:
             owner.close_admission()
+        async with asyncio.timeout(CLEANUP_SECONDS):
+            results = await asyncio.gather(
+                *(o.aclose() for o in owners), return_exceptions=True
+            )
+            for result in results:
+                if isinstance(result, asyncio.CancelledError):
+                    raise RuntimeError("An accepted mutation was cancelled during shutdown")
+                if isinstance(result, BaseException):
+                    raise result
+
+    async def drain_writes():
+        nonlocal drain_task
+        if drain_task is None:
+            drain_task = asyncio.create_task(drain())
+        await asyncio.shield(drain_task)
+
+    async def cleanup():
         try:
-            async with asyncio.timeout(CLEANUP_SECONDS):
-                results = await asyncio.gather(
-                    *(o.aclose() for o in owners), return_exceptions=True
+            if state.reporter:
+                make_report = (
+                    (lambda: ctx.make_session_report().to_dict())
+                    if state.reporter.started else None
                 )
-                for result in results:
-                    if isinstance(result, BaseException):
-                        raise result
+                await state.reporter.finish(make_report)
+            else:
+                await drain_writes()
         finally:
             # A failed owner must not skip either transport.
             async with asyncio.timeout(TRANSPORT_CLOSE_SECONDS):
@@ -185,8 +206,12 @@ async def start_voice_call(ctx: JobContext) -> None:
         await asyncio.shield(cleanup_task)
 
     ctx.add_shutdown_callback(close_client)
+    if config.interaction_url and not ctx.is_fake_job():
+        if call.caller_phone:
+            state.reporter = CallReporter(call, client, config, drain_writes)
+        else:
+            logger.error("Product call reporting unavailable: caller phone missing")
     try:
-        state = CallState(call=call)
         session = AgentSession[CallState](
             userdata=state,
             llm=create_model(config),
@@ -232,8 +257,22 @@ async def start_voice_call(ctx: JobContext) -> None:
                 call_control=control,
             ),
         )
+        if state.reporter:
+            state.reporter.started = True
     except BaseException as error:
         logger.error("session_start_failed cause=%s", type(error).__name__)
-        await close_client()
+        try:
+            await close_client()
+        except Exception:
+            logger.error("Startup cleanup failed")
         raise
     logger.info("session_started")
+
+
+async def finish_voice_call(ctx: JobContext) -> None:
+    try:
+        state = ctx.primary_session.userdata
+    except RuntimeError:
+        return  # Startup cleanup owns the failed closeout before session registration.
+    if state.reporter:
+        await state.reporter.finish(lambda: ctx.make_session_report().to_dict())
