@@ -81,7 +81,7 @@ def validate_release(directory: Path, commit: str):
 class LiveKit:
     def __init__(self, config):
         self.agent = target(config)
-        self.prefix = ["lk", "--config", str(config.resolve()), "--yes"]
+        self.prefix = ["lk", "--config", os.path.relpath(config.resolve()), "--yes"]
         if run("lk", "--version") != "lk version 2.18.6":
             raise ValueError("LiveKit CLI 2.18.6 is required")
 
@@ -149,8 +149,6 @@ class LiveKit:
             ]
             self.command(
                 "deploy",
-                "--id",
-                self.agent,
                 *(["--deployment", "staging"] if action == "stage" else []),
                 "--no-default-attributes",
                 *attrs,

@@ -208,6 +208,18 @@ class DeployTests(unittest.TestCase):
         self.calls.append(args)
         return json.dumps(self.status if args[0] == "status" else self.versions)
 
+    def test_config_path_is_relative_for_livekit_cli(self):
+        config = Path("livekit.toml").resolve()
+        with (
+            patch.object(deploy, "target", return_value="CA_python"),
+            patch.object(deploy, "run", return_value="lk version 2.18.6") as run,
+        ):
+            client = deploy.LiveKit(config)
+            client.command("deploy", ".")
+        run.assert_called_with(
+            "lk", "--config", "livekit.toml", "--yes", "agent", "deploy", "."
+        )
+
     def test_observed_version_and_attributes_must_all_match(self):
         self.assertEqual(self.client.observe("staging", self.manifest), "version-exact")
         for key in deploy.KEYS:
@@ -256,7 +268,8 @@ class DeployTests(unittest.TestCase):
             self.client.execute("stage", self.manifest)
             self.client.execute("rollback", self.manifest, "version-exact")
         command = next(c for c in self.calls if c[0] == "deploy")
-        self.assertEqual(command[1:5], ("--id", "CA_python", "--deployment", "staging"))
+        self.assertEqual(command[1:3], ("--deployment", "staging"))
+        self.assertNotIn("--id", command)
         for key in deploy.KEYS:
             self.assertIn(f"{key}={self.manifest[key]}", command)
         self.assertIn(
@@ -280,7 +293,7 @@ class DeployTests(unittest.TestCase):
             )
         command = next(c for c in self.calls if c[0] == "deploy")
         self.assertNotIn("--deployment", command)
-        self.assertEqual(command[1:3], ("--id", "CA_python"))
+        self.assertNotIn("--id", command)
         self.assertIn("--no-default-attributes", command)
         for key in deploy.KEYS:
             self.assertIn(f"{key}={self.manifest[key]}", command)
