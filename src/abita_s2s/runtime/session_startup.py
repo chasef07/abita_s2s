@@ -101,7 +101,9 @@ async def start_voice_call(ctx: JobContext) -> None:
     if not ctx.is_fake_job():
         sip_api = api.LiveKitAPI(failover=False)
         ctx.add_shutdown_callback(sip_api.aclose)
-    control = CallControl(state, client, ctx.room, sip_api.sip if sip_api else None)
+    control = CallControl(
+        state, client, ctx.room, sip_api.sip if sip_api else None, handoff=config.handoff
+    )
 
     resolver.start_phone_lookup()
     insurance = InsuranceRegistration(state, resolver, RegistrationMiddleware(client, config))

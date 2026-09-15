@@ -79,6 +79,10 @@ class InsuranceRegistration:
 
     def check(self, plan: str, coverage_type: CoverageType) -> dict:
         self.state.insurance.accepted = None
+        if self.state.patient.active:
+            self.state.insurance.checked_patients.add(
+                (self.state.call.called_office_key, self.state.patient.active.patientId)
+            )
         result = match_plan(
             self.state.call.called_office_key, plan.strip(), coverage_type
         )
