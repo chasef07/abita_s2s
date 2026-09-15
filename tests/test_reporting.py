@@ -206,6 +206,29 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(f["status"] == "success" for f in facts))
         self.assertEqual(facts[-1]["evidence"]["externalPatientId"], "chart-john")
 
+    async def test_resolving_late_created_chart_preserves_new_patient_classification(self):
+        reporter = self.reporter()
+        state = call_state(None)
+        state.reporter = reporter
+        # Creation finished after identity moved on without activating another chart.
+        state.insurance.registrations["chart-jane"] = "created"
+        reporter.record("patient", {
+            "outcome": "created", "externalPatientId": "chart-jane", "superseded": True,
+        })
+        responses = [search(candidate()), receipt()]
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=responses.pop(0))
+        )) as client:
+            resolver = PatientResolver(state, PatientMiddleware(client, CONFIG))
+            self.addAsyncCleanup(resolver.aclose)
+            await resolver.resolve("Jane", "01/02/1980", call_id="identity-call")
+        await reporter.finish(lambda: REPORT)
+        facts = self.requests[-1]["closeoutPayload"]["domainOutcomes"]
+        current = [f for f in facts if not f["evidence"].get("superseded")]
+        self.assertEqual(current[-1]["outcome"], "patient_created")
+        self.assertEqual(current[-1]["status"], "success")
+        self.assertEqual(current[-1]["callId"], "identity-call")
+
     async def test_error_close_is_failed_and_accepted_transfer_is_escalated(self):
         for reason, transfer, expected in [
             ("error", "accepted", "FAILED"),
@@ -303,6 +326,11 @@ class ReportingConfigTests(unittest.TestCase):
                 "OPENAI_API_KEY": "offline",
                 "ACUITY_PRODUCT_INTERACTION_URL": "https://production.test/v1/ai/interactions",
                 "LIVEKIT_AGENT_DEPLOYMENT": "staging",
+                "STAGING_ACUITY_PRODUCT_KNOWLEDGE_URL": "https://sandbox.test/knowledge",
+                "STAGING_ACUITY_PRODUCT_HANDOFF_URL": "https://sandbox.test/v1/handoffs",
+                "STAGING_ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET": "sandbox-secret",
+                "STAGING_AMD_API_URL": "https://sandbox.test",
+                "STAGING_AMD_API_TOKEN": "sandbox-token",
             },
             clear=True,
         ):

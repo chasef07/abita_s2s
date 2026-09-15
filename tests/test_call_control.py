@@ -15,6 +15,7 @@ from test_patient_resolution import call_state, receipt
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.call_control import CallControl
+from abita_s2s.config import load_config
 from abita_s2s.middleware import Receipt
 from abita_s2s.offices import SPRING_HILL
 
@@ -135,6 +136,25 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.run_tool("end_call"))["outcome"], "blocked")
         self.sip.transfer_sip_participant.assert_awaited_once()
 
+    async def test_session_shutdown_drains_accepted_transfer(self):
+        entered, finish = asyncio.Event(), asyncio.Event()
+        async def transfer(*args, **kwargs):
+            entered.set()
+            await finish.wait()
+            return api.TransferSIPParticipantResponse(status=api.STS_TRANSFER_SUCCESSFUL)
+        self.sip.transfer_sip_participant.side_effect = transfer
+        caller = asyncio.create_task(self.run_tool("transfer_call"))
+        await asyncio.wait_for(entered.wait(), 2)
+        self.control.close_admission()
+        closing = asyncio.gather(self.control.aclose(), self.session.aclose())
+        await asyncio.sleep(0)
+        self.assertFalse(closing.done())
+        finish.set()
+        await closing
+        await asyncio.gather(caller, return_exceptions=True)
+        self.assertEqual(self.control.status, "accepted")
+        self.sip.transfer_sip_participant.assert_awaited_once()
+
     async def test_transport_uncertainty_suppresses_retry_and_hangup(self):
         self.sip.transfer_sip_participant.side_effect = TimeoutError()
         self.assertEqual((await self.run_tool("transfer_call"))["outcome"], "ambiguous")
@@ -234,11 +254,13 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(
             "os.environ",
             {
+                "OPENAI_API_KEY": "offline",
                 "ACUITY_PRODUCT_HANDOFF_URL": "https://product.example/v1/handoffs",
                 "ABITA_EYE_GROUP_PRODUCT_PRACTICE_ID": "00000000-0000-4000-8000-000000000001",
                 "ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET": "offline",
             },
         ):
+            self.control.admission.config = load_config().handoff
             self.assertEqual(
                 (await self.run_tool("transfer_call"))["outcome"], "ambiguous"
             )
@@ -279,11 +301,13 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(
             "os.environ",
             {
+                "OPENAI_API_KEY": "offline",
                 "ACUITY_PRODUCT_HANDOFF_URL": "https://product.example/v1/handoffs",
                 "ABITA_EYE_GROUP_PRODUCT_PRACTICE_ID": "00000000-0000-4000-8000-000000000001",
                 "ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET": "offline",
             },
         ):
+            self.control.admission.config = load_config().handoff
             first = await self.run_tool("transfer_call")
             self.assertEqual(first["outcome"], "failed")
             self.assertIn("once more", first["answer"])
@@ -329,11 +353,13 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             with patch.dict(
                 "os.environ",
                 {
+                    "OPENAI_API_KEY": "offline",
                     "ACUITY_PRODUCT_HANDOFF_URL": "https://product.example/v1/handoffs",
                     "ABITA_EYE_GROUP_PRODUCT_PRACTICE_ID": "00000000-0000-4000-8000-000000000001",
                     "ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET": "offline",
                 },
             ):
+                self.control.admission.config = load_config().handoff
                 self.assertEqual(
                     (await self.run_tool("transfer_call"))["outcome"], "ambiguous"
                 )
@@ -429,11 +455,13 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(
             "os.environ",
             {
+                "OPENAI_API_KEY": "offline",
                 "ACUITY_HANDOFF_URL": "https://handoff.example/admit",
                 "ACUITY_HANDOFF_SECRET": "offline",
             },
             clear=True,
         ):
+            self.control.admission.config = load_config().handoff
             self.assertEqual(
                 (await self.run_tool("transfer_call"))["outcome"], "accepted"
             )
@@ -457,11 +485,13 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(
             "os.environ",
             {
+                "OPENAI_API_KEY": "offline",
                 "ACUITY_HANDOFF_URL": "https://[invalid",
                 "ACUITY_HANDOFF_SECRET": "offline",
             },
             clear=True,
         ):
+            self.control.admission.config = load_config().handoff
             first = await self.run_tool("transfer_call")
             self.assertEqual(first["outcome"], "failed")
             self.assertIn("once more", first["answer"])
@@ -481,11 +511,13 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(
             "os.environ",
             {
+                "OPENAI_API_KEY": "offline",
                 "ACUITY_HANDOFF_URL": "https://handoff.example/admit",
                 "ACUITY_HANDOFF_SECRET": "offline",
             },
             clear=True,
         ):
+            self.control.admission.config = load_config().handoff
             try:
                 await self.run_tool("transfer_call")
             except (IndexError, asyncio.CancelledError):

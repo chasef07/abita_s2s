@@ -72,6 +72,9 @@ class InsuranceRegistration:
         self._task: asyncio.Task | None = None
         self._closed = False
 
+    def close_admission(self) -> None:
+        self._closed = True
+
     async def aclose(self):
         self._closed = True
         if self._task:
@@ -79,6 +82,10 @@ class InsuranceRegistration:
 
     def check(self, plan: str, coverage_type: CoverageType) -> dict:
         self.state.insurance.accepted = None
+        if self.state.patient.active:
+            self.state.insurance.checked_patients.add(
+                (self.state.call.called_office_key, self.state.patient.active.patientId)
+            )
         result = match_plan(
             self.state.call.called_office_key, plan.strip(), coverage_type
         )

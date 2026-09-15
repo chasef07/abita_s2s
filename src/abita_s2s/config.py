@@ -3,6 +3,14 @@
 import os
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
+from uuid import UUID
+
+
+@dataclass(frozen=True)
+class HandoffConfig:
+    url: str
+    secret: str = field(repr=False)
+    practice_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -15,6 +23,7 @@ class Config:
     middleware_token: str | None = field(default=None, repr=False)
     staff_tasks_url: str | None = None
     interaction_url: str | None = None
+    handoff: HandoffConfig | None = None
 
 
 def load_config() -> Config:
@@ -25,11 +34,39 @@ def load_config() -> Config:
     voice = os.environ.get("GPT_LIVE_VOICE", "gleam").strip()
     if not voice:
         raise ValueError("GPT_LIVE_VOICE must not be empty")
-    knowledge_url = os.environ.get("ACUITY_PRODUCT_KNOWLEDGE_URL", "").strip() or None
-    product_secret = (
-        os.environ.get("ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET", "").strip() or None
+    deployment = os.environ.get("LIVEKIT_AGENT_DEPLOYMENT", "").strip()
+    if deployment not in ("", "production", "staging"):
+        raise ValueError("Unsupported backend deployment; configure staging explicitly")
+    backend_keys = (
+        "ACUITY_PRODUCT_KNOWLEDGE_URL",
+        "ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET",
+        "ACUITY_PRODUCT_HANDOFF_URL",
+        "AMD_API_URL",
+        "AMD_API_TOKEN",
     )
-    handoff_url = os.environ.get("ACUITY_PRODUCT_HANDOFF_URL", "").strip().rstrip("/")
+
+    def backend(key: str, default: str = "") -> str:
+        if deployment == "staging":
+            value = os.environ.get("STAGING_" + key, "").strip()
+            if not value:
+                raise ValueError(
+                    "Missing required staging configuration: STAGING_" + key
+                )
+            if value == os.environ.get(key, "").strip():
+                raise ValueError(
+                    "Staging backend configuration must differ from production: " + key
+                )
+            return value
+        return os.environ.get(key, default)
+
+    if deployment == "staging":
+        for key in backend_keys:
+            backend(key)
+    knowledge_url = backend("ACUITY_PRODUCT_KNOWLEDGE_URL", "").strip() or None
+    product_secret = (
+        backend("ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET", "").strip() or None
+    )
+    handoff_url = backend("ACUITY_PRODUCT_HANDOFF_URL", "").strip().rstrip("/")
     staff_tasks_url = None
     if handoff_url:
         if not handoff_url.endswith("/v1/handoffs"):
@@ -74,8 +111,8 @@ def load_config() -> Config:
             raise ValueError(
                 "ACUITY_PRODUCT_KNOWLEDGE_URL must use HTTPS (HTTP only on loopback)"
             )
-    middleware_url = os.environ.get("AMD_API_URL", "").strip() or None
-    middleware_token = os.environ.get("AMD_API_TOKEN", "").strip() or None
+    middleware_url = backend("AMD_API_URL", "").strip() or None
+    middleware_token = backend("AMD_API_TOKEN", "").strip() or None
     if bool(middleware_url) != bool(middleware_token):
         raise ValueError("Set both AMD_API_URL and AMD_API_TOKEN")
     if middleware_url:
@@ -125,6 +162,35 @@ def load_config() -> Config:
             raise ValueError(
                 "ACUITY_PRODUCT_INTERACTION_URL requires ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET"
             )
+    # Admission is optional: missing practice/legacy settings must not block
+    # staff tasks, knowledge, or offices with direct transfer destinations.
+    practice = os.environ.get("ABITA_EYE_GROUP_PRODUCT_PRACTICE_ID", "").strip()
+    handoff = None
+    if handoff_url or practice:
+        try:
+            UUID(practice)
+        except ValueError:
+            pass
+        else:
+            if handoff_url and product_secret:
+                handoff = HandoffConfig(handoff_url, product_secret, practice)
+    else:
+        legacy_url = os.environ.get("ACUITY_HANDOFF_URL", "").strip()
+        legacy_secret = os.environ.get("ACUITY_HANDOFF_SECRET", "").strip()
+        try:
+            target = urlsplit(legacy_url)
+            valid = (
+                target.scheme == "https"
+                and target.hostname
+                and target.username is None
+                and target.password is None
+                and not target.query
+                and not target.fragment
+            )
+        except ValueError:
+            valid = False
+        if valid and legacy_secret:
+            handoff = HandoffConfig(legacy_url, legacy_secret)
     return Config(
         api_key,
         voice,
@@ -134,4 +200,5 @@ def load_config() -> Config:
         middleware_token,
         staff_tasks_url,
         interaction_url,
+        handoff,
     )

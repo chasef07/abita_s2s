@@ -1,0 +1,35 @@
+name: Verify
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.12.13'
+          python-version: '3.13.15'
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run --no-sync ruff check .
+      - run: uv run --no-sync python -m unittest discover -s tests -q
+      - run: uv run --no-sync python scripts/release.py "$GITHUB_SHA"
+      - name: Installed wheel and source smoke (no network)
+        run: |
+          uv venv /tmp/wheel-smoke
+          uv pip sync --python /tmp/wheel-smoke/bin/python <(uv export --locked --no-dev --no-emit-project --format requirements-txt)
+          uv pip install --python /tmp/wheel-smoke/bin/python --no-deps dist/*.whl
+          (cd /tmp && /tmp/wheel-smoke/bin/python -m abita_s2s.release && /tmp/wheel-smoke/bin/abita-s2s start --help)
+          uv pip install --python /tmp/wheel-smoke/bin/python --no-deps --reinstall dist/abita_s2s-*.tar.gz
+          (cd /tmp && /tmp/wheel-smoke/bin/python -m abita_s2s.release)
+      - run: docker build -t abita-s2s:verify .
+      - name: Container smoke without network or credentials
+        run: |
+          test "$(docker image inspect abita-s2s:verify --format '{{.Config.User}}')" = '10001'
+          docker run --rm --network none --entrypoint /app/.venv/bin/python abita-s2s:verify -m abita_s2s.release
+          docker run --rm --network none --entrypoint /app/.venv/bin/abita-s2s abita-s2s:verify start --help

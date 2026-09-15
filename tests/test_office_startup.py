@@ -57,10 +57,10 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             is_fake_job=lambda: fake,
             connect=AsyncMock(),
             wait_for_participant=AsyncMock(return_value=participant),
-            room=SimpleNamespace(name="test-room"),
+            room=SimpleNamespace(name="test-room", on=Mock(), off=Mock(), isconnected=lambda: True, remote_participants={"caller": participant}),
             add_shutdown_callback=Mock(side_effect=self.addAsyncCleanup),
         )
-        session = SimpleNamespace(start=AsyncMock())
+        session = SimpleNamespace(start=AsyncMock(), on=Mock())
         session_type = Mock(return_value=session)
         session_generic = MagicMock()
         session_generic.__getitem__.return_value = session_type
@@ -195,6 +195,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaisesRegex(RuntimeError, "write failed"):
                     await shutdown
         self.assertTrue(client.is_closed)
+        self._cleanups.pop()  # Already awaited and asserted this cleanup failure.
 
     async def test_greeting_uses_office_profile(self):
         agent = AbitaAgent(SPRING_HILL, Mock())

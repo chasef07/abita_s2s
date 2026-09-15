@@ -63,6 +63,9 @@ class StaffTasks:
         self._deliveries: dict[str, asyncio.Task] = {}
         self._closed = False
 
+    def close_admission(self) -> None:
+        self._closed = True
+
     async def aclose(self) -> None:
         self._closed = True
         # A mutation already dispatched must finish and retain its receipt.

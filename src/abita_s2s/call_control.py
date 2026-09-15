@@ -11,6 +11,7 @@ from livekit import api, rtc
 from livekit.agents import RunContext, function_tool
 from livekit.agents.beta.tools.end_call import EndCallTool
 
+from abita_s2s.config import HandoffConfig
 from abita_s2s.handoff import AdmissionRejected, HandoffAdmission
 from abita_s2s.state import CallState
 
@@ -25,18 +26,34 @@ class CallControl(EndCallTool):
     """One per session; patient changes never reset an issued handoff."""
 
     def __init__(
-        self, state: CallState, client: httpx.AsyncClient, room=None, sip=None
+        self,
+        state: CallState,
+        client: httpx.AsyncClient,
+        room=None,
+        sip=None,
+        *,
+        handoff: HandoffConfig | None = None,
     ):
         super().__init__(
             delete_room=False, end_instructions="Say a brief goodbye to the caller."
         )
         self.state = state
-        self.admission = HandoffAdmission(state, client)
+        self.admission = HandoffAdmission(state, client, handoff)
         self.room = room
         self.sip = sip
         self.status = "idle"
         self.attempts = 0
         self.ending = False
+        self._closed = False
+        self._transfer_task = None
+
+    def close_admission(self):
+        self._closed = True
+
+    async def aclose(self):
+        self.close_admission()
+        if self._transfer_task:
+            await asyncio.shield(self._transfer_task)
 
     def _active(self) -> bool:
         call = self.state.call
@@ -60,6 +77,20 @@ class CallControl(EndCallTool):
         No patient lookup is required. Call without announcing; this tool speaks first.
         Retry only if the result explicitly offers one retry. Never claim a human answered.
         """
+        if self._closed:
+            return result("blocked", "This call has ended.")
+        if self._transfer_task and not self._transfer_task.done():
+            return result("pending", "Transfer is already in progress.")
+        self._transfer_task = asyncio.create_task(self._transfer(ctx))
+        return await asyncio.shield(self._transfer_task)
+
+    async def _transfer(self, ctx):
+        # Includes announcement and admission, so teardown is bounded even if
+        # playout never completes. HTTP/SIP deadlines fit within this budget.
+        async with asyncio.timeout(40):
+            return await self._perform_transfer(ctx)
+
+    async def _perform_transfer(self, ctx):
         if os.environ.get("LIVEKIT_AGENT_DEPLOYMENT", "").strip():
             return result(
                 "blocked",

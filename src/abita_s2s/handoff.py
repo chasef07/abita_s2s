@@ -2,14 +2,13 @@
 
 import hashlib
 import json
-import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from urllib.parse import urlsplit
 from uuid import UUID
 
 import httpx
 
+from abita_s2s.config import HandoffConfig
 from abita_s2s.offices import get_office_profile
 from abita_s2s.state import CallState
 
@@ -26,9 +25,12 @@ class HandoffTarget:
 
 
 class HandoffAdmission:
-    def __init__(self, state: CallState, client: httpx.AsyncClient):
+    def __init__(
+        self, state: CallState, client: httpx.AsyncClient, config: HandoffConfig | None
+    ):
         self.state = state
         self.client = client
+        self.config = config
         self._payload = None
 
     async def resolve(self) -> HandoffTarget:
@@ -46,35 +48,12 @@ class HandoffAdmission:
                     "X-Acuity-Trunk-Phone": call.called_number or "",
                 },
             )
-        product_url = os.environ.get("ACUITY_PRODUCT_HANDOFF_URL", "").strip()
-        practice = os.environ.get("ABITA_EYE_GROUP_PRODUCT_PRACTICE_ID", "").strip()
-        product = bool(product_url or practice)
-        url = (
-            product_url if product else os.environ.get("ACUITY_HANDOFF_URL", "").strip()
-        )
-        secret = os.environ.get(
-            "ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET"
-            if product
-            else "ACUITY_HANDOFF_SECRET",
-            "",
-        ).strip()
-        try:
-            parsed = urlsplit(url)
-        except ValueError as error:
-            raise AdmissionRejected("Invalid handoff URL") from error
-        if (
-            parsed.scheme != "https"
-            or not parsed.hostname
-            or parsed.username
-            or parsed.password
-            or not secret
-        ):
+        if self.config is None:
             raise AdmissionRejected("Handoff configuration is incomplete")
-        if product:
-            try:
-                UUID(practice)
-            except ValueError as error:
-                raise AdmissionRejected("Invalid handoff practice") from error
+        url = self.config.url
+        secret = self.config.secret
+        practice = self.config.practice_id
+        product = practice is not None
         if self._payload is None:
             if product:
                 identity = {

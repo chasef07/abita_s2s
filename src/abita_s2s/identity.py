@@ -119,6 +119,9 @@ class PatientResolver:
             lookup = CandidateLookup("found", tuple(matches))
         self._apply_lookup(token, lookup)
 
+    def close_admission(self) -> None:
+        self._closed = True
+
     async def aclose(self) -> None:
         self._closed = True
         self._token = None
@@ -366,8 +369,8 @@ class PatientResolver:
             self.state.reporter.record("patient", {
                 "outcome": outcome, "externalPatientId": receipt.patientId,
             }, call_id=call_id)
-            # Switching back to a chart created in this call must not label it existing.
-            if outcome == "switched" and receipt.patientId in self.state.insurance.registrations:
+            # Resolving a chart created in this call must not label it existing.
+            if receipt.patientId in self.state.insurance.registrations:
                 self.state.reporter.record("patient", {
                     "outcome": "created", "externalPatientId": receipt.patientId,
                 }, call_id=call_id)

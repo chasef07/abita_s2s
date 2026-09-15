@@ -229,6 +229,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(state.patient.active)
         self.assertIsNone(accepted_insurance(state))
         self.assertIn("new-chart", state.insurance.registrations)
+        self.assertTrue(state.reporter.record.call_args.args[1]["superseded"])
         self.assertEqual(len(self.requests), 2)
         self.assertEqual((await owner.add(registration()))["outcome"], "partial")
 
