@@ -66,7 +66,12 @@ class StaffTasks:
     async def aclose(self) -> None:
         self._closed = True
         # A mutation already dispatched must finish and retain its receipt.
-        await asyncio.gather(*self._deliveries.values(), return_exceptions=True)
+        results = await asyncio.gather(*self._deliveries.values(), return_exceptions=True)
+        for result in results:
+            if isinstance(result, asyncio.CancelledError):
+                raise RuntimeError("An accepted staff delivery was cancelled")
+            if isinstance(result, BaseException):
+                raise result
 
     async def submit(
         self, category: Category, urgency: Urgency, summary: str, message: str, *, call_id: str | None = None

@@ -58,6 +58,8 @@ class CallReporter:
             "booked",
             "cancelled",
             "rescheduled",
+            "verified",
+            "switched",
         ):
             status = "success"
         elif outcome in ("partial", "partial_booking", "partial_reschedule"):
@@ -71,7 +73,7 @@ class CallReporter:
         self._facts.append(
             {
                 "callId": call_id,
-                "outcome": f"{kind}_{outcome}",
+                "outcome": outcome if kind == "appointment" else f"{kind}_{outcome}",
                 "status": status,
                 "occurredAt": datetime.now(UTC).isoformat(),
                 "evidence": deepcopy(evidence),

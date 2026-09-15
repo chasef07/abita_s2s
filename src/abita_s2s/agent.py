@@ -71,7 +71,7 @@ class AbitaAgent(Agent):
                     "next_input": "staff_help",
                 }
             )
-        result = await self._resolver.resolve(firstName, dob)
+        result = await self._resolver.resolve(firstName, dob, call_id=context.function_call.call_id)
         if self._scheduling:
             result["appointments"] = self._scheduling.appointments()
         return json.dumps(result, ensure_ascii=False)

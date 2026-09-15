@@ -96,7 +96,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         state, _, owner = await self.prepared([created()])
         result = await owner.add(registration())
         state.reporter.record.assert_called_once_with(
-            "registration", {"outcome": "created", "externalPatientId": "new-chart"}, call_id=None
+            "patient", {"outcome": "created", "externalPatientId": "new-chart", "superseded": False}, call_id=None
         )
         self.assertEqual(result["outcome"], "created")
         self.assertEqual(state.patient.active.patientId, "new-chart")

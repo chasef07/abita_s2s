@@ -740,8 +740,12 @@ class Scheduling:
             if outcome in ("booked", "partial_booking"):
                 evidence["newAppointmentId"] = str(booking.appointmentId)
                 evidence["bookingResult"].update(
-                    appointmentId=booking.appointmentId, date=slot.date, time=slot.time,
-                    provider=provider_name(booking.providerName or slot.provider),
+                    appointmentId=booking.appointmentId,
+                    appointmentDate=slot.date, appointmentTime=slot.time,
+                    providerName=provider_name(booking.providerName or slot.provider),
+                    appointmentTypeName=booking.appointmentTypeName,
+                    locationName=booking.locationName,
+                    patientName=patient.name,
                 )
         if old:
             evidence["oldAppointmentId"] = str(old.id)
@@ -749,6 +753,12 @@ class Scheduling:
                 "status": self._cancel_result(cancellation)["outcome"]
                 if cancellation is not None else "not_attempted"
             }
+            evidence["cancellationResult"].update(
+                appointmentId=old.id, appointmentDate=old.date,
+                appointmentTime=old.time, providerName=old.provider,
+                appointmentTypeName=old.type, locationName=old.facility,
+                patientName=patient.name,
+            )
         evidence["action"] = "RESCHEDULED" if booking is not None and old else (
             "BOOKED" if booking is not None else "CANCELLED"
         )

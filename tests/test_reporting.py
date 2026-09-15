@@ -15,6 +15,10 @@ from test_patient_resolution import CONFIG, call_state
 
 from abita_s2s.config import load_config
 from abita_s2s.reporting import CallReporter, ReportingError
+from abita_s2s.staff_tasks import StaffTasks
+from abita_s2s.identity import PatientResolver
+from abita_s2s.middleware import PatientMiddleware
+from test_patient_resolution import candidate, receipt, search
 from abita_s2s.runtime.session_startup import finish_voice_call
 
 ACK = {"status": "created", "interactionId": "d3665980-68ce-4336-87af-e2ba40ad2e8e"}
@@ -160,6 +164,47 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("private details", str(logs.output))
         self.assertEqual(self.requests[-1]["status"], "FAILED")
         self.assertTrue(self.requests[-1]["closeoutPayload"]["mutationDrainFailed"])
+
+    async def test_staff_delivery_exception_or_cancellation_fails_closeout(self):
+        for error in (RuntimeError("delivery failed"), asyncio.CancelledError()):
+            with self.subTest(error=type(error).__name__):
+                owner = StaffTasks(call_state(), Mock(), Mock(), CONFIG)
+                delivery = asyncio.create_task(AsyncMock(side_effect=error)())
+                owner._deliveries["accepted"] = delivery
+                await asyncio.gather(delivery, return_exceptions=True)
+                reporter = self.reporter(drain=owner.aclose)
+                reporter.started = True
+                await reporter.finish(lambda: REPORT)
+                self.assertEqual(self.requests[-1]["status"], "FAILED")
+                self.assertTrue(self.requests[-1]["closeoutPayload"]["mutationDrainFailed"])
+
+    async def test_appointment_domain_outcomes_use_product_names(self):
+        reporter = self.reporter()
+        reporter.appointment(OUTCOME)
+        await reporter.finish(lambda: REPORT)
+        self.assertEqual(self.requests[-1]["closeoutPayload"]["domainOutcomes"][0]["outcome"], "booked")
+
+    async def test_verified_and_switched_patients_reach_product_classification(self):
+        reporter = self.reporter()
+        state = call_state(None)
+        state.reporter = reporter
+        responses = [
+            search(candidate()), receipt(),
+            search(candidate("chart-john", "John", "03/04/1981")),
+            receipt("chart-john", "John", "03/04/1981"),
+        ]
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=responses.pop(0))
+        )) as client:
+            resolver = PatientResolver(state, PatientMiddleware(client, CONFIG))
+            self.addAsyncCleanup(resolver.aclose)
+            await resolver.resolve("Jane", "01/02/1980")
+            await resolver.resolve("John", "03/04/1981")
+        await reporter.finish(lambda: REPORT)
+        facts = self.requests[-1]["closeoutPayload"]["domainOutcomes"]
+        self.assertEqual([f["outcome"] for f in facts], ["patient_verified", "patient_switched"])
+        self.assertTrue(all(f["status"] == "success" for f in facts))
+        self.assertEqual(facts[-1]["evidence"]["externalPatientId"], "chart-john")
 
     async def test_error_close_is_failed_and_accepted_transfer_is_escalated(self):
         for reason, transfer, expected in [

@@ -127,7 +127,7 @@ class PatientResolver:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def resolve(self, first_name: str | None, dob: str | None) -> dict:
+    async def resolve(self, first_name: str | None, dob: str | None, *, call_id: str | None = None) -> dict:
         if self._closed:
             return reply("superseded", "This call has ended.")
         first_name = first_name.strip() if first_name is not None else None
@@ -166,7 +166,7 @@ class PatientResolver:
         for task in (self._task, self._precall):
             if task is not None and not task.done():
                 task.cancel()
-        self._task = asyncio.create_task(self._resolve(first_name, dob, token))
+        self._task = asyncio.create_task(self._resolve(first_name, dob, token, call_id=call_id))
         return await self._await_resolution(self._task, token)
 
     async def _await_resolution(self, task: asyncio.Task, token: object) -> dict:
@@ -189,7 +189,7 @@ class PatientResolver:
     def _current(self, token: object) -> bool:
         return not self._closed and self._token is not None and self._token is token
 
-    async def _resolve(self, name: str | None, dob: str | None, token: object) -> dict:
+    async def _resolve(self, name: str | None, dob: str | None, token: object, *, call_id: str | None = None) -> dict:
         if not name or not exact_name(name):
             return reply(
                 "needs_identity", "What is the patient's first name?", "firstName"
@@ -209,7 +209,7 @@ class PatientResolver:
         if len(selected) > 1:
             return ambiguous(dob)
         if selected:
-            return await self._load_patient(selected[0], name, dob, token, phone=True)
+            return await self._load_patient(selected[0], name, dob, token, phone=True, call_id=call_id)
         active = self.state.patient.active
         if (
             active
@@ -218,8 +218,8 @@ class PatientResolver:
         ):
             if active.appointmentsStatus != "error":
                 self._pending = (None, None)
-                return self._facts(active, "verified")
-            return await self._load_patient(active, name, dob, token, phone=True)
+                return self._facts(active, "verified", call_id=call_id)
+            return await self._load_patient(active, name, dob, token, phone=True, call_id=call_id)
         if not dob:
             return reply(
                 "needs_identity", "What is the patient's date of birth?", "dob"
@@ -251,7 +251,7 @@ class PatientResolver:
             )
         if len(matches) > 1:
             return ambiguous(dob)
-        return await self._load_patient(matches[0], name, dob, token, phone=False)
+        return await self._load_patient(matches[0], name, dob, token, phone=False, call_id=call_id)
 
     async def _load_patient(
         self,
@@ -261,6 +261,7 @@ class PatientResolver:
         token: object,
         *,
         phone: bool,
+        call_id: str | None = None,
     ) -> dict:
         if not self._current(token):
             return reply(
@@ -298,7 +299,7 @@ class PatientResolver:
         self.state.patient.absence = None
         self._pending = (None, None)
         self._previous_id = None
-        return self._facts(receipt, "switched" if switched else "verified")
+        return self._facts(receipt, "switched" if switched else "verified", call_id=call_id)
 
     async def read_insurance(self, expected: Receipt) -> Receipt | None:
         """Reload private backend references without replacing current appointment state."""
@@ -360,7 +361,16 @@ class PatientResolver:
         self._previous_id = None
         return True
 
-    def _facts(self, receipt: Receipt, outcome: str) -> dict:
+    def _facts(self, receipt: Receipt, outcome: str, *, call_id: str | None = None) -> dict:
+        if self.state.reporter:
+            self.state.reporter.record("patient", {
+                "outcome": outcome, "externalPatientId": receipt.patientId,
+            }, call_id=call_id)
+            # Switching back to a chart created in this call must not label it existing.
+            if outcome == "switched" and receipt.patientId in self.state.insurance.registrations:
+                self.state.reporter.record("patient", {
+                    "outcome": "created", "externalPatientId": receipt.patientId,
+                }, call_id=call_id)
         result = reply(
             outcome,
             f"I found the patient record for {receipt.name}. DOB is on file; do not ask for DOB.",

@@ -296,6 +296,9 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         evidence = owner.state.reporter.appointment.call_args.args[0]
         self.assertEqual(evidence["bookingResult"]["status"], "partial")
         self.assertEqual(evidence["newAppointmentId"], "888")
+        self.assertEqual(evidence["bookingResult"]["appointmentDate"], inventory()["slots"][0]["date"])
+        self.assertEqual(evidence["bookingResult"]["appointmentTime"], inventory()["slots"][0]["time"])
+        self.assertEqual(evidence["bookingResult"]["providerName"], "Dr. Bach")
         self.assertNotIn("private-signed-slot", json.dumps(evidence))
         body = requests[1][1]
         self.assertEqual(body["bookingToken"], "private-signed-slot")

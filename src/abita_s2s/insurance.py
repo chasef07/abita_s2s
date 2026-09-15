@@ -253,7 +253,9 @@ class InsuranceRegistration:
                 evidence = {"outcome": answer["outcome"]}
                 if answer["outcome"] in ("created", "partial"):
                     evidence["externalPatientId"] = str(result.patientId)
-                self.state.reporter.record("registration", evidence, call_id=call_id)
+                    active = self.state.patient.active
+                    evidence["superseded"] = active is None or active.patientId != result.patientId
+                self.state.reporter.record("patient", evidence, call_id=call_id)
             self._creations.append((key, result, answer))
             return answer
 
