@@ -1,38 +1,67 @@
-name: Publish release
+name: Release
+
 on:
-  workflow_dispatch:
-    inputs:
-      commit:
-        description: Exact reviewed 40-character main commit with a new pyproject version
-        required: true
+  workflow_run:
+    workflows: ["Verify"]
+    types: [completed]
+
 permissions:
-  contents: write
+  contents: read
+
 concurrency:
-  group: abita-s2s-release
+  group: abita-s2s-release-pipeline
   cancel-in-progress: false
+
 jobs:
-  release:
+  release-please:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.repository.full_name == github.repository
     runs-on: ubuntu-latest
-    environment: release
+    timeout-minutes: 10
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      release_sha: ${{ steps.release.outputs.sha }}
+      release_tag: ${{ steps.release.outputs.tag_name }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Create scoped GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          ref: ${{ inputs.commit }}
-          fetch-depth: 0
-      - uses: astral-sh/setup-uv@v6
+          client-id: ${{ vars.RELEASE_PLEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+
+      - name: Create release PR or draft the merged release
+        id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
-          version: '0.12.13'
-          python-version: '3.13.15'
-      - run: git merge-base --is-ancestor "$COMMIT" origin/main
-        env:
-          COMMIT: ${{ inputs.commit }}
-      - run: uv sync --locked
-      - run: uv run --no-sync ruff check . && uv run --no-sync python -m unittest discover -s tests -q
-      - run: uv run --no-sync python scripts/release.py "$COMMIT"
-        env:
-          COMMIT: ${{ inputs.commit }}
-      - run: docker build -t abita-s2s:release .
-      - run: docker run --rm --network none --entrypoint /app/.venv/bin/python abita-s2s:release -m abita_s2s.release
-      - run: uv run --no-sync python scripts/publish_release.py dist
-        env:
-          GH_TOKEN: ${{ github.token }}
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  verify-release:
+    if: needs.release-please.outputs.release_created == 'true'
+    needs: [release-please]
+    uses: ./.github/workflows/ci.yml
+    with:
+      release_sha: ${{ needs.release-please.outputs.release_sha }}
+
+  publish:
+    needs: [release-please, verify-release]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/publish.yml
+    with:
+      commit: ${{ needs.release-please.outputs.release_sha }}
+
+  deploy:
+    needs: [release-please, publish]
+    uses: ./.github/workflows/deploy.yml
+    with:
+      release: ${{ needs.release-please.outputs.release_tag }}
+    secrets: inherit

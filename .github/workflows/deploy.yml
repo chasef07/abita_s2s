@@ -1,10 +1,23 @@
 name: Deploy exact release
 on:
+  workflow_call:
+    inputs:
+      release:
+        description: Exact verified release tag to deploy to production
+        required: true
+        type: string
+    secrets:
+      LIVEKIT_URL:
+        required: true
+      LIVEKIT_API_KEY:
+        required: true
+      LIVEKIT_API_SECRET:
+        required: true
   workflow_dispatch:
     inputs:
       action:
         type: choice
-        options: [stage, promote, rollback]
+        options: [deploy, stage, promote, rollback]
         required: true
       release:
         description: Exact agent tag, e.g. v0.2.0
@@ -21,8 +34,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deploy:
-    if: vars.ABITA_S2S_CLOUD_ENABLED == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: ${{ inputs.action == 'stage' && 'staging' || 'production' }}
     env:
       ABITA_S2S_AGENT_ID: ${{ vars.ABITA_S2S_AGENT_ID }}
@@ -31,10 +44,18 @@ jobs:
       LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
       GH_TOKEN: ${{ github.token }}
       RELEASE: ${{ inputs.release }}
-      ACTION: ${{ inputs.action }}
+      ACTION: ${{ inputs.action || 'deploy' }}
       VERSION: ${{ inputs.version }}
       SUBDOMAIN: ${{ vars.ABITA_S2S_PROJECT_SUBDOMAIN }}
     steps:
+      - name: Require Python deployment configuration
+        run: |
+          for key in ABITA_S2S_AGENT_ID LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET SUBDOMAIN; do
+            if [[ -z "${!key}" ]]; then
+              echo "Missing deployment configuration: $key" >&2
+              exit 1
+            fi
+          done
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0

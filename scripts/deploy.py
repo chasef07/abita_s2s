@@ -142,19 +142,19 @@ class LiveKit:
             raise ValueError(
                 "Provision the new Python abita-s2s agent before deploying"
             )
-        if action == "stage":
+        if action in ("deploy", "stage"):
+            deployment = "staging" if action == "stage" else "production"
             attrs = [
                 arg for key in KEYS for arg in ("--attribute", f"{key}={manifest[key]}")
             ]
             self.command(
                 "deploy",
-                "--deployment",
-                "staging",
+                *(["--deployment", "staging"] if action == "stage" else []),
                 "--no-default-attributes",
                 *attrs,
                 ".",
             )
-            return self.wait("staging", manifest)
+            return self.wait(deployment, manifest)
         if not expected:
             raise ValueError(
                 "Promotion/rollback requires an explicit known LiveKit version"
@@ -176,7 +176,7 @@ class LiveKit:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["stage", "promote", "rollback"])
+    parser.add_argument("action", choices=["deploy", "stage", "promote", "rollback"])
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--release", type=Path, required=True)
     parser.add_argument("--commit", required=True)
