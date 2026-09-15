@@ -72,6 +72,9 @@ class InsuranceRegistration:
         self._task: asyncio.Task | None = None
         self._closed = False
 
+    def close_admission(self) -> None:
+        self._closed = True
+
     async def aclose(self):
         self._closed = True
         if self._task:
@@ -123,7 +126,7 @@ class InsuranceRegistration:
         self._task = asyncio.create_task(run())
         return await asyncio.shield(self._task)
 
-    async def add(self, registration: Registration) -> dict:
+    async def add(self, registration: Registration, *, call_id: str | None = None) -> dict:
         r = registration
         key = (
             self.state.call.called_office_key,
@@ -253,6 +256,13 @@ class InsuranceRegistration:
                 answer = staff(result.status)
             else:
                 answer = self._created(result, r, absence, checked)
+            if self.state.reporter:
+                evidence = {"outcome": answer["outcome"]}
+                if answer["outcome"] in ("created", "partial"):
+                    evidence["externalPatientId"] = str(result.patientId)
+                    active = self.state.patient.active
+                    evidence["superseded"] = active is None or active.patientId != result.patientId
+                self.state.reporter.record("patient", evidence, call_id=call_id)
             self._creations.append((key, result, answer))
             return answer
 
@@ -300,7 +310,7 @@ class InsuranceRegistration:
             answer += " The patient context changed while this was running; this receipt was not applied to the current patient. Do not repeat chart creation."
         return reply(result.status, answer)
 
-    async def update(self, member_id: str) -> dict:
+    async def update(self, member_id: str, *, call_id: str | None = None) -> dict:
         active = self.state.patient.active
         checked = accepted_insurance(self.state)
         if active is None:
@@ -403,6 +413,10 @@ class InsuranceRegistration:
                         "updated",
                         f"Updated insurance for {active.name}. Patient context changed; the receipt was not applied to the current patient.",
                     )
+            if self.state.reporter:
+                self.state.reporter.record("insurance", {
+                    "outcome": answer["outcome"], "externalPatientId": str(active.patientId),
+                }, call_id=call_id)
             self._updates.append((key, result, answer))
             return answer
 

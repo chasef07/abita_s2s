@@ -1,0 +1,71 @@
+name: Deploy exact release
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        type: choice
+        options: [stage, promote, rollback]
+        required: true
+      release:
+        description: Exact agent tag, e.g. v0.2.0
+        required: true
+      version:
+        description: LiveKit version from tested staging record (or known rollback version)
+        required: false
+permissions:
+  contents: read
+# Workflow-level lock covers environment approval and every mutation. All writers
+# must use this workflow; manual/cloud-console staging changes invalidate evidence.
+concurrency:
+  group: abita-s2s-cloud-deployment
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: vars.ABITA_S2S_CLOUD_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.action == 'stage' && 'staging' || 'production' }}
+    env:
+      ABITA_S2S_AGENT_ID: ${{ vars.ABITA_S2S_AGENT_ID }}
+      LIVEKIT_URL: ${{ secrets.LIVEKIT_URL }}
+      LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
+      LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+      GH_TOKEN: ${{ github.token }}
+      RELEASE: ${{ inputs.release }}
+      ACTION: ${{ inputs.action }}
+      VERSION: ${{ inputs.version }}
+      SUBDOMAIN: ${{ vars.ABITA_S2S_PROJECT_SUBDOMAIN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Select immutable release commit and verify assets
+        run: |
+          [[ "$RELEASE" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          git fetch origin "refs/tags/$RELEASE"
+          git checkout --detach FETCH_HEAD
+          test "$(gh release view "$RELEASE" --json isDraft --jq .isDraft)" = false
+          gh release download "$RELEASE" --dir dist
+          echo "COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.12.13'
+          python-version: '3.13.15'
+      - name: Install pinned LiveKit CLI
+        run: |
+          curl -fsSLO https://github.com/livekit/livekit-cli/releases/download/v2.18.6/lk_2.18.6_linux_amd64.tar.gz
+          curl -fsSLO https://github.com/livekit/livekit-cli/releases/download/v2.18.6/checksums.txt
+          grep ' lk_2.18.6_linux_amd64.tar.gz$' checksums.txt | sha256sum --check --strict
+          tar -xzf lk_2.18.6_linux_amd64.tar.gz lk
+          sudo install lk /usr/local/bin/lk
+      - name: Explicit new Python target
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          Path('livekit.toml').write_text('[project]\nsubdomain = ' + json.dumps(os.environ['SUBDOMAIN']) + '\n[agent]\nid = ' + json.dumps(os.environ['ABITA_S2S_AGENT_ID']) + '\n')
+          PY
+      - run: uv run --locked python scripts/deploy.py "$ACTION" --config livekit.toml --release dist --commit "$COMMIT" --version "$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deployment-record-${{ github.run_id }}
+          path: deployment-record.json
