@@ -24,19 +24,26 @@ release PR, then GitHub Actions verifies, publishes, and deploys automatically.
 
 Each release records `agent_version`, `prompts_version`, and `evals_version` in
 `release.json`, startup identity logs, and LiveKit deployment version attributes.
-All three use the same release number, advanced by Release Please. The independent
-`prompts_sha256` and `evals_sha256` hashes identify exact content, including when a
-component is unchanged across releases. Deployment verifies every version and hash.
+Release Please advances the agent version. Prompt and eval versions advance only
+when their content differs from their previous component release. A changed bundle
+uses the new agent release number; an unchanged bundle keeps its previous version.
+For example, agent `0.4.0` can reference prompts `0.3.2` and evals `0.3.5`.
+The `prompts_sha256` and `evals_sha256` hashes identify exact content. Deployment
+verifies every version and hash.
 
-Edit scenario YAML files under `evals/` and commit them normally. Releases publish
+Edit scenario YAML files under `evals/` and commit them normally. Changed suites publish
 an immutable `evals-v<VERSION>.tar.gz` containing the YAML files and manifest,
 alongside the prompt bundle and agent package. The `evals-v<VERSION>` GitHub release
-also provides the eval bundle independently. Results are not part of this bundle.
+also provides the eval bundle independently. Unchanged bundles remain on their
+existing component releases; the new agent manifest references them, and publishing
+verifies their content without creating another bundle release. Results are not
+part of this bundle.
 The running agent records the associated eval suite's identity; it does not run
 the suite during deployment or claim that the scenarios passed.
 
 Inspect a deployed release with `lk agent versions --json` or the startup
-`release_identity` log. No separate manual version files are needed for evals.
+`release_identity` log. No separate manual version files are needed. Release builds require full Git
+history and component tags (`git fetch --tags`); shallow checkouts are rejected.
 
 ### Deployment configuration
 

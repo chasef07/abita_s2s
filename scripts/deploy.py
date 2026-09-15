@@ -14,6 +14,8 @@ import subprocess
 import time
 import tomllib
 
+from release import component_version
+
 from abita_s2s.release import checksums, eval_checksums, content_digest
 
 KEYS = (
@@ -61,20 +63,25 @@ def validate_release(directory: Path, commit: str):
     expected_assets = {
         "release.json",
         "uv.lock",
-        f"prompts-v{version}.tar.gz",
-        f"evals-v{version}.tar.gz",
         f"abita_s2s-{version}.tar.gz",
         f"abita_s2s-{version}-py3-none-any.whl",
     }
+    for component in ("prompts", "evals"):
+        bundle_version = manifest[f"{component}_version"]
+        if not re.fullmatch(r"\d+\.\d+\.\d+", bundle_version):
+            raise ValueError("Invalid component version")
+        if bundle_version == version:
+            expected_assets.add(f"{component}-v{bundle_version}.tar.gz")
     if checked != expected_assets:
         raise ValueError("Release checksum list is incomplete or unexpected")
     files = checksums(Path("src/abita_s2s/prompts"))
     sha = content_digest(files)
     eval_files = eval_checksums(Path("evals"))
+    for component, content in (("prompts", files), ("evals", eval_files)):
+        if manifest[f"{component}_version"] != component_version(component, version, commit, content):
+            raise ValueError("Component version does not match release history and content")
     if (
         manifest["agent_version"] != version
-        or manifest["prompts_version"] != version
-        or manifest["evals_version"] != version
         or manifest["eval_files"] != eval_files
         or manifest["evals_sha256"] != content_digest(eval_files)
         or manifest["prompt_files"] != files
