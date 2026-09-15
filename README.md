@@ -13,12 +13,32 @@ release PR, then GitHub Actions verifies, publishes, and deploys automatically.
 1. A successful `Verify` push run on `main` triggers Release Please to create or
    update a release PR with the version, changelog, and matching `uv.lock` version.
 2. Merging that PR creates a draft release and immutable tag. The exact release
-   commit passes the full verification workflow before publishing the paired
-   agent/prompt assets and checksums.
+   commit passes the full verification workflow before publishing the
+   agent, prompt, and eval assets and checksums.
 3. The published release deploys automatically to the separately provisioned
    `abita-s2s` LiveKit agent. Deployment verifies the target dispatch name, release
    checksums, running replicas, and version attributes. Missing configuration or
    failed health fails the workflow.
+
+### Agent, prompt, and eval versions
+
+Each release records `agent_version`, `prompts_version`, and `evals_version` in
+`release.json`, startup identity logs, and LiveKit deployment version attributes.
+All three use the same release number, advanced by Release Please. The independent
+`prompts_sha256` and `evals_sha256` hashes identify exact content, including when a
+component is unchanged across releases. Deployment verifies every version and hash.
+
+Edit scenario YAML files under `evals/` and commit them normally. Releases publish
+an immutable `evals-v<VERSION>.tar.gz` containing the YAML files and manifest,
+alongside the prompt bundle and agent package. The `evals-v<VERSION>` GitHub release
+also provides the eval bundle independently. Results are not part of this bundle.
+The running agent records the associated eval suite's identity; it does not run
+the suite during deployment or claim that the scenarios passed.
+
+Inspect a deployed release with `lk agent versions --json` or the startup
+`release_identity` log. No separate manual version files are needed for evals.
+
+### Deployment configuration
 
 One-time GitHub configuration:
 

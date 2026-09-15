@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import tarfile
 import unittest
 from unittest.mock import patch
 
@@ -32,8 +33,11 @@ class ReleaseTests(unittest.TestCase):
             manifest = dict(
                 agent_version="1.0.0",
                 prompts_version="1.0.0",
+                evals_version="1.0.0",
+                eval_files={"scenarios.yaml": "b" * 64},
+                evals_sha256=package.content_digest({"scenarios.yaml": "b" * 64}),
                 prompt_files=files,
-                prompts_sha256=package.prompt_digest(files),
+                prompts_sha256=package.content_digest(files),
                 git_commit="a" * 40,
             )
             with (
@@ -45,6 +49,9 @@ class ReleaseTests(unittest.TestCase):
                 for key, value in (
                     ("agent_version", "2.0.0"),
                     ("prompts_version", "2.0.0"),
+                    ("evals_version", "2.0.0"),
+                    ("evals_sha256", "wrong"),
+                    ("eval_files", {}),
                     ("prompts_sha256", "wrong"),
                 ):
                     (root / "release.json").write_text(
@@ -57,7 +64,7 @@ class ReleaseTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     package.identity()
 
-    def test_prompt_archive_rerun_is_identical_and_commit_is_exact(self):
+    def test_archives_are_reproducible_and_eval_changes_change_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             prompts = root / "src/abita_s2s/prompts"
@@ -66,6 +73,9 @@ class ReleaseTests(unittest.TestCase):
                 (prompts / name).write_text(name)
             (root / "pyproject.toml").write_text('[project]\nversion="1.0.0"')
             (root / "uv.lock").write_text("locked")
+            (root / "evals").mkdir()
+            (root / "evals/scenarios.yaml").write_text("name: intake\nscenarios: []\n")
+            (root / "evals/result.json").write_text("not a scenario")
 
             def git(*args):
                 if args[1] == "rev-parse":
@@ -78,14 +88,30 @@ class ReleaseTests(unittest.TestCase):
                 patch.object(builder, "ROOT", root),
                 patch.object(builder, "run", side_effect=git),
             ):
-                builder.prepare("a" * 40, root / "out")
+                manifest, _ = builder.prepare("a" * 40, root / "out")
                 first = (root / "out/prompts-v1.0.0.tar.gz").read_bytes()
+                eval_archive = root / "out/evals-v1.0.0.tar.gz"
+                first_evals = eval_archive.read_bytes()
+                with tarfile.open(eval_archive) as archive:
+                    self.assertEqual(set(archive.getnames()), {"scenarios.yaml", "manifest.json"})
+                    self.assertEqual(archive.extractfile("scenarios.yaml").read(), (root / "evals/scenarios.yaml").read_bytes())
+                    self.assertEqual(json.load(archive.extractfile("manifest.json")), manifest)
                 builder.prepare("a" * 40, root / "out")
+                self.assertEqual(first_evals, eval_archive.read_bytes())
                 self.assertEqual(
                     first, (root / "out/prompts-v1.0.0.tar.gz").read_bytes()
                 )
                 with self.assertRaises(ValueError):
                     builder.prepare("b" * 40, root / "out")
+                (root / "evals/scenarios.yaml").write_text("name: changed\nscenarios: []\n")
+                with self.assertRaisesRegex(ValueError, "different release"):
+                    builder.prepare("a" * 40, root / "out")
+                changed, _ = builder.prepare("a" * 40, root / "changed")
+                self.assertNotEqual(manifest["evals_sha256"], changed["evals_sha256"])
+                self.assertEqual(manifest["prompts_sha256"], changed["prompts_sha256"])
+                (root / "evals/scenarios.yaml").unlink()
+                with self.assertRaisesRegex(ValueError, "at least one eval"):
+                    builder.prepare("a" * 40, root / "empty")
 
     def test_publisher_refuses_reused_tag_before_upload(self):
         calls = []
@@ -179,7 +205,10 @@ class ReleaseTests(unittest.TestCase):
 
 class DeployTests(unittest.TestCase):
     def setUp(self):
-        self.manifest = dict(zip(deploy.KEYS, ("1.0.0", "1.0.0", "a" * 40, "b" * 64)))
+        self.manifest = dict(
+            agent_version="1.0.0", prompts_version="1.0.0", evals_version="1.0.0",
+            git_commit="a" * 40, prompts_sha256="b" * 64, evals_sha256="c" * 64,
+        )
         self.status = {
             "agents": [
                 {

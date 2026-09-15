@@ -1,4 +1,4 @@
-"""Build deterministic paired releases from a clean exact commit. No cloud writes."""
+"""Build agent, prompt and eval releases from a clean exact commit. No cloud writes."""
 
 import argparse
 import gzip
@@ -13,7 +13,7 @@ import tarfile
 import tomllib
 
 from abita_s2s.model_config import SPEAKER_MODEL, THINKER_MODEL
-from abita_s2s.release import checksums, prompt_digest
+from abita_s2s.release import checksums, eval_checksums, content_digest
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -38,12 +38,16 @@ def prepare(commit: str, output: Path):
     if not re.fullmatch(r"\d+\.\d+\.\d+", version):
         raise ValueError("Use a stable major.minor.patch release version")
     files = checksums(ROOT / "src/abita_s2s/prompts")
+    eval_files = eval_checksums(ROOT / "evals")
     manifest = {
         "agent_version": version,
         "prompts_version": version,
+        "evals_version": version,
         "git_commit": commit,
         "prompt_files": files,
-        "prompts_sha256": prompt_digest(files),
+        "prompts_sha256": content_digest(files),
+        "eval_files": eval_files,
+        "evals_sha256": content_digest(eval_files),
         "uv_lock_sha256": digest(ROOT / "uv.lock"),
         "models": {"speaker": SPEAKER_MODEL, "thinker": THINKER_MODEL},
     }
@@ -58,19 +62,21 @@ def prepare(commit: str, output: Path):
     (output / "release.json").write_bytes(encoded)
     epoch = int(run("git", "show", "-s", "--format=%ct", commit))
     # Fixed order, owner and timestamps make reruns byte-identical.
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w") as archive:
-        entries = {
-            name: (ROOT / "src/abita_s2s/prompts" / name).read_bytes() for name in files
-        }
-        entries["manifest.json"] = encoded
-        for name, data in sorted(entries.items()):
-            info = tarfile.TarInfo(name)
-            info.size, info.mtime, info.mode = len(data), epoch, 0o644
-            archive.addfile(info, io.BytesIO(data))
-    (output / f"prompts-v{version}.tar.gz").write_bytes(
-        gzip.compress(buf.getvalue(), mtime=0)
-    )
+    for label, directory, names in (
+        ("prompts", ROOT / "src/abita_s2s/prompts", files),
+        ("evals", ROOT / "evals", eval_files),
+    ):
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w") as archive:
+            entries = {name: (directory / name).read_bytes() for name in names}
+            entries["manifest.json"] = encoded
+            for name, data in sorted(entries.items()):
+                info = tarfile.TarInfo(name)
+                info.size, info.mtime, info.mode = len(data), epoch, 0o644
+                archive.addfile(info, io.BytesIO(data))
+        (output / f"{label}-v{version}.tar.gz").write_bytes(
+            gzip.compress(buf.getvalue(), mtime=0)
+        )
     return manifest, epoch
 
 

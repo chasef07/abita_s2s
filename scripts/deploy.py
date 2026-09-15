@@ -14,9 +14,12 @@ import subprocess
 import time
 import tomllib
 
-from abita_s2s.release import checksums, prompt_digest
+from abita_s2s.release import checksums, eval_checksums, content_digest
 
-KEYS = ("agent_version", "prompts_version", "git_commit", "prompts_sha256")
+KEYS = (
+    "agent_version", "prompts_version", "evals_version", "git_commit",
+    "prompts_sha256", "evals_sha256",
+)
 
 
 def run(*args):
@@ -59,22 +62,27 @@ def validate_release(directory: Path, commit: str):
         "release.json",
         "uv.lock",
         f"prompts-v{version}.tar.gz",
+        f"evals-v{version}.tar.gz",
         f"abita_s2s-{version}.tar.gz",
         f"abita_s2s-{version}-py3-none-any.whl",
     }
     if checked != expected_assets:
         raise ValueError("Release checksum list is incomplete or unexpected")
     files = checksums(Path("src/abita_s2s/prompts"))
-    sha = prompt_digest(files)
+    sha = content_digest(files)
+    eval_files = eval_checksums(Path("evals"))
     if (
         manifest["agent_version"] != version
         or manifest["prompts_version"] != version
+        or manifest["evals_version"] != version
+        or manifest["eval_files"] != eval_files
+        or manifest["evals_sha256"] != content_digest(eval_files)
         or manifest["prompt_files"] != files
         or manifest["prompts_sha256"] != sha
         or manifest["uv_lock_sha256"]
         != hashlib.sha256(Path("uv.lock").read_bytes()).hexdigest()
     ):
-        raise ValueError("Release version, lock or prompt mismatch")
+        raise ValueError("Release version, lock, prompt or eval mismatch")
     return manifest
 
 
