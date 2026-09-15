@@ -101,18 +101,32 @@ class AbitaAgent(Agent):
         insuranceMemberId: str, ssnLast4: str | None,
         newPatientConfirmed: Literal[True] | None, readBack: Literal[True] | None,
     ) -> str:
-        """Create a new patient chart from caller-confirmed intake; no existing-chart lookup.
+        """Create a new patient chart and attach insurance from completed intake.
 
-        Requires accepted insurance for the visit type and complete intake.
-        Confirm first registration, callback number, and the full identity, contact,
-        address and insurance read-back before setting confirmation flags true.
-        Use the patient's details, not the caller's. DOB uses MM/DD/YYYY.
-        subscriberName is the name on the insurance card; reuse the patient's
-        collected name when they confirm it is theirs.
-        Pass phone:null only when the inbound callback number was confirmed.
-        Request SSN last four once for insured routine vision; use null if unavailable
-        or declined, and skip for self-pay. Never repeat SSN in read-back.
-        Claim success only from this receipt; never retry full or partial creation.
+        Requires accepted insurance for the visit type and caller confirmation of
+        the final read-back. No existing-chart lookup is required.
+        Returns created, partial, or a required next step/failure. Partial means the
+        chart exists but insurance is not confirmed. Do not repeat chart creation
+        after a created, partial, or uncertain result.
+
+        Args:
+            firstName: Patient's first name.
+            lastName: Patient's last name.
+            dob: Patient's date of birth in MM/DD/YYYY.
+            phone: Patient's callback number; null only when the inbound number was confirmed.
+            inboundPhoneConfirmed: True if the caller approved the inbound number for the file; otherwise null.
+            email: Patient's email address, or null if unavailable or declined.
+            street: Street number and street name.
+            aptSuite: Apartment, unit, or suite; null if none.
+            city: City of the patient's address.
+            state: Two-letter state abbreviation.
+            zip: ZIP code of the patient's address.
+            sex: Patient's sex for registration.
+            subscriberName: Name on the insurance card; reuse the patient's name if confirmed as theirs.
+            insuranceMemberId: Member ID on the insurance card; use "self pay" for self-pay.
+            ssnLast4: Four digits for insured routine vision only; null if unavailable, declined, or self-pay.
+            newPatientConfirmed: True when the caller says this is their first registration; otherwise null.
+            readBack: True only after the caller confirms the complete final read-back; otherwise null.
         """
         if self._insurance is None or self._insurance.state is not context.userdata:
             return json.dumps(staff())
