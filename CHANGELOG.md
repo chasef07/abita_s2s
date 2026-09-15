@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/chasef07/abita_s2s/compare/v0.3.0...v0.3.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* explicitly select LiveKit deployment agent ([c3f6d91](https://github.com/chasef07/abita_s2s/commit/c3f6d91cd9ab671160bfbd0668d182e357e344df))
+
 ## [0.3.0](https://github.com/chasef07/abita_s2s/compare/v0.2.0...v0.3.0) (2026-09-15)
 
 
