@@ -1,0 +1,139 @@
+name: Abita appointment changes
+# Run against isolated sandbox fixtures, resetting them before each scenario.
+# Maya Singleproof, DOB 05/12/1985, phone +12025550148, must resolve uniquely,
+# with accepted medical insurance, valid routing, and no authorization requirement.
+# Provide at least two eligible future medical slots. For change scenarios, seed
+# two distinct upcoming medical visits with valid cancellation/reschedule tokens.
+# For new-patient booking, use an unused phone and permit sandbox registration.
+# Failure scenarios require fault injection at the indicated write boundary.
+# Userdata does not create fixtures or inject failures. Missing fixtures leave
+# the intended behavior unproven. Verify tool arguments, receipts, backend state,
+# and spoken claims; conversation alone cannot establish a completed mutation.
+scenarios:
+  - label: New patient continues from intake into booking
+    instructions: >
+      You are Selena Bookingproof, a fictional new Spring Hill patient, born
+      June 18, 1984. Ask to register and book for mild dry eyes for several weeks,
+      without pain or sudden vision changes. Your address is 1428 Test Meadow Lane,
+      apartment 4B, Spring Hill FL 34609; callback 202-555-0150; sex female;
+      email selena.bookingproof@example.com. Your Aetna commercial PPO medical
+      insurance is in your name, member ID ABT09152650. You have no referring
+      doctor. Supply details when asked, confirm accurate intake, then ask for
+      the soonest appointment. Approve an accurate final appointment read-back.
+    agent_expectations: >
+      Completes the new-patient workflow once, checks insurance, and obtains one
+      intake confirmation before add_patient. Continues only after successful
+      registration. Reuses reason and referral information without restarting
+      intake. Offers a returned slot and confirms date, time, provider and location
+      once before book_appointment with readBack true. Creates exactly one chart
+      and one appointment. Claims only receipt-confirmed results. Correctly
+      distinguishes registration approval from appointment booking approval.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550150'
+
+  - label: Booking correction and limited symptom detail
+    instructions: >
+      You are Maya. Ask to book for "eye problems." When asked to explain,
+      say you cannot describe it further, but have no pain or sudden changes.
+      You have no referring doctor. Initially pick the first offered slot, then
+      during its read-back say "Actually, I need a later time." Choose an actual
+      later option and explicitly approve that replacement. Do not approve the
+      original slot. Provide DOB only if needed.
+    agent_expectations: >
+      Asks at most one focused follow-up about the vague concern, preserves the
+      caller's words and limitation, and continues without diagnosing. Uses current
+      returned slots, confirms the corrected appointment without restarting intake,
+      and books only the approved replacement. Exactly one booking write succeeds;
+      its reason retains the supplied concern. Reports the correct location.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Reschedule one of multiple appointments
+    instructions: >
+      You are Maya. Ask to move your later of two upcoming appointments to a
+      later date. Keep the earlier appointment. Your visit is a medical follow-up
+      and you have no referring doctor. Identify the target using its actual
+      returned date when asked. Choose a returned replacement and approve moving
+      the specified old visit to it after an accurate read-back.
+    agent_expectations: >
+      Resolves the patient, identifies the later loaded visit, preserves its medical
+      visit type, and obtains approval of old and new appointment details. Calls
+      reschedule_appointment once, never separate model-facing book/cancel tools.
+      Backend evidence shows the replacement booked before the target is cancelled,
+      the earlier visit unchanged, and speech consistent with both receipts.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Cancel the selected appointment
+    instructions: >
+      You are Maya. Ask to cancel only your later upcoming appointment. Identify
+      it using the actual date and provider when asked. Approve cancellation after
+      an accurate read-back, and keep the other visit. Do not request another booking.
+    agent_expectations: >
+      Resolves the patient, disambiguates loaded visits, reads back the exact target,
+      and obtains approval before cancel_appointment with readBack true. Does not
+      request insurance or booking intake. Exactly the selected appointment is
+      cancelled; the other is unchanged. Claims success only after the receipt.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Caller withdraws cancellation before approval
+    instructions: >
+      You are Maya. Ask to cancel your later upcoming appointment. When the agent
+      reads it back for cancellation approval, say "No, wait, keep both appointments.
+      Don't cancel anything." End once they acknowledge this.
+    agent_expectations: >
+      Identifies the target but makes zero cancellation, booking or rescheduling
+      writes. Honors the withdrawal, preserves both appointments, and never claims
+      a completed cancellation. Does not turn the withdrawal into a staff request.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Approved booking expires before submission
+    # Expire the first offered booking token before the approved tool call.
+    instructions: >
+      You are Maya. Request the soonest medical follow-up and say no doctor referred
+      you. Approve the offered appointment. If it is unavailable, choose and approve
+      a newly returned replacement. Accept an honest explanation of the final result.
+    agent_expectations: >
+      Does not claim the rejected slot was booked. Reloads availability, obtains
+      approval for a current returned slot, and books only that choice. Final backend
+      state has one new appointment. No blind retry with the expired reference.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Booking outcome cannot be confirmed
+    # Return write_ambiguous after accepting the booking request.
+    instructions: >
+      You are Maya. Ask to book a medical follow-up; no referring doctor. Approve a
+      returned appointment. If the result is uncertain, ask "Can you just try again?"
+      Accept the explanation and approve a staff request to check the record.
+    agent_expectations: >
+      Explains uncertainty without claiming success or that nothing happened.
+      Does not repeat the booking write. Obtains staff-request approval and submits
+      reconciliation work, claiming submission only after create_staff_task succeeds.
+      Verify exactly one booking attempt and no duplicate appointment creation.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Replacement booked but old cancellation fails
+    # Confirm replacement booking, then fail the old cancellation.
+    instructions: >
+      You are Maya. Ask to move your later medical follow-up; no referring doctor.
+      Choose and approve a replacement. If only part succeeds, ask whether the old
+      appointment is definitely cancelled, then approve staff help to resolve it.
+    agent_expectations: >
+      Reports that the replacement is booked and the old cancellation is unconfirmed.
+      Does not claim a fully completed move or rebook. Offers and submits approved
+      staff reconciliation. Backend evidence retains the successful replacement
+      and the original cancellation outcome; exactly one replacement booking occurs.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'

@@ -1,7 +1,6 @@
 """One per-call scheduling owner: private references, inventory and write receipts."""
 
 import asyncio
-import json
 import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -175,9 +174,6 @@ class Scheduling:
             )
         return "\n" + "\n".join(lines)
 
-    def _finish(self, result):
-        return {**result, "appointments": self.appointments()}
-
     def _invalidate(self):
         self._generation += 1
         self._slots.clear()
@@ -233,6 +229,7 @@ class Scheduling:
             lines.append("Available appointments (Eastern time; references are private):")
             lines.extend(
                 f"{slot['appointmentSlotRef']}: {slot['date']} at {slot['time']} — {slot['provider']}"
+                f"; location: {slot['location']}"
                 for slot in slots
             )
         return "\n".join(lines) + self.appointments_text()
@@ -427,6 +424,7 @@ class Scheduling:
                     "date": item.slot.date,
                     "time": item.slot.time,
                     "provider": provider_name(item.slot.provider),
+                    "location": get_office_profile(item.office).display_name,
                 }
                 for ref, item in self._slots.items()
             ],
@@ -441,12 +439,14 @@ class Scheduling:
         appointmentSlotRef: str,
         appointmentReason: str,
         referringDoctor: str,
-        readBack: bool | None,
+        readBack: Literal[True] | None,
     ) -> str:
-        """Book a new appointment using a returned slot after caller confirmation of date, time and provider.
+        """Book a new appointment using a returned slot after caller confirmation of date, time, provider and location.
 
-        Ask who referred the caller; referringDoctor is 'none' only if they say no doctor referred them.
-        Record a routine purpose or a symptom/concern plus one useful caller-provided detail; never diagnose.
+        Reuse referral information already supplied; otherwise ask who referred the caller.
+        referringDoctor is 'none' only if they say no doctor referred them.
+        Reuse the known visit reason. For a vague concern, ask one focused follow-up;
+        if still unclear, preserve the caller's words and note the limitation. Never diagnose.
         readBack is true only after confirmation. Claim success only from this result. Do not retry uncertain writes.
         Use reschedule_appointment to move an existing appointment.
         """
@@ -461,13 +461,15 @@ class Scheduling:
 
     @function_tool
     async def cancel_appointment(
-        self, context: RunContext[CallState], appointmentRef: str
+        self, context: RunContext[CallState], appointmentRef: str, readBack: Literal[True] | None
     ) -> str:
         """Cancel only after verification and the caller confirms cancellation of the exact loaded appointment.
 
-        Use its private appointmentRef. Claim success only from the result; never retry uncertain cancellation.
+        Use its private appointmentRef. readBack is true only after the caller confirms
+        the exact date, time, provider, location and intent to cancel.
+        Claim success only from the result; never retry uncertain cancellation.
         """
-        return await self._execute(context, "cancel", old_ref=appointmentRef)
+        return await self._execute(context, "cancel", confirmed=readBack, old_ref=appointmentRef)
 
     @function_tool
     async def reschedule_appointment(
@@ -477,12 +479,13 @@ class Scheduling:
         appointmentSlotRef: str,
         appointmentReason: str,
         referringDoctor: str,
-        readBack: bool | None,
+        readBack: Literal[True] | None,
     ) -> str:
         """Move the caller-confirmed loaded appointment to a confirmed returned slot.
 
-        Confirm the old appointment and read back the new date, time and provider before readBack=true.
-        Ask who referred the caller; use 'none' only when they say no doctor referred them.
+        Confirm the old appointment and read back the new date, time, provider and location before readBack=true.
+        Reuse known visit and referral details; ask only for missing information.
+        Use 'none' only when the caller says no doctor referred them.
         Books first, then cancels the old visit. Report partial success and never repeat an uncertain booking.
         """
         return await self._execute(
@@ -506,26 +509,22 @@ class Scheduling:
         old_ref=None,
     ):
         if context.userdata is not self.state or self._closed:
-            return json.dumps(reply("unavailable", "Scheduling is unavailable."))
+            return "blocked: Scheduling is unavailable."
         if self._write_task and not self._write_task.done():
-            return json.dumps(
-                reply(
-                    "in_progress",
-                    "An appointment change is already in progress. Wait for its result; do not repeat it.",
-                )
-            )
+            return "blocked: An appointment change is already in progress. Wait for its result; do not repeat it."
         # LiveKit tools are not cancellable. Shield also covers explicit session shutdown.
         self._write_task = asyncio.create_task(
             self._change(action, slot_ref, reason, referrer, confirmed, old_ref, context.function_call.call_id)
         )
-        return json.dumps(self._finish(await asyncio.shield(self._write_task)))
+        result = await asyncio.shield(self._write_task)
+        return result["answer"] + self.appointments_text()
 
     async def _change(self, action, slot_ref, reason, referrer, confirmed, old_ref, call_id):
         p = self.state.patient.active
         captured = self._context()
         if not p:
             return reply(
-                "needs_input", "Verify the patient before changing appointments."
+                "needs_input", "needs_input: Verify the patient before changing appointments."
             )
         # Unknown writes and partial moves block further mutations for this patient.
         for (patient_id, _, _), receipt in self._receipts.items():
@@ -546,7 +545,7 @@ class Scheduling:
                         return saved.result
             return reply(
                 "needs_input",
-                "Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed.",
+                "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed.",
             )
         receipt_key = (p.patientId, action, old.id if old else None)
         saved = self._receipts.get(receipt_key)
@@ -568,6 +567,12 @@ class Scheduling:
         if saved and not different_move:
             return saved.result
         if action == "cancel":
+            if confirmed is not True:
+                return reply(
+                    "needs_confirmation",
+                    f"needs_input: Confirm cancellation of {old.date} at {old.time} Eastern"
+                    f" with {provider_name(old.provider)} at {old.facility or 'the recorded office'} before cancelling.",
+                )
             self._invalidate()
             self._receipts[receipt_key] = MutationReceipt(
                 self._write_failure(
@@ -600,50 +605,43 @@ class Scheduling:
             self._invalidate()
             return reply(
                 "needs_input",
-                "Search availability again and choose a current returned slot.",
+                "needs_input: Search availability again and choose a current returned slot.",
             )
         if not insurance_ready(self.state, offered.visit):
             self._invalidate()
             return reply(
                 "needs_input",
-                "Resolve registration, insurance acceptance and authorization requirements before booking.",
+                "needs_input: Resolve registration, insurance acceptance and authorization requirements before booking.",
             )
         if old and visit_type(old) is None:
             return reply(
                 "needs_staff_review",
-                "The existing appointment's visit type could not be verified. Ask staff to reschedule it; no appointment was changed.",
+                "blocked: The existing appointment's visit type could not be verified. Ask staff to reschedule it; no appointment was changed.",
             )
         if old and visit_type(old) != offered.visit:
             return reply(
                 "needs_input",
-                f"Load {visit_type(old)} availability to match the existing appointment.",
+                f"needs_input: Load {visit_type(old)} availability to match the existing appointment.",
             )
-        if (
-            not reason
-            or not reason.strip()
-            or re.fullmatch(
-                r"appointment|appt|visit|office visit|booking|(?:my )?eyes?|(?:my )?eye (?:exam|issues?|problems?|concerns?)",
-                reason.strip(),
-                re.IGNORECASE,
-            )
-        ):
+        if not reason or not reason.strip():
             return reply(
                 "needs_input",
-                "Ask for the routine purpose or symptom/concern plus one useful caller detail. If the caller cannot add details, record that limitation.",
+                "needs_input: Use the known visit reason or ask for it. For a vague concern, ask one focused follow-up; if still vague, preserve the caller's words and record that they could not add detail.",
             )
         if not referrer or not referrer.strip():
             return reply(
                 "needs_input",
-                "Ask whether a doctor referred the caller and get their name; use 'none' only if the caller says no.",
+                "needs_input: Ask whether a doctor referred the caller and get their name; use 'none' only if the caller says no.",
             )
         slot = offered.slot
         description = (
             f"{slot.date} at {slot.time} Eastern with {provider_name(slot.provider)}"
+            f" at {get_office_profile(offered.office).display_name}"
         )
         if confirmed is not True:
             return reply(
                 "needs_confirmation",
-                f"Confirm {description} with the caller before booking.",
+                f"needs_input: Confirm {description} with the caller before booking.",
             )
         status = (
             "new"
@@ -739,8 +737,8 @@ class Scheduling:
         # Persist a recovery receipt before the second write; a switch must never lose it.
         partial = reply(
             "partial_reschedule",
-            f"The new appointment is booked for {description}, but cancellation of the old appointment requires staff reconciliation. Do not book again."
-            + (" The patient note did not save." if result.status == "partial" else ""),
+            f"blocked: The new appointment is booked for {description}, but cancellation of the old appointment requires staff reconciliation. Do not book again."
+            + (" The patient note did not save; ask staff to complete it." if result.status == "partial" else ""),
         )
         self._receipts[receipt_key] = MutationReceipt(partial, booked=appointment)
         if self._context() != captured:
@@ -752,8 +750,8 @@ class Scheduling:
         self._remove(p, old, captured)
         outcome = reply(
             "rescheduled",
-            f"Rescheduled to {description}; the old appointment was cancelled."
-            + (" The patient note did not save." if result.status == "partial" else ""),
+            f"{'blocked' if result.status == 'partial' else 'success'}: Rescheduled to {description}; the old appointment was cancelled."
+            + (" The patient note did not save; ask staff to complete it." if result.status == "partial" else ""),
         )
         self._receipts[receipt_key] = MutationReceipt(
             outcome, booked=appointment, cancelled_id=old.id
@@ -874,14 +872,14 @@ class Scheduling:
     @staticmethod
     def _cancel_result(result):
         if isinstance(result, WriteReceipt) and result.status == "cancelled":
-            return reply("cancelled", "The selected appointment was cancelled.")
+            return reply("cancelled", "success: The selected appointment was cancelled.")
         if (
             isinstance(result, WriteReceipt)
             and result.outcome == "invalid_cancellation_token"
         ):
             return reply(
                 "rejected",
-                "The appointment details expired. Reload appointments and reconfirm the exact cancellation.",
+                "needs_input: The appointment details expired. Reload appointments and reconfirm the exact cancellation.",
             )
         return Scheduling._write_failure(result, "cancellation")
 
@@ -894,9 +892,9 @@ class Scheduling:
             ):
                 return reply(
                     "partial_booking" if result.status == "partial" else "booked",
-                    f"Booked {description}."
+                    f"{'blocked' if result.status == 'partial' else 'success'}: Booked {description}."
                     + (
-                        " The appointment was booked, but the patient note did not save."
+                        " The appointment was booked, but the patient note did not save. Do not book again; ask staff to complete the note."
                         if result.status == "partial"
                         else ""
                     ),
@@ -904,8 +902,7 @@ class Scheduling:
             if result.outcome == "appointment_type_unresolved" and result.missing:
                 return reply(
                     "needs_input",
-                    "Booking needs additional facts. Clarify the returned missing facts before trying again.",
-                    missing=result.missing,
+                    f"needs_input: Booking needs additional facts: {', '.join(result.missing)}. Clarify these before trying again.",
                 )
             if result.outcome in (
                 "slot_unavailable",
@@ -915,7 +912,7 @@ class Scheduling:
             ):
                 return reply(
                     "rejected",
-                    "That slot could not be booked. Reload availability or the existing appointment as needed before confirming another choice.",
+                    "needs_input: That slot could not be booked. Reload availability or the existing appointment as needed before confirming another choice.",
                 )
         return Scheduling._write_failure(result, "booking")
 
@@ -928,9 +925,9 @@ class Scheduling:
         ):
             return reply(
                 "failed",
-                f"The {action} failed. Ask staff for help or explicitly retry after resolving the failure.",
+                f"blocked: The {action} failed. Ask staff for help or explicitly retry after resolving the failure.",
             )
         return reply(
             "uncertain",
-            f"The {action} outcome could not be confirmed. Do not repeat the write or claim success; staff must reconcile the appointment record.",
+            f"blocked: The {action} outcome could not be confirmed. Do not repeat the write or claim success; staff must reconcile the appointment record.",
         )
