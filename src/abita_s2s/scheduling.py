@@ -229,7 +229,6 @@ class Scheduling:
             lines.append("Available appointments (Eastern time; references are private):")
             lines.extend(
                 f"{slot['appointmentSlotRef']}: {slot['date']} at {slot['time']} — {slot['provider']}"
-                f"; location: {slot['location']}"
                 for slot in slots
             )
         return "\n".join(lines) + self.appointments_text()
@@ -424,7 +423,6 @@ class Scheduling:
                     "date": item.slot.date,
                     "time": item.slot.time,
                     "provider": provider_name(item.slot.provider),
-                    "location": get_office_profile(item.office).display_name,
                 }
                 for ref, item in self._slots.items()
             ],
@@ -441,7 +439,7 @@ class Scheduling:
         referringDoctor: str,
         readBack: Literal[True] | None,
     ) -> str:
-        """Book a new appointment using a returned slot after caller confirmation of date, time, provider and location.
+        """Book a new appointment using a returned slot after caller confirmation of date, time and provider.
 
         Reuse the known visit reason. For a vague concern, ask one focused follow-up;
         if still unclear, preserve the caller's words and note the limitation. Never diagnose.
@@ -471,7 +469,7 @@ class Scheduling:
         """Cancel only after verification and the caller confirms cancellation of the exact loaded appointment.
 
         Use its private appointmentRef. readBack is true only after the caller confirms
-        the exact date, time, provider, location and intent to cancel.
+        the exact date, time, provider and intent to cancel.
         Claim success only from the result; never retry uncertain cancellation.
         """
         return await self._execute(context, "cancel", confirmed=readBack, old_ref=appointmentRef)
@@ -488,7 +486,7 @@ class Scheduling:
     ) -> str:
         """Move the caller-confirmed loaded appointment to a confirmed returned slot.
 
-        Confirm the old appointment and read back the new date, time, provider and location before readBack=true.
+        Confirm the old appointment and read back the new date, time and provider before readBack=true.
         Reuse known visit and referral details; ask only for missing information.
         Books first, then cancels the old visit. Report partial success and never repeat an uncertain booking.
 
@@ -582,7 +580,7 @@ class Scheduling:
                 return reply(
                     "needs_confirmation",
                     f"needs_input: Confirm cancellation of {old.date} at {old.time} Eastern"
-                    f" with {provider_name(old.provider)} at {old.facility or 'the recorded office'} before cancelling.",
+                    f" with {provider_name(old.provider)} before cancelling.",
                 )
             self._invalidate()
             self._receipts[receipt_key] = MutationReceipt(
@@ -647,7 +645,6 @@ class Scheduling:
         slot = offered.slot
         description = (
             f"{slot.date} at {slot.time} Eastern with {provider_name(slot.provider)}"
-            f" at {get_office_profile(offered.office).display_name}"
         )
         if confirmed is not True:
             return reply(

@@ -16,14 +16,14 @@ scenarios:
       weeks, without pain or sudden vision changes. You have no referring doctor
       and your insurance has not changed. Give your first name when asked and DOB
       only if needed. Choose an actual returned slot and approve an accurate final
-      date, time, provider and location read-back. End after the result is explained.
+      date, time and provider read-back. End after the result is explained.
     agent_expectations: >
       Resolves Maya through the existing-patient workflow, reuses known details,
       searches medical availability and offers a returned slot. Obtains explicit
       booking approval before book_appointment with readBack true. Exactly one new
       appointment is booked. Claims success only from its receipt and gives the
-      correct date, time, provider and location. Does not register a new chart.
-      Fail if no booking succeeds or location is omitted from the approval read-back.
+      correct date, time and provider. Does not register a new chart.
+      Fail if no booking succeeds.
     userdata:
       office: spring-hill
       caller_phone: '+12025550148'
@@ -39,12 +39,12 @@ scenarios:
     agent_expectations: >
       Resolves Maya, identifies the exact loaded appointment, and searches matching
       medical availability. Obtains approval of old and new appointment details,
-      including location, before reschedule_appointment with readBack true. Never
+      before reschedule_appointment with readBack true. Never
       calls separate model-facing booking and cancellation tools to perform the move.
       Backend receipts show the replacement booked before the original is cancelled.
       Other visits remain unchanged. Reports both confirmed outcomes accurately.
-      Fail if no reschedule succeeds, location is omitted from the approval read-back,
-      or the completion does not explicitly say the old appointment was cancelled.
+      Fail if no reschedule succeeds or the completion does not explicitly say
+      the old appointment was cancelled.
     userdata:
       office: spring-hill
       caller_phone: '+12025550148'
@@ -54,7 +54,7 @@ scenarios:
       You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
       Ask to cancel your next upcoming medical appointment. If several visits exist,
       choose the earliest using its actual returned date. Approve cancellation after
-      an accurate date, time, provider and location read-back. Keep any other visits.
+      an accurate date, time and provider read-back. Keep any other visits.
       Do not request a new booking. End after the cancellation result is explained.
     agent_expectations: >
       Resolves Maya, identifies the exact loaded visit, and obtains explicit approval
@@ -62,7 +62,6 @@ scenarios:
       or check insurance for cancellation. Exactly the selected visit is cancelled,
       other visits remain unchanged, and success is claimed only after the receipt.
       Fail if no cancellation succeeds, including when no appointments are found.
-      Fail if location is omitted from the approval read-back.
     userdata:
       office: spring-hill
       caller_phone: '+12025550148'

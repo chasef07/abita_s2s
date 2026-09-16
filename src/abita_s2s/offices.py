@@ -17,7 +17,7 @@ class OfficeProfile:
 
 SPRING_HILL = OfficeProfile(
     key="spring-hill",
-    display_name="Abita Eye Group Spring Hill",
+    display_name="Abita Eye Group",
     trunk_numbers=("+17275919997", "+18135484830"),
     greeting="Thank you for calling Abita Eye Group. How can I help you today?",
 )
