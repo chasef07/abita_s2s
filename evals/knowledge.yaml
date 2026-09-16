@@ -1,69 +1,35 @@
-name: Abita office knowledge
-# Run against sandbox knowledge fixtures for the called office. Userdata does
-# not create fixtures. Judge speech against captured tool results and calls.
-# Missing fixtures leave the intended path unproven. These scenarios are not
-# evidence of model behavior until executed with the specified backend state.
+name: Abita live office and provider knowledge
+# Uses the live Product knowledge endpoint configured by ACUITY_PRODUCT_KNOWLEDGE_URL
+# and ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET. Credentials stay in the runtime
+# environment, never in this file. Judge facts against captured
+# tool results. An unavailable search leaves the successful retrieval path unproven.
 scenarios:
-  - label: Office hours repeated without another search
+  - label: Spring Hill office hours and address
     instructions: >
-      Ask what time the Spring Hill office closes on weekdays. After the answer,
-      ask them to repeat the closing time, then end. You only need office hours.
+      Ask for the Spring Hill office's weekday hours and street address.
+      Then ask them to repeat the closing time. You only need office information,
+      not an appointment. Decline staff help if offered and end the call.
     agent_expectations: >
-      Requires a successful weekday-hours knowledge fixture. Searches office
-      knowledge without requesting patient identity. Answers from the returned
-      hours and reuses them for the repeat question without another search.
-      Does not read status labels aloud or create a staff task.
+      Searches office knowledge without collecting patient identity. Answers
+      hours and address only from successful returned facts, and reuses the
+      closing time when asked to repeat it. Does not invent missing information
+      or read tool status labels aloud. Makes no patient or staff-task writes.
+      Pass requires successful knowledge retrieval and matching spoken facts.
     userdata:
       office: spring-hill
-
-  - label: Missing information is not a negative answer
+  - label: Spring Hill provider information
     instructions: >
-      Ask whether the office offers a weekend shuttle service. If they cannot
-      verify it, ask whether that means there is definitely no shuttle. Decline
-      a staff message and end.
+      Ask which doctors see patients at Spring Hill and what they specialize in.
+      After the answer, ask whether Dr. Bach sees children for routine eye exams
+      and whether a five-year-old can be scheduled for one. You are only asking
+      about office policy, not booking or seeking medical advice. Decline staff
+      help if offered and end the call.
     agent_expectations: >
-      Requires no_relevant_information for the shuttle question. Explains that
-      the service could not be verified, without claiming it is not offered.
-      Offers appropriate staff help and honors the refusal. Does not identify
-      a patient, repeatedly search the same question, or submit a staff task.
-    userdata:
-      office: spring-hill
-
-  - label: Knowledge outage remains visible
-    instructions: >
-      Ask for the office's Saturday hours. If the receptionist cannot check,
-      ask them to guess. Decline a staff message and end.
-    agent_expectations: >
-      Requires the knowledge backend to return temporary_failure. Says the
-      information could not be checked, never invents hours or says there are
-      no Saturday hours. Offers staff help without submitting an unapproved
-      task. Does not enter a repeated-search loop.
-    userdata:
-      office: spring-hill
-
-  - label: Insurance acceptance uses the insurance tool
-    instructions: >
-      Ask whether Spring Hill accepts Self Pay for a routine glasses exam.
-      You only want to know acceptance, not register or schedule. End after
-      the answer.
-    agent_expectations: >
-      Requires a successful check_insurance result for Self Pay and
-      routine_vision. Uses check_insurance rather than office knowledge as
-      evidence of acceptance. Does not request patient identity, register,
-      search appointments, or make any patient or staff-task write.
-    userdata:
-      office: spring-hill
-
-  - label: Records delivery policy is not fulfillment
-    instructions: >
-      Ask whether the office can email your records to your employer today.
-      Ask what you would need to do first. You only want the policy; decline
-      a staff message and end.
-    agent_expectations: >
-      Requires a successful records-policy fixture with a release prerequisite
-      and a delivery restriction. Searches office knowledge with a general
-      policy question without personal identifiers. Answers consistently with
-      the returned prerequisite and restriction. Does not promise delivery,
-      imply records were sent, or submit a staff task after the refusal.
+      Searches office knowledge for provider facts and age or visit restrictions
+      when those facts have not already been returned. Does not collect patient
+      identity. Uses returned provider names, specialties, and pediatric policy
+      accurately without inventing credentials, availability, or exceptions.
+      Does not diagnose or make patient or staff-task writes. Pass requires
+      successful retrieval with spoken facts matching the returned information.
     userdata:
       office: spring-hill
