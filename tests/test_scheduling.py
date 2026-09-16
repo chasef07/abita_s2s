@@ -537,7 +537,12 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([a.id for a in owner.state.patient.active.appointments], [77])
             result = await self.tool(owner, "reschedule_appointment", **args)
             if status == "cancelled":
-                self.assertIn("the old appointment was cancelled", result)
+                self.assertIn("Your new appointment is booked for", result)
+                self.assertIn(
+                    f"Your old appointment on {appointment()['date']} at {appointment()['time']} is cancelled.",
+                    result,
+                )
+                self.assertIn("Tell the caller both outcomes.", result)
             else:
                 self.assertIn("new appointment is booked", result)
                 self.assertIn("requires staff reconciliation. Do not book again.", result)

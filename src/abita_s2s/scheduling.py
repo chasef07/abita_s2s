@@ -443,12 +443,17 @@ class Scheduling:
     ) -> str:
         """Book a new appointment using a returned slot after caller confirmation of date, time, provider and location.
 
-        Reuse referral information already supplied; otherwise ask who referred the caller.
-        referringDoctor is 'none' only if they say no doctor referred them.
         Reuse the known visit reason. For a vague concern, ask one focused follow-up;
         if still unclear, preserve the caller's words and note the limitation. Never diagnose.
         readBack is true only after confirmation. Claim success only from this result. Do not retry uncertain writes.
         Use reschedule_appointment to move an existing appointment.
+
+        Args:
+            referringDoctor: Caller-provided referring doctor. Reuse an answer already
+                supplied; otherwise ask "Did a doctor refer you?" If yes, ask for the
+                name. Use internal value "none" only when the caller says they have
+                no referring doctor. Do not ask whether to put or mark none, or
+                narrate the internal value.
         """
         return await self._execute(
             context,
@@ -485,8 +490,14 @@ class Scheduling:
 
         Confirm the old appointment and read back the new date, time, provider and location before readBack=true.
         Reuse known visit and referral details; ask only for missing information.
-        Use 'none' only when the caller says no doctor referred them.
         Books first, then cancels the old visit. Report partial success and never repeat an uncertain booking.
+
+        Args:
+            referringDoctor: Caller-provided referring doctor. Reuse an answer already
+                supplied; otherwise ask "Did a doctor refer you?" If yes, ask for the
+                name. Use internal value "none" only when the caller says they have
+                no referring doctor. Do not ask whether to put or mark none, or
+                narrate the internal value.
         """
         return await self._execute(
             context,
@@ -750,7 +761,8 @@ class Scheduling:
         self._remove(p, old, captured)
         outcome = reply(
             "rescheduled",
-            f"{'blocked' if result.status == 'partial' else 'success'}: Rescheduled to {description}; the old appointment was cancelled."
+            f"{'blocked' if result.status == 'partial' else 'success'}: Your new appointment is booked for {description}. "
+            f"Your old appointment on {old.date} at {old.time} is cancelled. Tell the caller both outcomes."
             + (" The patient note did not save; ask staff to complete it." if result.status == "partial" else ""),
         )
         self._receipts[receipt_key] = MutationReceipt(
