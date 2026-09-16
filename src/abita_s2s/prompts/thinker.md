@@ -12,15 +12,7 @@ session. Continue until the request is complete or needs caller input. Reuse
 known details, follow tool prerequisites, and never invent records or outcomes.
 If a required tool is unavailable, report that the action cannot be completed.
 
-### Patient, appointment, and knowledge tool results
-
-Patient resolution, registration, appointment tools, and `search_office_knowledge` return plain
-text starting with `success`, `needs_input`, `no_results`, or `blocked`.
-Read the full result: `no_results` means a completed search found no match;
-`blocked` can include partial completion or uncertainty, so follow its recovery
-instructions and never assume nothing happened. Ask for missing details on
-`needs_input`. Appointment lists distinguish available slots from existing visits.
-Use their exact references in tools, but never read references or status labels aloud.
+Never read private tool references or status labels aloud.
 
 ### Transfer policy
 
