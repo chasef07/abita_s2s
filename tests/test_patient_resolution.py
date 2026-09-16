@@ -397,31 +397,56 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await first)["outcome"], "superseded")
         self.assertEqual(r.state.patient.active.patientId, "john")
 
-    async def test_cancellation_reaches_transport_and_retry_is_possible(self):
-        started, cancelled = asyncio.Event(), asyncio.Event()
+    async def test_cancelled_duplicate_waiter_leaves_shared_lookup_running(self):
+        for cancelled_index in (0, 1):
+            with self.subTest(cancelled_index=cancelled_index):
+                started, release = asyncio.Event(), asyncio.Event()
+
+                async def delayed(request):
+                    started.set()
+                    await release.wait()
+                    return httpx.Response(200, json=search(candidate()))
+
+                r, calls = self.resolver([delayed, receipt()])
+                first = asyncio.create_task(r.resolve("Jane", "01/02/1980"))
+                await started.wait()
+                second = asyncio.create_task(r.resolve("Jane", "01/02/1980"))
+                await asyncio.sleep(0)
+                tasks = (first, second)
+                tasks[cancelled_index].cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await tasks[cancelled_index]
+                release.set()
+                result = await tasks[1 - cancelled_index]
+                self.assertEqual(result["outcome"], "verified")
+                self.assertEqual(r.state.patient.active.patientId, "chart-jane")
+                self.assertEqual(len(calls), 2)
+
+    async def test_lookup_finishes_after_its_only_waiter_leaves(self):
+        started, release = asyncio.Event(), asyncio.Event()
 
         async def delayed(request):
             started.set()
-            try:
-                await asyncio.Event().wait()
-            finally:
-                cancelled.set()
+            await release.wait()
+            return httpx.Response(200, json=search(candidate()))
 
-        r, _ = self.resolver([delayed, search(candidate()), receipt()])
+        r, calls = self.resolver([delayed, receipt()])
         task = asyncio.create_task(r.resolve("Jane", "01/02/1980"))
         await started.wait()
         task.cancel()
         with self.assertRaises(asyncio.CancelledError):
             await task
-        self.assertTrue(cancelled.is_set())
-        self.assertIsNone(r._token)
         self.assertIsNone(r.state.patient.active)
+        release.set()
+        self.assertEqual((await r._task)["outcome"], "verified")
+        self.assertIsNone(r._token)
         self.assertEqual((await r.resolve("Jane", "01/02/1980"))["outcome"], "verified")
+        self.assertEqual(len(calls), 2)
 
-    async def test_cancelled_read_cannot_commit_if_transport_swallows_cancellation(
+    async def test_shutdown_fences_read_even_if_transport_swallows_cancellation(
         self,
     ):
-        started, release = asyncio.Event(), asyncio.Event()
+        started, cancelled, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
 
         async def delayed(request):
             started.set()
@@ -429,28 +454,24 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
                 try:
                     await release.wait()
                 except asyncio.CancelledError:
-                    continue
+                    cancelled.set()
             return httpx.Response(200, json=receipt())
 
         r, _ = self.resolver(
             [
                 search(candidate()),
                 delayed,
-                search(candidate("latest")),
-                receipt("latest"),
             ]
         )
         task = asyncio.create_task(r.resolve("Jane", "01/02/1980"))
         await started.wait()
-        task.cancel()
-        with self.assertRaises(asyncio.CancelledError):
-            await task
+        closing = asyncio.create_task(r.aclose())
+        await cancelled.wait()
         self.assertIsNone(r._token)
-        cancelled_read = r._task
-        self.assertEqual((await r.resolve("Jane", "01/02/1980"))["outcome"], "verified")
         release.set()
-        self.assertEqual((await cancelled_read)["outcome"], "superseded")
-        self.assertEqual(r.state.patient.active.patientId, "latest")
+        await closing
+        self.assertEqual((await task)["outcome"], "superseded")
+        self.assertIsNone(r.state.patient.active)
 
     async def test_appointment_references_remain_private(self):
         appt = {

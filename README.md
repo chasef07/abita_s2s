@@ -128,6 +128,11 @@ directory. They ship in the built wheel. Missing or empty files fail visibly.
 New agents load the files again; restart the worker after editing prompts.
 Existing GPT-Live sessions retain their startup instructions.
 
+Each call's thinker instructions include the call-start date, weekday, and time
+in `America/New_York` for interpreting relative dates. This timestamp is fixed
+for that call; it does not refresh if the call crosses midnight. Scheduling still
+validates requested dates against the current Eastern date.
+
 ## Trying voices
 
 The installed plugin lists `aster`, `beacon`, `cinder`, `marin`, `stone`, and
@@ -236,10 +241,11 @@ this interface cannot distinguish two people with the same first name and DOB.
 
 A conflicting name or DOB clears the old active patient before another read.
 DOB-only followups retain the pending first name; a changed name does not inherit
-an earlier DOB. Duplicate in-flight requests share one read. Superseded, cancelled,
-cross-call, and replayed reads cannot activate a patient. The HTTP owner permits
+an earlier DOB. Duplicate in-flight requests share one resolver-owned read. A
+cancelled waiter leaves that read running; patient corrections and call shutdown
+invalidate it so stale results cannot activate a patient. The HTTP owner permits
 one retry for eligible read failures within a ten-second total deadline and does
-not follow redirects. The LiveKit tool is cancellable; it does not block interruptions.
+not follow redirects. Waiting for a lookup does not own its lifetime.
 
 Callers who say they are new proceed directly through full intake and `add_patient`;
 no existing-chart lookup is required. Registration requires caller confirmation,
