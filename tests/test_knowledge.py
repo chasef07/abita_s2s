@@ -70,11 +70,9 @@ class KnowledgeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(schema["name"], "search_office_knowledge")
                 self.assertEqual(set(schema["parameters"]["properties"]), {"query"})
                 self.assertFalse(schema["parameters"]["additionalProperties"])
-                answer = json.loads(
-                    await agent.search_office_knowledge(
-                        SimpleNamespace(userdata=call_state(office)),
-                        "  When do you close?  ",
-                    )
+                answer = await agent.search_office_knowledge(
+                    SimpleNamespace(userdata=call_state(office)),
+                    "  When do you close?  ",
                 )
                 request = requests[-1]
                 self.assertEqual(str(request.url), CONFIG.knowledge_url)
@@ -85,12 +83,7 @@ class KnowledgeTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(
                     answer,
-                    {
-                        "office": office.key,
-                        "query": "When do you close?",
-                        "outcome": "found",
-                        "answer": "Weekdays 8:30 AM–4:30 PM. Closed weekends.",
-                    },
+                    "success: Weekdays 8:30 AM–4:30 PM. Closed weekends.",
                 )
 
     async def test_no_information_is_distinct_from_unavailability(self):
@@ -105,6 +98,12 @@ class KnowledgeTests(unittest.IsolatedAsyncioTestCase):
                     "spring-hill", "Do you offer this service?"
                 )
                 self.assertEqual(result["outcome"], outcome)
+                if outcome == "no_relevant_information":
+                    self.assertTrue(result["answer"].startswith("no_results:"))
+                    self.assertIn("does not establish", result["answer"])
+                else:
+                    self.assertTrue(result["answer"].startswith("blocked:"))
+                    self.assertIn("Offer staff help", result["answer"])
 
     async def test_invalid_query_lengths_never_reach_backend(self):
         def unexpected(request):
@@ -119,6 +118,7 @@ class KnowledgeTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(query=query):
                 result = await knowledge.search("spring-hill", query)
                 self.assertEqual(result["outcome"], "invalid_query")
+                self.assertTrue(result["answer"].startswith("needs_input:"))
                 self.assertNotIn("query", result)
 
     async def test_malformed_or_inconsistent_evidence_is_unavailable(self):
@@ -232,9 +232,9 @@ class KnowledgeTests(unittest.IsolatedAsyncioTestCase):
         release_first.set()
         earlier = await first
         self.assertEqual(latest["query"], "Actually, Saturday hours?")
-        self.assertEqual(latest["answer"], "Closed weekends.")
+        self.assertEqual(latest["answer"], "success: Closed weekends.")
         self.assertEqual(earlier["query"], "Weekday hours?")
-        self.assertEqual(earlier["answer"], "Weekdays close at 4:30 PM.")
+        self.assertEqual(earlier["answer"], "success: Weekdays close at 4:30 PM.")
 
 
 class KnowledgeConfigTests(unittest.TestCase):

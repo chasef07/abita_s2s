@@ -197,8 +197,11 @@ redirects, and propagate cancellation. The called office is fixed for now;
 cross-office searches are not supported.
 
 Results distinguish found facts, no relevant information, and temporary failure.
-Found passages must belong to one revision. The thinker receives complete answer
-text with its question and office, without corpus IDs or legacy status markers.
+Found passages must belong to one revision. The thinker receives plain text
+starting with `success:`, `no_results:`, `blocked:`, or `needs_input:`, without
+corpus IDs or legacy status markers. Simulations retain the configured read-only
+knowledge endpoint; patient operations use sandbox middleware and Product writes
+remain disabled.
 There is no local-file fallback.
 
 Offline tests cover the Product contract and real `AgentSession` tool execution

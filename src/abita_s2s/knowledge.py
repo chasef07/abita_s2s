@@ -58,7 +58,7 @@ class OfficeKnowledge:
         if not 3 <= len(query) <= 500:
             return {
                 "outcome": "invalid_query",
-                "answer": "Use an office question between 3 and 500 characters.",
+                "answer": "needs_input: Provide a focused office question between 3 and 500 characters.",
             }
         # Keep each result tied to its question when overlapping reads finish out of order.
         result = {"office": office_key, "query": query}
@@ -84,14 +84,17 @@ class OfficeKnowledge:
                 return {
                     **result,
                     "outcome": data.outcome,
-                    "answer": "No relevant office information was found for this question.",
+                    "answer": (
+                        "no_results: No information was found for this question. "
+                        "This does not establish that the service is unavailable."
+                    ),
                 }
             answer = "\n".join(
                 _STATUS.sub("", p.text).strip() for p in data.passages
             ).strip()
             if not answer:
                 raise ValueError("Empty office answer")
-            return {**result, "outcome": "found", "answer": answer}
+            return {**result, "outcome": "found", "answer": f"success: {answer}"}
         except (httpx.HTTPError, ValueError, TimeoutError) as exc:
             # Never log queries, credentials, response bodies, or validation input.
             cause = (
@@ -107,5 +110,8 @@ class OfficeKnowledge:
             return {
                 **result,
                 "outcome": "temporary_failure",
-                "answer": "Office knowledge is temporarily unavailable.",
+                "answer": (
+                    "blocked: Office information could not be checked. "
+                    "Offer staff help if needed."
+                ),
             }

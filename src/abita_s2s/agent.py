@@ -168,16 +168,19 @@ class AbitaAgent(Agent):
     async def search_office_knowledge(
         self, context: RunContext[CallState], query: str
     ) -> str:
-        """Search this office's providers, hours, location, and practice policies.
+        """Look up this office's providers, hours, locations, services, and policies.
+
+        Returns office information, not patient records or live appointment availability.
+        Use check_insurance for plan acceptance.
 
         Args:
-            query: A short non-patient office question. Omit
-                patient names, identifiers, and personal medical details.
+            query: A focused office question. Omit patient names, identifiers,
+                and personal medical details.
         """
         result = await self._knowledge.search(
             context.userdata.call.called_office_key, query
         )
-        return json.dumps(result, ensure_ascii=False)
+        return result["answer"]
 
     async def create_staff_task(
         self,

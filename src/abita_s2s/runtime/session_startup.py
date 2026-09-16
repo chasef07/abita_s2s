@@ -118,6 +118,8 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         config = Config(
             openai_api_key=config.openai_api_key,
             voice=config.voice,
+            knowledge_url=config.knowledge_url,
+            product_secret=config.product_secret,
             middleware_url=sandbox_url,
             middleware_token=sandbox_token,
         )
