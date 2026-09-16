@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.4](https://github.com/chasef07/abita_s2s/compare/v0.3.3...v0.3.4) (2026-09-16)
+
+
+### Bug Fixes
+
+* align availability contracts and simplify voice workflows ([#20](https://github.com/chasef07/abita_s2s/issues/20)) ([ff3dce3](https://github.com/chasef07/abita_s2s/commit/ff3dce3685e8c0d80ef047a3b17f073dd84f05f6))
+* **patient:** use phone lookup context for existing patient resolution ([#18](https://github.com/chasef07/abita_s2s/issues/18)) ([efb0720](https://github.com/chasef07/abita_s2s/commit/efb07206d8eb3e3cb90c9962262a95d784ccca09))
+
 ## [0.3.3](https://github.com/chasef07/abita_s2s/compare/v0.3.2...v0.3.3) (2026-09-15)
 
 
