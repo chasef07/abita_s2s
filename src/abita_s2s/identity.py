@@ -32,24 +32,23 @@ def candidate_first_name(candidate: Candidate | Receipt) -> str:
     return names[0] if names else ""
 
 
-def reply(outcome: str, answer: str, next_input: str | None = None) -> dict:
-    return {"outcome": outcome, "answer": answer, "next_input": next_input}
+def reply(outcome: str, answer: str) -> dict:
+    return {"outcome": outcome, "answer": answer}
 
 
 def failed() -> dict:
     return reply(
         "lookup_failed",
-        "The patient lookup could not be verified. This does not mean the patient is new. Connect the caller to office staff.",
+        "blocked: The patient lookup could not be verified. This does not mean the patient is new. Connect the caller to office staff.",
     )
 
 
 def ambiguous(dob: str | None) -> dict:
     return reply(
         "multiple_matches",
-        "What is the patient's date of birth?"
+        "needs_input: What is the patient's date of birth?"
         if not dob
-        else "These details match more than one patient. Clarify the first-name spelling and DOB; if still unresolved, connect the caller to office staff.",
-        "dob" if not dob else "staff_help",
+        else "needs_input: These details match more than one patient. Clarify the first-name spelling and DOB; if still unresolved, connect the caller to office staff.",
     )
 
 
@@ -153,7 +152,7 @@ class PatientResolver:
 
     async def resolve(self, first_name: str | None, dob: str | None, *, call_id: str | None = None) -> dict:
         if self._closed:
-            return reply("superseded", "This call has ended.")
+            return reply("superseded", "blocked: This call has ended.")
         first_name = first_name.strip() if first_name is not None else None
         dob = dob.strip() if dob is not None else None
         # A changed name starts fresh; a DOB-only followup keeps the pending name.
@@ -204,7 +203,7 @@ class PatientResolver:
         except asyncio.CancelledError:
             if self._token is not token:
                 return reply(
-                    "superseded", "Patient details changed; use the latest resolution."
+                    "superseded", "blocked: Patient details changed; use the latest resolution."
                 )
             self._token = None
             task.cancel()
@@ -219,13 +218,12 @@ class PatientResolver:
     async def _resolve(self, name: str | None, dob: str | None, token: object, *, call_id: str | None = None) -> dict:
         if not name or not exact_name(name):
             return reply(
-                "needs_identity", "What is the patient's first name?", "firstName"
+                "needs_identity", "needs_input: What is the patient's first name?"
             )
         if dob is not None and not parse_dob(dob):
             return reply(
                 "needs_identity",
-                "Ask for a corrected date of birth in MM/DD/YYYY.",
-                "dob",
+                "needs_input: Ask for a corrected date of birth in MM/DD/YYYY.",
             )
         selected = [
             c
@@ -249,14 +247,14 @@ class PatientResolver:
             return await self._load_patient(active, name, dob, token, phone=True, call_id=call_id)
         if not dob:
             return reply(
-                "needs_identity", "What is the patient's date of birth?", "dob"
+                "needs_identity", "needs_input: What is the patient's date of birth?"
             )
         result = await self._middleware.resolve(
             self.state.call.called_office_key, {"firstName": name, "dob": dob}
         )
         if not self._current(token):
             return reply(
-                "superseded", "Patient details changed; use the latest resolution."
+                "superseded", "blocked: Patient details changed; use the latest resolution."
             )
         if not isinstance(result, Candidates) or not result.complete:
             return failed()
@@ -273,8 +271,7 @@ class PatientResolver:
             )
             return reply(
                 "not_found",
-                "A complete search found no matching patient. Clarify the first-name spelling and DOB; if still unresolved, ask office staff for help.",
-                "staff_help",
+                "no_results: A complete search found no matching patient. Clarify the first-name spelling and DOB; if still unresolved, ask office staff for help.",
             )
         if len(matches) > 1:
             return ambiguous(dob)
@@ -292,7 +289,7 @@ class PatientResolver:
     ) -> dict:
         if not self._current(token):
             return reply(
-                "superseded", "Patient details changed; use the latest resolution."
+                "superseded", "blocked: Patient details changed; use the latest resolution."
             )
         active = self.state.patient.active
         receipt = (
@@ -304,7 +301,7 @@ class PatientResolver:
             )
         if not self._current(token):
             return reply(
-                "superseded", "Patient details changed; use the latest resolution."
+                "superseded", "blocked: Patient details changed; use the latest resolution."
             )
         matcher = (
             phone_name_matches if phone else lambda a, b: exact_name(a) == exact_name(b)
@@ -394,14 +391,9 @@ class PatientResolver:
                 }, call_id=call_id)
         result = reply(
             outcome,
-            f"I found the patient record for {receipt.name}. DOB is on file; do not ask for DOB.",
+            f"success: I found the patient record for {receipt.name}. DOB is on file; do not ask for DOB."
+            f" Insurance on file: {receipt.insuranceCarrier or 'none recorded'}.",
         )
-        result["patient"] = {
-            "name": receipt.name,
-            "dob_on_file": True,
-            "insurance_on_file": receipt.insuranceCarrier,
-            "appointments_status": receipt.appointmentsStatus,
-        }
         if receipt.appointmentsStatus == "error":
             result["answer"] += (
                 " Upcoming appointments could not be loaded; retry resolution to reload."

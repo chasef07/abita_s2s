@@ -12,13 +12,16 @@ from abita_s2s.middleware import Record, Text
 
 class Slot(Record):
     provider: Text
-    date: Text
     time: Text
     datetime: Text
     bookingToken: str | None = None
     columnId: int | str | None = None
     profileId: int | str | None = None
     duration: int | None = None
+
+    @property
+    def date(self) -> str:
+        return self.datetime.split("T", 1)[0]
 
     @property
     def key(self):

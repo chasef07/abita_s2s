@@ -5,7 +5,6 @@ import logging
 from typing import Literal
 
 from livekit.agents import Agent, RunContext, function_tool, llm
-from livekit.agents.llm import ToolFlag
 
 from abita_s2s.call_control import CallControl
 from abita_s2s.identity import PatientResolver
@@ -54,7 +53,7 @@ class AbitaAgent(Agent):
         self._scheduling = scheduling
         self._staff_tasks = staff_tasks
 
-    @function_tool(flags=ToolFlag.CANCELLABLE)
+    @function_tool
     async def resolve_patient(
         self, context: RunContext[CallState], firstName: str | None, dob: str | None
     ) -> str:
@@ -74,17 +73,10 @@ class AbitaAgent(Agent):
             dob: Patient date of birth in MM/DD/YYYY; null if unknown.
         """
         if self._resolver is None or self._resolver.state is not context.userdata:
-            return json.dumps(
-                {
-                    "outcome": "lookup_failed",
-                    "answer": "Patient lookup is unavailable. Ask office staff for help.",
-                    "next_input": "staff_help",
-                }
-            )
+            return "blocked: Patient lookup is unavailable. Ask office staff for help."
         result = await self._resolver.resolve(firstName, dob, call_id=context.function_call.call_id)
-        if self._scheduling:
-            result["appointments"] = self._scheduling.appointments()
-        return json.dumps(result, ensure_ascii=False)
+        appointments = self._scheduling.appointments_text() if self._scheduling else ""
+        return result["answer"] + appointments
 
     @function_tool
     async def check_insurance(
@@ -112,9 +104,9 @@ class AbitaAgent(Agent):
 
         Requires accepted insurance for the visit type and caller confirmation of
         the final read-back. No existing-chart lookup is required.
-        Returns created, partial, or a required next step/failure. Partial means the
+        Returns a plain-text status and result. A blocked result may mean the
         chart exists but insurance is not confirmed. Do not repeat chart creation
-        after a created, partial, or uncertain result.
+        after successful creation, partial creation, or an uncertain result.
 
         Args:
             firstName: Patient's first name.
@@ -134,7 +126,7 @@ class AbitaAgent(Agent):
             readBack: True only after the caller confirms the complete final read-back; otherwise null.
         """
         if self._insurance is None or self._insurance.state is not context.userdata:
-            return json.dumps(staff())
+            return staff()["answer"]
         registration = Registration(
             firstName=firstName,
             lastName=lastName,
@@ -152,9 +144,8 @@ class AbitaAgent(Agent):
             insuranceMemberId=insuranceMemberId,
             readBack=readBack,
         )
-        return json.dumps(
-            await self._insurance.add(registration, call_id=context.function_call.call_id)
-        )
+        result = await self._insurance.add(registration, call_id=context.function_call.call_id)
+        return result["answer"]
 
     @function_tool
     async def update_insurance(

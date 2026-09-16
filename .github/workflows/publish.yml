@@ -27,7 +27,7 @@ jobs:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@v6
         with:
-          version: '0.12.13'
+          version: '0.12.15'
           python-version: '3.13.15'
       - run: git merge-base --is-ancestor "$COMMIT" origin/main
         env:

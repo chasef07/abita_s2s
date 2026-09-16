@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 import unittest
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -13,10 +14,11 @@ from livekit.agents.llm.utils import build_strict_openai_schema
 from test_patient_resolution import CONFIG, call_state, receipt
 
 from abita_s2s.agent import AbitaAgent
+from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance_state import AcceptedInsurance
-from abita_s2s.middleware import Receipt
+from abita_s2s.middleware import Appointment, Receipt
 from abita_s2s.offices import SPRING_HILL, get_office_profile
-from abita_s2s.scheduling import Scheduling
+from abita_s2s.scheduling import MutationReceipt, Scheduling
 from abita_s2s.scheduling_http import SchedulingHTTP
 
 NOW = datetime(2026, 9, 14, 17, tzinfo=UTC)
@@ -29,7 +31,6 @@ def inventory(**extra):
         "slots": [
             {
                 "provider": "Dr. Austin Bach",
-                "date": "2026-09-15",
                 "time": "9:00 AM",
                 "datetime": "2026-09-15T09:00",
                 "bookingToken": "private-signed-slot",
@@ -95,16 +96,15 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         return owner, requests
 
     async def tool(self, owner, name, **args):
-        return json.loads(
-            await getattr(owner, name)(SimpleNamespace(userdata=owner.state, function_call=SimpleNamespace(call_id="native-call-id")), **args)
-        )
+        output = await getattr(owner, name)(SimpleNamespace(userdata=owner.state, function_call=SimpleNamespace(call_id="native-call-id")), **args)
+        return output if name == "list_available_appointments" else json.loads(output)
 
     async def slots(self, owner, **args):
         result = await self.tool(
             owner, "list_available_appointments", visitType="medical", **args
         )
-        self.assertEqual(result["outcome"], "found", result)
-        return result["slots"][0]["appointmentSlotRef"]
+        self.assertTrue(result.startswith("success: "), result)
+        return re.search(r"^(S[0-9]+):", result, re.MULTILINE)[1]
 
     async def book(self, owner, ref, **extra):
         return await self.tool(
@@ -125,8 +125,8 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 await self.tool(
                     owner, "list_available_appointments", visitType="medical"
                 )
-            )["outcome"],
-            "needs_input",
+            ),
+            "needs_input: Ask for Hollywood or Sweetwater on those office calls; omit office for other calls.\nNo upcoming appointments.",
         )
         ref = await self.slots(owner, office="hollywood")
         self.assertEqual(await self.slots(owner, office="hollywood"), ref)
@@ -143,6 +143,72 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(requests[0][2]["authorization"], "test-auth")
         self.assertNotIn("private-signed-slot", json.dumps(owner._cache[2]))
+
+    async def test_plain_text_preserves_empty_search_and_retry_boundaries(self):
+        owner, requests = self.owner([
+            inventory(outcome="no_availability", slots=[]),
+            inventory(outcome="availability_search_incomplete", slots=[], shouldRetrySameSearch=True),
+            inventory(outcome="availability_search_incomplete", slots=[], shouldRetrySameSearch=True),
+        ])
+        empty = await self.tool(owner, "list_available_appointments", visitType="medical")
+        self.assertTrue(empty.startswith("no_results: "), empty)
+        self.assertIn("Searched 2026-09-15 through 2026-09-28", empty)
+        for expected in ("Retry this search once.", "Do not retry this search; ask staff for help."):
+            failed = await self.tool(owner, "list_available_appointments", visitType="medical", startDate="2026-09-16")
+            self.assertTrue(failed.startswith("blocked: "), failed)
+            self.assertIn("this does not mean no openings", failed)
+            self.assertIn(expected, failed)
+            self.assertNotIn("Available appointments", failed)
+        stopped = await self.tool(owner, "list_available_appointments", visitType="medical", startDate="2026-09-16")
+        self.assertIn("do not", stopped.lower())
+        self.assertEqual(len(requests), 3)
+
+    async def test_plain_text_distinguishes_available_and_existing_appointments(self):
+        owner, _ = self.owner([inventory()])
+        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        output = await self.tool(owner, "list_available_appointments", visitType="medical")
+        self.assertTrue(output.startswith("success: "), output)
+        self.assertIn("Available appointments (Eastern time; references are private):", output)
+        self.assertIn("Existing appointments (Eastern time; references are private):", output)
+        self.assertRegex(output, r"S[0-9]+: 2026-09-15 at 9:00 AM")
+        existing = owner.appointments()[0]
+        self.assertIn(f"{existing['appointmentRef']}: {existing['date']} at {existing['time']}", output)
+        self.assertIn(f"location: {existing['facility']}", output)
+        for private in ("private-signed-slot", "private-cancel", "private-reschedule", "chart-jane"):
+            self.assertNotIn(private, output)
+
+    async def test_resolution_describes_reconciled_appointments(self):
+        owner, _ = self.owner([])
+        resolver = PatientResolver(owner.state, AsyncMock())
+        self.addAsyncCleanup(resolver.aclose)
+        agent = AbitaAgent(SPRING_HILL, None, resolver, scheduling=owner)
+        context = SimpleNamespace(userdata=owner.state, function_call=SimpleNamespace(call_id="resolution"))
+        booked = Appointment.model_validate(appointment())
+        owner._receipts["chart-jane", "book", None] = MutationReceipt(
+            {"outcome": "booked"}, booked=booked,
+        )
+        # A provider reload has not yet reflected the booking confirmed this call.
+        verified(owner.state, appointmentsStatus="none", appointments=[])
+        output = await agent.resolve_patient(context, "Jane", None)
+        self.assertIn("Existing appointments", output)
+        self.assertIn("2026-09-20 at 10:00 AM", output)
+        self.assertNotIn("No upcoming appointments", output)
+
+        # Likewise a reload can still include an appointment already cancelled.
+        owner._receipts["chart-jane", "cancel", booked.id] = MutationReceipt(
+            {"outcome": "cancelled"}, cancelled_id=booked.id,
+        )
+        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        output = await agent.resolve_patient(context, "Jane", None)
+        self.assertIn("No upcoming appointments.", output)
+        self.assertNotIn("Existing appointments", output)
+
+    def test_unknown_appointments_never_claim_none(self):
+        owner, _ = self.owner([])
+        owner.state.patient.active = None
+        self.assertEqual(owner.appointments_text(), "")
+        verified(owner.state, appointmentsStatus="error")
+        self.assertNotIn("No upcoming appointments", owner.appointments_text())
 
     async def test_missing_prerequisites_and_office_care(self):
         owner, requests = self.owner([])
@@ -299,7 +365,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         evidence = owner.state.reporter.appointment.call_args.args[0]
         self.assertEqual(evidence["bookingResult"]["status"], "partial")
         self.assertEqual(evidence["newAppointmentId"], "888")
-        self.assertEqual(evidence["bookingResult"]["appointmentDate"], inventory()["slots"][0]["date"])
+        self.assertEqual(evidence["bookingResult"]["appointmentDate"], "2026-09-15")
         self.assertEqual(evidence["bookingResult"]["appointmentTime"], inventory()["slots"][0]["time"])
         self.assertEqual(evidence["bookingResult"]["providerName"], "Dr. Bach")
         self.assertNotIn("private-signed-slot", json.dumps(evidence))
@@ -637,11 +703,11 @@ class SchedulingStream(llm.LLMStream):
         ]
         if current:
             delta = llm.ChoiceDelta(
-                role="assistant", content=json.loads(current[-1].output)["answer"]
+                role="assistant", content=current[-1].output if current[-1].name == "list_available_appointments" else json.loads(current[-1].output)["answer"]
             )
         else:
             user = items[last_user].text_content
-            previous = json.loads(outputs[-1].output) if outputs else {}
+            previous = outputs[-1].output if outputs else ""
             if user == "search":
                 name, args = (
                     "list_available_appointments",
@@ -650,22 +716,20 @@ class SchedulingStream(llm.LLMStream):
             elif user == "cancel":
                 name, args = (
                     "cancel_appointment",
-                    {"appointmentRef": previous["appointments"][-1]["appointmentRef"]},
+                    {"appointmentRef": json.loads(previous)["appointments"][-1]["appointmentRef"]},
                 )
             else:
                 name = (
                     "reschedule_appointment" if user == "move" else "book_appointment"
                 )
                 args = {
-                    "appointmentSlotRef": previous["slots"][0]["appointmentSlotRef"],
+                    "appointmentSlotRef": re.search(r"^(S[0-9]+):", previous, re.MULTILINE)[1],
                     "appointmentReason": "Annual medical follow up",
                     "referringDoctor": "none",
                     "readBack": True,
                 }
                 if user == "move":
-                    args["oldAppointmentRef"] = previous["appointments"][0][
-                        "appointmentRef"
-                    ]
+                    args["oldAppointmentRef"] = re.search(r"^(A[0-9]+):", previous, re.MULTILINE)[1]
             delta = llm.ChoiceDelta(
                 role="assistant",
                 tool_calls=[
@@ -719,10 +783,10 @@ class SchedulingSessionTests(unittest.IsolatedAsyncioTestCase):
             with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
                 await session.start(agent=agent)
             for user, expected in (
-                ("search", "found"),
+                ("search", "success"),
                 ("book", "booked"),
                 ("cancel", "cancelled"),
-                ("search", "found"),
+                ("search", "success"),
                 ("move", "rescheduled"),
             ):
                 await asyncio.wait_for(session.run(user_input=user), 5)
@@ -731,7 +795,10 @@ class SchedulingSessionTests(unittest.IsolatedAsyncioTestCase):
                     for item in model.requests[-1].items
                     if item.type == "function_call_output"
                 ]
-                self.assertEqual(json.loads(outputs[-1].output)["outcome"], expected)
+                if user == "search":
+                    self.assertTrue(outputs[-1].output.startswith("success: "), outputs[-1].output)
+                else:
+                    self.assertEqual(json.loads(outputs[-1].output)["outcome"], expected)
                 for output in outputs:
                     for secret in (
                         "private-signed-slot",

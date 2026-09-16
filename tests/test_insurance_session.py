@@ -43,7 +43,7 @@ class InsuranceStream(llm.LLMStream):
         outputs = [item for item in items[last:] if item.type == "function_call_output"]
         if outputs:
             delta = llm.ChoiceDelta(
-                role="assistant", content=json.loads(outputs[-1].output)["answer"]
+                role="assistant", content=outputs[-1].output if outputs[-1].name == "add_patient" or outputs[-1].name == "resolve_patient" else json.loads(outputs[-1].output)["answer"]
             )
         else:
             name, args = json.loads(items[last].text_content)
@@ -85,7 +85,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                 with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
                     await session.start(agent=agent)
                 cases = [
-                    ("add_patient", registration().model_dump(), "needs_insurance"),
+                    ("add_patient", registration().model_dump(), "needs_input"),
                     (
                         "check_insurance",
                         {"plan": "Aetna", "coverageType": "medical"},
@@ -94,10 +94,10 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                     (
                         "add_patient",
                         registration(readBack=None).model_dump(),
-                        "needs_read_back",
+                        "needs_input",
                     ),
-                    ("add_patient", registration().model_dump(), "created"),
-                    ("add_patient", registration().model_dump(), "created"),
+                    ("add_patient", registration().model_dump(), "success"),
+                    ("add_patient", registration().model_dump(), "success"),
                     (
                         "check_insurance",
                         {"plan": "VSP", "coverageType": "routine_vision"},
@@ -116,7 +116,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                     (
                         "resolve_patient",
                         {"firstName": "John", "dob": None},
-                        "needs_identity",
+                        "needs_input",
                     ),
                     (
                         "update_insurance",
@@ -133,7 +133,10 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                         for item in model.requests[-1].items
                         if item.type == "function_call_output"
                     ][-1]
-                    self.assertEqual(json.loads(output.output)["outcome"], outcome)
+                    if name in ("add_patient", "resolve_patient"):
+                        self.assertTrue(output.output.startswith(outcome + ": "), output.output)
+                    else:
+                        self.assertEqual(json.loads(output.output)["outcome"], outcome)
                     self.assertNotIn("new-chart", output.output)
             self.assertEqual(
                 [r[0] for r in requests],
@@ -191,7 +194,12 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                         for item in model.requests[-1].items
                         if item.type == "function_call_output"
                     ][-1]
-                    self.assertEqual(json.loads(output.output)["outcome"], outcome)
+                    self.assertTrue(output.output.startswith("blocked: "), output.output)
+                    if outcome == "partial":
+                        self.assertIn("Created the patient chart", output.output)
+                        self.assertIn("do not create another chart", output.output)
+                    else:
+                        self.assertIn("Do not repeat this write", output.output)
                     self.assertFalse(insurance_ready(state, "medical"))
                 self.assertEqual(len(requests), 2)
 

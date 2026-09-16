@@ -176,8 +176,8 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         r, calls = self.resolver([search(candidate()), receipt()], call_state(None))
         r.start_phone_lookup()
         self.assertIsNone(r._precall)
-        self.assertEqual((await r.resolve(None, None))["next_input"], "firstName")
-        self.assertEqual((await r.resolve("Jane", None))["next_input"], "dob")
+        self.assertEqual((await r.resolve(None, None))["answer"], "needs_input: What is the patient's first name?")
+        self.assertEqual((await r.resolve("Jane", None))["answer"], "needs_input: What is the patient's date of birth?")
         self.assertEqual(calls, [])
         self.assertEqual((await r.resolve(None, "01/02/1980"))["outcome"], "verified")
         self.assertEqual(
@@ -206,7 +206,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
             [receipt(), search(candidate("child", "John")), receipt("child", "John")]
         )
         await self.preload(r)
-        self.assertEqual((await r.resolve("John", None))["next_input"], "dob")
+        self.assertEqual((await r.resolve("John", None))["answer"], "needs_input: What is the patient's date of birth?")
         self.assertEqual((await r.resolve(None, "01/02/1980"))["outcome"], "verified")
         self.assertNotIn("phone", calls[1])
         self.assertEqual(r.state.patient.active.patientId, "child")
@@ -223,7 +223,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
                 ]
             )
             await self.preload(r)
-            self.assertEqual((await r.resolve("Jane", None))["next_input"], "dob")
+            self.assertEqual((await r.resolve("Jane", None))["answer"], "needs_input: What is the patient's date of birth?")
             self.assertIsNone(r.state.patient.active)
             result = await r.resolve(None, "01/02/1980")
             self.assertEqual(
@@ -258,7 +258,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         )
         await self.preload(r)
         await r.resolve("Jane", "01/02/1980")
-        self.assertEqual((await r.resolve("John", None))["next_input"], "dob")
+        self.assertEqual((await r.resolve("John", None))["answer"], "needs_input: What is the patient's date of birth?")
         self.assertIsNone(r.state.patient.active)
         self.assertEqual(len(calls), 1)
         self.assertEqual((await r.resolve(None, "01/02/1980"))["outcome"], "switched")
@@ -279,7 +279,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
     async def test_name_spelling_correction(self):
         r, _ = self.resolver([receipt()])
         await self.preload(r)
-        self.assertEqual((await r.resolve("Jame", None))["next_input"], "dob")
+        self.assertEqual((await r.resolve("Jame", None))["answer"], "needs_input: What is the patient's date of birth?")
         self.assertEqual((await r.resolve("J-A-N-E", None))["outcome"], "verified")
 
     async def test_complete_absence_is_distinct_from_failed_partial_or_unexpected_search(
@@ -298,6 +298,8 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
                 r, _ = self.resolver([body, body])
                 result = await r.resolve("Jane", "01/02/1980")
                 self.assertEqual(result["outcome"], outcome)
+                expected = "no_results: " if outcome == "not_found" else "blocked: "
+                self.assertTrue(result["answer"].startswith(expected), result["answer"])
                 self.assertEqual(
                     r.state.patient.absence is not None, outcome == "not_found"
                 )
@@ -336,7 +338,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
     async def test_invalid_dob_is_rejected_before_read(self):
         for dob in ("02/30/1980", "13/01/1980", "01/01/2999", "1980-01-01", ""):
             r, calls = self.resolver([])
-            self.assertEqual((await r.resolve("Jane", dob))["next_input"], "dob")
+            self.assertEqual((await r.resolve("Jane", dob))["answer"], "needs_input: Ask for a corrected date of birth in MM/DD/YYYY.")
             self.assertEqual(calls, [])
 
     async def test_appointment_load_error_is_retained_and_reloaded(self):
@@ -464,7 +466,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         r, _ = self.resolver([receipt(appointmentsStatus="found", appointments=[appt])])
         await self.preload(r)
         result = await r.resolve("Jane", None)
-        self.assertEqual(result["patient"]["appointments_status"], "found")
+        self.assertEqual(r.state.patient.active.appointmentsStatus, "found")
         self.assertEqual(r.state.patient.active.appointments[0].officeId, "office-ref")
         self.assertEqual(
             r.state.patient.active.appointments[0].cancellationToken,
@@ -488,7 +490,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
             await self.preload(r)
             self.assertEqual(r.state.patient.lookup.status, status)
             self.assertIsNone(r.state.patient.absence)
-            self.assertEqual((await r.resolve("Jane", None))["next_input"], "dob")
+            self.assertEqual((await r.resolve("Jane", None))["answer"], "needs_input: What is the patient's date of birth?")
 
     async def test_late_phone_result_cannot_overwrite_interactive_evidence(self):
         started, release = asyncio.Event(), asyncio.Event()
@@ -532,7 +534,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         result = await agent.resolve_patient(
             SimpleNamespace(userdata=call_state()), "Jane", None
         )
-        self.assertEqual(json.loads(result)["outcome"], "lookup_failed")
+        self.assertEqual(result, "blocked: Patient lookup is unavailable. Ask office staff for help.")
         self.assertEqual(calls, [])
 
     def test_phone_fuzzy_thresholds_match_agent_examples(self):

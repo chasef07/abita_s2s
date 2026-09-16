@@ -9,7 +9,6 @@ from typing import Literal
 from zoneinfo import ZoneInfo
 
 from livekit.agents import RunContext, function_tool
-from livekit.agents.llm import ToolFlag
 
 from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.middleware import Appointment
@@ -160,6 +159,22 @@ class Scheduling:
             for a in p.appointments
         ]
 
+    def appointments_text(self) -> str:
+        appointments = self.appointments()
+        patient = self.state.patient.active
+        if not appointments:
+            if patient and patient.appointmentsStatus == "none":
+                return "\nNo upcoming appointments."
+            return ""
+        lines = ["Existing appointments (Eastern time; references are private):"]
+        for appointment in appointments:
+            lines.append(
+                f"{appointment['appointmentRef']}: {appointment['date']} at {appointment['time']}"
+                f" — {appointment['provider']}; location: {appointment['facility'] or 'not recorded'}"
+                f"; visit type: {appointment['visitType'] or 'unknown'}"
+            )
+        return "\n" + "\n".join(lines)
+
     def _finish(self, result):
         return {**result, "appointments": self.appointments()}
 
@@ -184,7 +199,7 @@ class Scheduling:
             return requested
         return called if requested is None else None
 
-    @function_tool(flags=ToolFlag.CANCELLABLE)
+    @function_tool
     async def list_available_appointments(
         self,
         context: RunContext[CallState],
@@ -192,24 +207,39 @@ class Scheduling:
         startDate: str | None = None,
         office: Literal["hollywood", "sweetwater"] | None = None,
     ) -> str:
-        """Load eligible appointments after triage for a 14-calendar-day Eastern-time window.
+        """Find eligible slots for the active patient in a 14-day Eastern-time window.
 
-        Offer only returned slots, at most two at a time. Reuse the loaded list for preferences
-        within its window. For Hollywood/Sweetwater calls first ask which office they want.
+        Requires completed patient resolution/registration and insurance readiness.
+
         Args:
-            visitType: Caller's medical or routine_vision visit, including reschedules.
-            startDate: YYYY-MM-DD, tomorrow or later; null means tomorrow. Search later using the day after the window ends.
-            office: Caller-selected Hollywood or Sweetwater; null for other offices.
+            visitType: medical or routine_vision; match the existing visit when rescheduling.
+            startDate: YYYY-MM-DD, tomorrow or later; null defaults to tomorrow.
+                To search the next window, use the day after the returned searched-through date.
+            office: Required caller-selected office for Hollywood/Sweetwater calls;
+                omit for other offices.
         """
         if context.userdata is not self.state or self._closed:
-            return json.dumps(reply("unavailable", "Scheduling is unavailable."))
-        return json.dumps(
-            self._finish(await self.availability(visitType, startDate, office))
-        )
+            return "blocked: Scheduling is unavailable."
+        result = await self.availability(visitType, startDate, office)
+        lines = [result["answer"]]
+        if "searchedFrom" in result:
+            lines.append(f"Searched {result['searchedFrom']} through {result['searchedThrough']}.")
+        if "retry_same_search" in result:
+            lines.append(
+                "Retry this search once." if result["retry_same_search"]
+                else "Do not retry this search; ask staff for help."
+            )
+        if slots := result.get("slots"):
+            lines.append("Available appointments (Eastern time; references are private):")
+            lines.extend(
+                f"{slot['appointmentSlotRef']}: {slot['date']} at {slot['time']} — {slot['provider']}"
+                for slot in slots
+            )
+        return "\n".join(lines) + self.appointments_text()
 
     async def availability(self, visit, start=None, office=None):
         if self._closed:
-            return reply("unavailable", "Scheduling has closed for this call.")
+            return reply("unavailable", "blocked: Scheduling has closed for this call.")
         context = self._context()
         selected = self._office(office)
         today = self.now().astimezone(EASTERN).date()
@@ -219,18 +249,18 @@ class Scheduling:
                 raise ValueError()
         except ValueError:
             self._invalidate()
-            return reply("needs_input", "Provide the requested date as YYYY-MM-DD.")
+            return reply("needs_input", "needs_input: Provide the requested date as YYYY-MM-DD.")
         if first <= today:
             self._invalidate()
             return reply(
                 "needs_input",
-                "Same-day and past dates cannot be scheduled here. Ask whether tomorrow or later works; do not silently change the date.",
+                "needs_input: Same-day and past dates cannot be scheduled here. Ask whether tomorrow or later works; do not silently change the date.",
             )
         if selected is None:
             self._invalidate()
             return reply(
                 "needs_input",
-                "Ask for Hollywood or Sweetwater on those office calls; omit office for other calls.",
+                "needs_input: Ask for Hollywood or Sweetwater on those office calls; omit office for other calls.",
             )
         if (selected == "crystal-river" and visit == "routine_vision") or (
             selected == "north-miami-beach-optical" and visit == "medical"
@@ -238,7 +268,7 @@ class Scheduling:
             self._invalidate()
             return reply(
                 "unsupported",
-                "This office does not schedule that visit type. Use an appropriate office or ask staff for help.",
+                "blocked: This office does not schedule that visit type. Use an appropriate office or ask staff for help.",
             )
         if visit not in ("medical", "routine_vision") or not insurance_ready(
             self.state, visit
@@ -246,12 +276,12 @@ class Scheduling:
             self._invalidate()
             return reply(
                 "needs_input",
-                "Verify or finish patient registration and resolve insurance acceptance, routing and authorization requirements before scheduling.",
+                "needs_input: Verify or finish patient registration and resolve insurance acceptance, routing and authorization requirements before scheduling.",
             )
         if self._write_task and not self._write_task.done():
             return reply(
                 "in_progress",
-                "An appointment change is in progress. Wait for its result.",
+                "blocked: An appointment change is in progress. Wait for its result.",
             )
         p = self.state.patient.active
         routing = "optical_only" if visit == "routine_vision" else p.routing
@@ -275,7 +305,7 @@ class Scheduling:
         if failed and (failed[0] >= 2 or not failed[1]):
             return reply(
                 "availability_failed",
-                "Availability could not be verified. Do not describe this as no openings or retry this search; ask staff for help.",
+                "blocked: Availability could not be verified. Do not describe this as no openings or retry this search; ask staff for help.",
             )
         if self._search and not self._search.task.done() and self._search.key == key:
             pending = self._search
@@ -302,7 +332,7 @@ class Scheduling:
         if generation != self._generation or key[0] != self._context():
             return reply(
                 "stale",
-                "The patient or appointment details changed. Check again with current details.",
+                "blocked: The patient or appointment details changed. Check again with current details.",
             )
         previous = {item.slot.key: (ref, item) for ref, item in self._slots.items()}
         self._slots.clear()
@@ -318,7 +348,7 @@ class Scheduling:
             self._failures[key] = (count, retry)
             return reply(
                 "availability_failed",
-                "Availability could not be verified; this does not mean no openings.",
+                "blocked: Availability could not be verified; this does not mean no openings.",
                 retry_same_search=retry and count < 2,
             )
         self._failures.pop(key, None)
@@ -330,7 +360,7 @@ class Scheduling:
         ):
             answer = reply(
                 "none",
-                "No eligible openings in the searched window. Ask what other dates work.",
+                "no_results: No eligible openings in the searched window. Ask what other dates work.",
                 searchedFrom=first.isoformat(),
                 searchedThrough=through,
             )
@@ -346,12 +376,12 @@ class Scheduling:
                 self._failures[key] = (2, False)
                 return reply(
                     "availability_failed",
-                    "Openings expired twice before they could be offered. Ask staff for help.",
+                    "blocked: Openings expired twice before they could be offered. Ask staff for help.",
                 )
         except ValueError:
             return reply(
                 "availability_failed",
-                "Openings expired or could not be verified. Search again before offering or booking.",
+                "blocked: Openings expired or could not be verified. Search again before offering or booking.",
             )
         if (
             not result.slots
@@ -363,14 +393,14 @@ class Scheduling:
         ):
             return reply(
                 "availability_failed",
-                "Availability returned an invalid result. Ask staff for help.",
+                "blocked: Availability returned an invalid result. Ask staff for help.",
             )
         unique = {}
         for slot in result.slots:
             if not first.isoformat() <= slot.date <= through:
                 return reply(
                     "availability_failed",
-                    "Availability returned dates outside the requested window. Ask staff for help.",
+                    "blocked: Availability returned dates outside the requested window. Ask staff for help.",
                 )
             unique[slot.key] = slot
         for slot in unique.values():
@@ -388,7 +418,7 @@ class Scheduling:
             self._slots[ref] = OfferedSlot(slot, key[0], key[1], key[2], expiry)
         answer = reply(
             "found",
-            "Offer at most two returned choices at a time. All times are Eastern. Use these references only after caller confirmation; references are private.",
+            "success: Found eligible openings.",
             searchedFrom=first.isoformat(),
             searchedThrough=through,
             slots=[
