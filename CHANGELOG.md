@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.5](https://github.com/chasef07/abita_s2s/compare/v0.3.4...v0.3.5) (2026-09-16)
+
+
+### Bug Fixes
+
+* clarify office knowledge workflow and tool responses ([#23](https://github.com/chasef07/abita_s2s/issues/23)) ([d769aba](https://github.com/chasef07/abita_s2s/commit/d769aba67c4a3fb03ff559961823c74c6b0208e7))
+* refine thinker prompt for one-offer staff transfers ([#21](https://github.com/chasef07/abita_s2s/issues/21)) ([b0eeefd](https://github.com/chasef07/abita_s2s/commit/b0eeefd41def2c794f0089a3bd587256c0254c49))
+
 ## [0.3.4](https://github.com/chasef07/abita_s2s/compare/v0.3.3...v0.3.4) (2026-09-16)
 
 
