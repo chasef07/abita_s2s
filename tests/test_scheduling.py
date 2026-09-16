@@ -171,7 +171,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(output.startswith("success: "), output)
         self.assertIn("Available appointments (Eastern time; references are private):", output)
         self.assertIn("Existing appointments (Eastern time; references are private):", output)
-        self.assertRegex(output, r"S[0-9]+: 2026-09-15 at 9:00 AM")
+        self.assertRegex(output, r"S[0-9]+: 2026-09-15 at 9:00 AM[^\n]*location: Abita Eye Group Spring Hill")
         existing = owner.appointments()[0]
         self.assertIn(f"{existing['appointmentRef']}: {existing['date']} at {existing['time']}", output)
         self.assertIn(f"location: {existing['facility']}", output)
@@ -471,11 +471,13 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     referringDoctor="none", readBack=None)
         result = await self.tool(owner, "book_appointment", **args)
         self.assertTrue(result.startswith("needs_input: Confirm"))
-        self.assertIn(SPRING_HILL.display_name, result)
+        self.assertIn("at Abita Eye Group Spring Hill", result)
         self.assertEqual(len(requests), 1)
         args["readBack"] = True
         result = await self.tool(owner, "book_appointment", **args)
         self.assertTrue(result.startswith("success: Booked"))
+        self.assertIn("at Abita Eye Group Spring Hill", result)
+        self.assertEqual(owner.state.patient.active.appointments[0].facility, "Abita Eye Group Spring Hill")
         self.assertEqual(requests[-1][1]["appointmentReason"], "eye problems")
         self.assertIn("Existing appointments", result)
 
