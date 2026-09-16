@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.6](https://github.com/chasef07/abita_s2s/compare/v0.3.5...v0.3.6) (2026-09-16)
+
+
+### Bug Fixes
+
+* **scheduling:** align appointment workflows and tool results ([#24](https://github.com/chasef07/abita_s2s/issues/24)) ([8ecbd81](https://github.com/chasef07/abita_s2s/commit/8ecbd81f08c3df3d4454eaeb7c49d6928c880160))
+* simplify patient lookup and scheduling ownership ([#26](https://github.com/chasef07/abita_s2s/issues/26)) ([67487bc](https://github.com/chasef07/abita_s2s/commit/67487bcb79513d0c1dd061c50af8b95c9d6d44bf))
+
 ## [0.3.5](https://github.com/chasef07/abita_s2s/compare/v0.3.4...v0.3.5) (2026-09-16)
 
 
