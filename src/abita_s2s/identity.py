@@ -170,7 +170,7 @@ class PatientResolver:
             and self._task is not None
             and not self._task.done()
         ):
-            return await self._await_resolution(self._task, self._token)
+            return await asyncio.shield(self._task)
         self._pending = (first_name, dob)
         checked = self.state.insurance.accepted
         if checked is not None and checked.patient_id is None:
@@ -192,25 +192,23 @@ class PatientResolver:
         for task in (self._task, self._precall):
             if task is not None and not task.done():
                 task.cancel()
-        self._task = asyncio.create_task(self._resolve(first_name, dob, token, call_id=call_id))
-        return await self._await_resolution(self._task, token)
 
-    async def _await_resolution(self, task: asyncio.Task, token: object) -> dict:
-        try:
-            # Fence caller cancellation before cancelling the read, even if a transport
-            # delays cancellation or returns a late result.
-            return await asyncio.shield(task)
-        except asyncio.CancelledError:
-            if self._token is not token:
+        async def lookup():
+            # The resolver owns completion; a cancelled waiter leaves the read running.
+            try:
+                return await self._resolve(first_name, dob, token, call_id=call_id)
+            except asyncio.CancelledError:
+                if self._token is token:
+                    raise
                 return reply(
-                    "superseded", "blocked: Patient details changed; use the latest resolution."
+                    "superseded", "blocked: Patient details changed or this call ended."
                 )
-            self._token = None
-            task.cancel()
-            raise
-        finally:
-            if self._token is token:
-                self._token = None
+            finally:
+                if self._token is token:
+                    self._token = None
+
+        self._task = asyncio.create_task(lookup())
+        return await asyncio.shield(self._task)
 
     def _current(self, token: object) -> bool:
         return not self._closed and self._token is not None and self._token is token

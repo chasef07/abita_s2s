@@ -590,11 +590,10 @@ class Scheduling:
             )
             result = await self.http.cancel(self._cancel_body(p, old))
             outcome = self._cancel_result(result)
-            self._report(p, cancellation=result, old=old, call_id=call_id)
-            if outcome["outcome"] == "cancelled":
-                self._remove(p, old, captured)
-            elif (
-                isinstance(result, WriteReceipt)
+            self._report(p, cancellation_outcome=outcome["outcome"], old=old, call_id=call_id)
+            if (
+                outcome["outcome"] != "cancelled"
+                and isinstance(result, WriteReceipt)
                 and result.outcome == "invalid_cancellation_token"
                 and self._context() == captured
             ):
@@ -608,7 +607,7 @@ class Scheduling:
                 )
             else:
                 self._receipts.pop(receipt_key, None)
-            return self._patient_changed(outcome, captured)
+            return self._finish_change(outcome, captured)
         offered = self._slots.get((slot_ref or "").strip().upper())
         if not offered or offered.context != captured or offered.expires <= self.now():
             self._invalidate()
@@ -701,21 +700,19 @@ class Scheduling:
         )
         result = await self.http.book(body)
         outcome = self._book_result(result, description)
-        self._report(p, booking=result, old=old, slot=slot, call_id=call_id)
+        self._report(p, booking=result, booking_outcome=outcome["outcome"], old=old, slot=slot, call_id=call_id)
         if outcome["outcome"] not in ("booked", "partial_booking"):
-            if outcome["outcome"] == "uncertain":
-                self._receipts[receipt_key] = MutationReceipt(outcome)
-            else:
-                self._receipts.pop(receipt_key, None)
             if old:
                 outcome = {
                     **outcome,
                     "answer": outcome["answer"]
                     + " The existing appointment was not cancelled.",
                 }
-                if outcome["outcome"] == "uncertain":
-                    self._receipts[receipt_key] = MutationReceipt(outcome)
-            return self._patient_changed(outcome, captured)
+            if outcome["outcome"] == "uncertain":
+                self._receipts[receipt_key] = MutationReceipt(outcome)
+            else:
+                self._receipts.pop(receipt_key, None)
+            return self._finish_change(outcome, captured)
         appointment = Appointment(
             id=result.appointmentId,
             date=slot.date,
@@ -729,38 +726,32 @@ class Scheduling:
             rescheduleToken=result.rescheduleToken,
             confirmed=True,
         )
-        if self._context() == captured:
-            self.state.patient.active = p.model_copy(
-                update={
-                    "appointments": [
-                        a for a in p.appointments if a.id != appointment.id
-                    ]
-                    + [appointment],
-                    "appointmentsStatus": "found",
-                }
-            )
         if not old:
             self._receipts[receipt_key] = MutationReceipt(outcome, booked=appointment)
-            return self._patient_changed(outcome, captured)
+            return self._finish_change(outcome, captured)
         # Persist a recovery receipt before the second write; a switch must never lose it.
         partial = reply(
             "partial_reschedule",
             f"blocked: The new appointment is booked for {description}, but cancellation of the old appointment requires staff reconciliation. Do not book again."
-            + (" The patient note did not save; ask staff to complete it." if result.status == "partial" else ""),
+            + (" The patient note did not save; ask staff to complete it." if outcome["outcome"] == "partial_booking" else ""),
         )
         self._receipts[receipt_key] = MutationReceipt(partial, booked=appointment)
         if self._context() != captured:
-            return self._patient_changed(partial, captured)
+            return self._finish_change(partial, captured)
+        self._reconcile_receipts()
         cancellation = await self.http.cancel(self._cancel_body(p, old))
-        self._report(p, booking=result, cancellation=cancellation, old=old, slot=slot, call_id=call_id)
-        if self._cancel_result(cancellation)["outcome"] != "cancelled":
-            return self._patient_changed(partial, captured)
-        self._remove(p, old, captured)
+        cancellation_outcome = self._cancel_result(cancellation)["outcome"]
+        self._report(
+            p, booking=result, booking_outcome=outcome["outcome"],
+            cancellation_outcome=cancellation_outcome, old=old, slot=slot, call_id=call_id,
+        )
+        if cancellation_outcome != "cancelled":
+            return self._finish_change(partial, captured)
         outcome = reply(
             "rescheduled",
-            f"{'blocked' if result.status == 'partial' else 'success'}: Your new appointment is booked for {description}. "
+            f"{'blocked' if outcome['outcome'] == 'partial_booking' else 'success'}: Your new appointment is booked for {description}. "
             f"Your old appointment on {old.date} at {old.time} is cancelled. Tell the caller both outcomes."
-            + (" The patient note did not save; ask staff to complete it." if result.status == "partial" else ""),
+            + (" The patient note did not save; ask staff to complete it." if outcome["outcome"] == "partial_booking" else ""),
         )
         self._receipts[receipt_key] = MutationReceipt(
             outcome, booked=appointment, cancelled_id=old.id
@@ -770,18 +761,20 @@ class Scheduling:
             self._receipts[p.patientId, action, appointment.id] = self._receipts[
                 receipt_key
             ]
-        return self._patient_changed(outcome, captured)
+        return self._finish_change(outcome, captured)
 
-    def _report(self, patient, *, call_id, booking=None, cancellation=None, old=None, slot=None):
+    def _report(
+        self, patient, *, call_id, booking=None, booking_outcome=None,
+        cancellation_outcome="not_attempted", old=None, slot=None,
+    ):
         reporter = self.state.reporter
         if not reporter:
             return
         evidence = {"externalPatientId": str(patient.patientId)}
         if booking is not None:
-            outcome = self._book_result(booking, "the selected time")["outcome"]
-            status = "partial" if outcome == "partial_booking" else outcome
+            status = "partial" if booking_outcome == "partial_booking" else booking_outcome
             evidence["bookingResult"] = {"status": status}
-            if outcome in ("booked", "partial_booking"):
+            if booking_outcome in ("booked", "partial_booking"):
                 evidence["newAppointmentId"] = str(booking.appointmentId)
                 evidence["bookingResult"].update(
                     appointmentId=booking.appointmentId,
@@ -794,8 +787,7 @@ class Scheduling:
         if old:
             evidence["oldAppointmentId"] = str(old.id)
             evidence["cancellationResult"] = {
-                "status": self._cancel_result(cancellation)["outcome"]
-                if cancellation is not None else "not_attempted"
+                "status": cancellation_outcome
             }
             evidence["cancellationResult"].update(
                 appointmentId=old.id, appointmentDate=old.date,
@@ -809,7 +801,7 @@ class Scheduling:
         reporter.appointment(evidence, call_id=call_id)
 
     def _reconcile_receipts(self):
-        """Apply observed writes to a reloaded patient, without a second calendar state."""
+        """Apply confirmed receipt effects after writes and patient reloads."""
         patient = self.state.patient.active
         if patient is None:
             return
@@ -838,24 +830,15 @@ class Scheduling:
                 }
             )
 
-    def _remove(self, patient, old, captured):
-        if self._context() == captured:
-            active = self.state.patient.active
-            appointments = [a for a in active.appointments if a.id != old.id]
-            self.state.patient.active = active.model_copy(
-                update={
-                    "appointments": appointments,
-                    "appointmentsStatus": "found" if appointments else "none",
-                }
-            )
-
-    def _patient_changed(self, result, captured):
+    def _finish_change(self, result, captured):
+        # Complete state updates even when the shielded tool caller has left.
         if self._context() != captured:
             return {
                 **result,
                 "answer": result["answer"]
                 + " This result belongs to the earlier patient context; the patient changed during the operation.",
             }
+        self._reconcile_receipts()
         return result
 
     def _cancel_body(self, patient, appointment):

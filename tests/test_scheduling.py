@@ -445,6 +445,84 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.book(owner, ref)).split(":", 1)[0], 'success')
         self.assertEqual(len(requests), 2)
 
+    async def test_abandoned_write_updates_appointments_before_close_returns(self):
+        for action in ("book", "cancel"):
+            with self.subTest(action=action):
+                entered, release = asyncio.Event(), asyncio.Event()
+
+                async def delayed(request):
+                    entered.set()
+                    await release.wait()
+                    result = (
+                        {"status": "booked", "appointmentId": 888}
+                        if action == "book" else {"status": "cancelled"}
+                    )
+                    return httpx.Response(200, json=result)
+
+                owner, requests = self.owner(
+                    [inventory(), delayed] if action == "book" else [delayed]
+                )
+                if action == "book":
+                    ref = await self.slots(owner)
+                    task = asyncio.create_task(self.book(owner, ref))
+                else:
+                    verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+                    ref = owner.appointments()[0]["appointmentRef"]
+                    task = asyncio.create_task(self.tool(
+                        owner, "cancel_appointment", appointmentRef=ref, readBack=True,
+                    ))
+                await entered.wait()
+                task.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+                release.set()
+                await owner.aclose()
+                # No presentation/read call should be needed to apply the receipt.
+                patient = owner.state.patient.active
+                self.assertEqual([a.id for a in patient.appointments], [888] if action == "book" else [])
+                self.assertEqual(patient.appointmentsStatus, "found" if action == "book" else "none")
+                self.assertEqual(len(requests), 2 if action == "book" else 1)
+
+    async def test_partial_note_reschedule_reconciles_during_write_and_after_reload(self):
+        for cancellation_status in ("cancelled", "error"):
+            with self.subTest(cancellation_status=cancellation_status):
+                async def cancel(request):
+                    # The confirmed booking is visible while cancellation is pending.
+                    self.assertEqual([a.id for a in owner.state.patient.active.appointments], [77, 888])
+                    return httpx.Response(200, json={"status": cancellation_status})
+
+                owner, requests = self.owner([
+                    inventory(),
+                    {"status": "partial", "appointmentId": 888, "appointmentTypeId": 1007},
+                    cancel,
+                ])
+                verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+                old_ref = owner.appointments()[0]["appointmentRef"]
+                slot_ref = await self.slots(owner)
+                args = dict(
+                    oldAppointmentRef=old_ref, appointmentSlotRef=slot_ref,
+                    appointmentReason="Annual medical follow up", referringDoctor="none", readBack=True,
+                )
+                result = await self.tool(owner, "reschedule_appointment", **args)
+                self.assertTrue(result.startswith("blocked:"))
+                self.assertIn("note did not save", result)
+                expected_ids = [888] if cancellation_status == "cancelled" else [77, 888]
+                self.assertEqual([a.id for a in owner.state.patient.active.appointments], expected_ids)
+                checkpoints = [c.args[0] for c in owner.state.reporter.appointment.call_args_list]
+                self.assertEqual([c["bookingResult"]["status"] for c in checkpoints], ["partial", "partial"])
+                self.assertEqual(
+                    [c["cancellationResult"]["status"] for c in checkpoints],
+                    ["not_attempted", "cancelled" if cancellation_status == "cancelled" else "uncertain"],
+                )
+                # A stale reload must produce the same appointment list, repeatedly.
+                verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+                for _ in range(2):
+                    owner.appointments()
+                    self.assertEqual([a.id for a in owner.state.patient.active.appointments], expected_ids)
+                replay = await self.tool(owner, "reschedule_appointment", **args)
+                self.assertEqual(replay, result)
+                self.assertEqual(len(requests), 3)
+
     async def test_cancellation_requires_confirmation_without_writing(self):
         owner, requests = self.owner([{"status": "cancelled"}])
         verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
