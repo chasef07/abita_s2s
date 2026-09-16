@@ -135,7 +135,7 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             5,
         )
         outputs = [x for x in agent.chat_ctx.items if x.type == "function_call_output"]
-        return json.loads(outputs[-1].output)
+        return outputs[-1].output if tool == "resolve_patient" else json.loads(outputs[-1].output)
 
     async def test_distinct_needs_duplicates_and_changed_details(self):
         async with self.setup_session() as (session, agent, state, owner, requests, _):

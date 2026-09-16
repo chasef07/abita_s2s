@@ -49,8 +49,7 @@ class Registration(Record):
 def staff(outcome="needs_staff_review"):
     return reply(
         outcome,
-        "Office staff must verify the registration or insurance result before continuing. Do not repeat this write.",
-        "staff_help",
+        "blocked: Office staff must verify the registration or insurance result before continuing. Do not repeat this write.",
     )
 
 
@@ -106,7 +105,7 @@ class InsuranceRegistration:
         if self._task and not self._task.done():
             return reply(
                 "write_pending",
-                "A registration or insurance write is still in progress. Wait for its result.",
+                "blocked: A registration or insurance write is still in progress. Wait for its result.",
             )
         if self.state.insurance.write_uncertain:
             return staff("uncertain")
@@ -137,13 +136,13 @@ class InsuranceRegistration:
         if self.state.patient.active:
             return reply(
                 "already_active",
-                "A verified patient is already active. Resolve the intended patient before creating a chart.",
+                "blocked: A verified patient is already active. Resolve the intended patient before creating a chart.",
             )
         checked = accepted_insurance(self.state)
         if checked is None:
             return reply(
                 "needs_insurance",
-                "Check accepted coverage for this patient and the intended medical or routine vision visit before registration.",
+                "needs_input: Check accepted coverage for this patient and the intended medical or routine vision visit before registration.",
             )
         self_pay = normalize(checked.plan) == "self pay"
         phone = r.phone or (
@@ -152,13 +151,13 @@ class InsuranceRegistration:
         if not phone:
             return reply(
                 "needs_callback",
-                "Confirm the inbound number is a good callback number, or ask for a callback number for the patient.",
+                "needs_input: Confirm the inbound number is a good callback number, or ask for a callback number for the patient.",
             )
         digits = re.sub(r"\D", "", phone)
         if len(digits) == 11 and digits.startswith("1"):
             digits = digits[1:]
         if len(digits) != 10:
-            return reply("needs_callback", "Ask for a valid callback phone number.")
+            return reply("needs_callback", "needs_input: Ask for a valid callback phone number.")
         if (
             not all((r.firstName, r.lastName, r.street, r.city, r.state, r.zip))
             or not parse_dob(r.dob)
@@ -169,7 +168,7 @@ class InsuranceRegistration:
         ):
             return reply(
                 "needs_registration_details",
-                "Collect the patient's full identity, address, and insurance policyholder and member ID, then confirm a full read-back.",
+                "needs_input: Collect the patient's full identity, address, and insurance policyholder and member ID, then confirm a full read-back.",
             )
         if not r.readBack:
             address = ", ".join(
@@ -182,7 +181,7 @@ class InsuranceRegistration:
             )
             return reply(
                 "needs_read_back",
-                f"Confirm {r.firstName} {r.lastName}, DOB {r.dob}, {r.sex}; address {address}; callback {digits}"
+                f"needs_input: Confirm {r.firstName} {r.lastName}, DOB {r.dob}, {r.sex}; address {address}; callback {digits}"
                 + (f"; email {r.email}" if r.email else "")
                 + f". {coverage} Is all of that correct?",
             )
@@ -269,7 +268,8 @@ class InsuranceRegistration:
                 patient_id=result.patientId,
                 absence=None,
             )
-        answer = f"Created the patient chart for {result.name}."
+        status = "success" if result.status == "created" and activated else "blocked"
+        answer = f"{status}: Created the patient chart for {result.name}."
         if result.status == "partial":
             answer += " Insurance attachment is not confirmed. Office staff must finish registration; do not create another chart."
         if not activated:
@@ -328,7 +328,6 @@ class InsuranceRegistration:
                     return reply(
                         "needs_staff_review",
                         "Current insurance details could not be verified. No insurance change was sent; ask office staff for help.",
-                        "staff_help",
                     )
             payload = {
                 "patientId": active.patientId,

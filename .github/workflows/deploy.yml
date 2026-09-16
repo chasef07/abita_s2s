@@ -69,7 +69,7 @@ jobs:
           echo "COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
       - uses: astral-sh/setup-uv@v6
         with:
-          version: '0.12.13'
+          version: '0.12.15'
           python-version: '3.13.15'
       - name: Install pinned LiveKit CLI
         run: |

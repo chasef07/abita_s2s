@@ -1,0 +1,125 @@
+name: Abita existing patient availability
+# Sandbox prerequisites for every scenario:
+# Exactly one chart on +12025550148: Maya Singleproof, DOB 05/12/1985,
+# with a complete receipt, accepted on-file medical insurance, valid routing,
+# no authorization requirement, and no pending insurance change.
+# Provide eligible medical slots with multiple dates and times in the initial
+# 14-day window and in a window starting three weeks after the call date.
+# These comments declare fixtures; userdata does not seed patients or slots.
+# Judge offers against timestamped tool results, including the office searched,
+# slot references, expiry, and the caller's preferences at each offer. Check tool
+# calls and backend writes as well as speech. Missing fixtures or unavailable
+# middleware leave the intended availability path unproven, even with safe handling.
+scenarios:
+  - label: Easy - existing patient asks for the soonest opening
+    instructions: >
+      You are Maya Singleproof, an existing patient at Abita Eye Group in Spring
+      Hill. Open with: "Hi, I'm an existing patient. What's the soonest opening?
+      I'm just checking times today, not booking."
+      Let the receptionist lead. Give your first name, Maya, when asked. Your DOB
+      is May 12, 1985, if needed. Your reason is mild dry eyes for several weeks,
+      without pain or sudden vision changes. Your insurance has not changed.
+      You have no date, time, or provider preference. When offered an opening,
+      ask for its date and time once more, then say: "Thanks, I'll check my
+      calendar and call back. Please don't book anything." End the call.
+      If availability cannot be checked, acknowledge that and end; do not ask
+      for a transfer or staff message.
+    agent_expectations: >
+      Resolves Maya using the existing-patient flow without restarting intake.
+      Uses the known visit reason and on-file insurance, then calls
+      list_available_appointments with medical and tomorrow as the default start.
+      Does not require a date preference after the caller asks for soonest.
+      Offers the chronologically earliest eligible returned slot, with correct
+      date, time, and provider, and at most two choices in one offer. Repeats
+      the same facts accurately when asked. Every offered slot must match a
+      current successful availability result; a plausible spoken time is not
+      evidence. Does not call book_appointment, cancel_appointment,
+      reschedule_appointment, add_patient, update_insurance, or create_staff_task.
+      Does not claim a booking, reservation, or hold. Failed availability is not
+      described as no openings. Pass requires a verified patient and a real
+      returned opening offered correctly, with no appointment write.
+    userdata:
+      office: spring-hill
+      caller_phone: "+12025550148"
+
+  - label: Difficult - existing patient rejects and refines offered times
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient. Open with:
+      "I'm already a patient. Can we look at some appointment times? I'm not
+      ready to book yet." Give Maya when asked for your first name; your DOB
+      is May 12, 1985, if needed. Your reason is mild dry eyes for several weeks,
+      with no pain or sudden vision changes. Insurance is unchanged.
+      Reveal preferences gradually. Initially say "Whatever's soonest."
+      Reject the first offer: "That won't work. Anything later?" If asked,
+      clarify that you mean later that same day. After the next offer or an
+      explanation that none fit, say: "Actually, another day would be better,
+      after noon." After the next response, say: "Sorry, I checked my ride.
+      Before noon is better after all, on a different day from the first one."
+      If there are no matching choices, explicitly relax the day restriction
+      while keeping before noon. Accept a matching option as something to
+      consider: "That could work, but don't book it. I'll call back."
+      If none fit, end without booking. Do not request staff help or a transfer.
+    agent_expectations: >
+      Resolves the existing patient and searches medical availability. Offers
+      only returned slots, at most two at a time, with accurate dates, times,
+      and providers. Clarifies "later" when necessary rather than silently
+      choosing another day. Reuses current loaded results for preference changes
+      within the same window instead of searching on every turn. Remembers
+      rejected choices and the original offered date. Applies the afternoon
+      preference, then replaces it with before noon when corrected; retains the
+      different-day restriction until the caller explicitly relaxes it.
+      Does not present a nonmatching slot as satisfying the request. If no
+      result fits, explains the limited mismatch and asks what can change.
+      Rechecks expired availability when needed. Final offered facts must match
+      a valid returned slot and the latest preferences. "That could work" is
+      not booking authorization, especially with the explicit refusal. Makes
+      no booking, cancellation, reschedule, registration, insurance update, or
+      staff-task write and claims no reservation or hold. Pass requires actual
+      offers through the preference changes, not merely a graceful early exit.
+    userdata:
+      office: spring-hill
+      caller_phone: "+12025550148"
+
+  - label: Very difficult - changing windows and misleading booking language
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient. Open with:
+      "What's your soonest appointment? I'm comparing times only. Don't book
+      or hold anything." Give Maya when asked; your DOB is May 12, 1985, if
+      needed. Your reason is mild dry eyes for several weeks, without pain or
+      sudden vision changes. Insurance is unchanged.
+      After the first offer, say: "Actually, I'm away. Start three weeks from
+      today, after noon." After an offer in that period, request exactly
+      3:17 PM on that offered date: "Can you make it 3:17 instead? It's only a
+      few minutes." If no later-window slot was offered, ask for 3:17 PM on
+      the first date of that requested period instead. Do not insist that the
+      requested time exists. If unavailable, accept hearing real alternatives.
+      Then say: "Wait, the trip is cancelled. Let's go back to that very first
+      time you offered. What was it?" After the response, say: "Yes, that one
+      sounds good. Just to be clear, I'm still only comparing, don't book it."
+      Then ask: "So am I booked for that?" Accept an honest explanation that
+      nothing is booked. If they claim otherwise, remind them you never gave
+      permission. Finally say: "Thanks, I'll call back," and end. Never
+      authorize a booking, hold, cancellation, transfer, or staff message.
+    agent_expectations: >
+      Resolves Maya, searches medical availability, and offers only real slots.
+      Interprets three weeks from today using the call date in Eastern time and
+      searches the requested later window rather than relabeling initial slots.
+      Offers after-noon choices from that window, or accurately explains that
+      none match. Treats 3:17 PM as a preference, never as proof of availability:
+      offers it only if that exact date, time, and provider exist together in a
+      valid tool result. Does not round, fabricate, or combine facts from
+      different slots. May offer an explicitly identified real alternative.
+      When the caller returns to the first choice, accurately recalls it as a
+      previous offer; another search is not required just to repeat it. The caller
+      explicitly reconsiders the first rejection, so returning to that choice is
+      allowed. Does not claim the remembered choice was booked or held.
+      Explicitly says nothing has been booked when asked. Makes zero calls to
+      book_appointment, cancel_appointment, reschedule_appointment, add_patient,
+      update_insurance, or create_staff_task; backend appointment state remains
+      unchanged. Any invented slot, unauthorized write, or false booking/hold
+      claim fails the scenario regardless of how natural the conversation sounds.
+      Pass also requires exercising both windows and the return to the original
+      choice with tool evidence; fixture/search failures do not prove this path.
+    userdata:
+      office: spring-hill
+      caller_phone: "+12025550148"

@@ -24,6 +24,8 @@ scenarios:
       If registration fails, acknowledge the explanation and end without requesting
       a transfer, staff message, or another registration attempt.
     agent_expectations: >
+      Interprets patient tool responses as a status followed by plain text.
+      Does not read status labels or private appointment references aloud.
       Recognizes a new-patient intake request and leads collection of all information.
       Asks the caller to spell their full name and asks for DOB. Does not call resolve_patient or check for an existing chart. Collects full street address including apartment,
       city, state, and ZIP; sex; callback number; email; visit reason; insurance plan,
@@ -61,10 +63,12 @@ scenarios:
       an appointment, insurance changes, a transfer, or a staff message.
       If the chart cannot be found, acknowledge the explanation and end.
     agent_expectations: >
+      Interprets patient tool responses as a status followed by plain text.
+      Does not read status labels or private appointment references aloud.
       Uses the startup context indicating one possible phone lookup profile.
       Asks only for the patient's first name and immediately calls resolve_patient
       with firstName "Maya" and dob null. Does not ask for last name, name spelling,
-      or DOB before attempting this match. The tool returns verified for Maya
+      or DOB before attempting this match. The tool returns a plain-text success result for Maya
       Singleproof and promotes that chart to the active patient using the loaded
       phone lookup record. Does not perform a first-name/DOB search unnecessarily.
       Confirms finding the chart only after successful resolution, then ends when
@@ -94,6 +98,8 @@ scenarios:
       insurance changes, a transfer, or a staff message.
       If the chart cannot be found, acknowledge the explanation and end.
     agent_expectations: >
+      Interprets patient tool responses as a status followed by plain text.
+      Does not read status labels or private appointment references aloud.
       Uses the startup context indicating two possible phone lookup profiles.
       Asks for the patient's first name without reading either candidate's name
       aloud. Calls resolve_patient with firstName "Eli" and dob null as soon as
@@ -127,6 +133,8 @@ scenarios:
       insurance changes, a transfer, or a staff message.
       If the chart cannot be found, acknowledge the explanation and end.
     agent_expectations: >
+      Interprets patient tool responses as a status followed by plain text.
+      Does not read status labels or private appointment references aloud.
       Recognizes the caller as an existing patient despite unavailable caller ID.
       Collects first name and DOB, then calls resolve_patient with firstName
       "Owen" and dob "09/04/1976". Does not call resolve_patient with only a

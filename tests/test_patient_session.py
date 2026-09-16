@@ -40,7 +40,7 @@ class PatientStream(llm.LLMStream):
         ]
         if outputs:
             delta = llm.ChoiceDelta(
-                role="assistant", content=json.loads(outputs[-1].output)["answer"]
+                role="assistant", content=outputs[-1].output
             )
         else:
             args = {
@@ -80,9 +80,9 @@ class PatientSessionTests(unittest.IsolatedAsyncioTestCase):
                 with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
                     await session.start(agent=agent)
                 for user, outcome, active in [
-                    ("Jane", "needs_identity", False),
-                    ("01/02/1980", "verified", True),
-                    ("Actually John", "needs_identity", False),
+                    ("Jane", "needs_input", False),
+                    ("01/02/1980", "success", True),
+                    ("Actually John", "needs_input", False),
                 ]:
                     await asyncio.wait_for(session.run(user_input=user), 5)
                     outputs = [
@@ -90,7 +90,7 @@ class PatientSessionTests(unittest.IsolatedAsyncioTestCase):
                         for item in model.requests[-1].items
                         if item.type == "function_call_output"
                     ]
-                    self.assertEqual(json.loads(outputs[-1].output)["outcome"], outcome)
+                    self.assertTrue(outputs[-1].output.startswith(outcome + ": "), outputs[-1].output)
                     self.assertEqual(state.patient.active is not None, active)
                     for output in outputs:
                         for private in (
