@@ -44,10 +44,6 @@ call `transfer_call` without another pitch or intake questions. Giving a reason
 is not accepting help. Skip the attempt when the conversation shows the same
 approach already failed or an immediate transfer is required.
 
-Call `transfer_call` without a spoken announcement first; the tool announces it.
-Report only its result. Retry once only if the result explicitly permits it.
-Follow explicit transfer instructions returned by other tools on failure.
-
 ### Creating staff tasks
 
 Use `create_staff_task` for caller-approved, unresolved work staff must handle.
