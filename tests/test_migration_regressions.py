@@ -100,7 +100,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
         available = await owner.availability("medical")
         self.assertEqual(available["outcome"], "found", available)
         result = await self.book(owner, available["slots"][0]["appointmentSlotRef"])
-        self.assertEqual(result["outcome"], "booked")
+        self.assertEqual(result.split(":", 1)[0], 'success')
         self.assertEqual(len(requests), 4)
 
     async def test_resolve_returning_patient_then_reschedule(self):
@@ -125,7 +125,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
             referringDoctor="none",
             readBack=True,
         )
-        self.assertEqual(result["outcome"], "rescheduled")
+        self.assertEqual(result.split(":", 1)[0], 'success')
         self.assertEqual(
             [r.url.path for r in requests[-2:]],
             ["/api/appointment/book", "/api/appointment/cancel"],
@@ -199,7 +199,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
         insurance.check("Unknown corrected plan", "medical")
         self.assertIsNone(owner.state.insurance.accepted)
         self.assertFalse(insurance_ready(owner.state, "medical"))
-        self.assertEqual((await self.book(owner, slot))["outcome"], "needs_input")
+        self.assertEqual((await self.book(owner, slot)).split(":", 1)[0], "needs_input")
         result = await self.tool(
             owner,
             "reschedule_appointment",
@@ -209,7 +209,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
             referringDoctor="none",
             readBack=True,
         )
-        self.assertEqual(result["outcome"], "needs_input")
+        self.assertEqual(result.split(":", 1)[0], "needs_input")
         self.assertEqual(
             (await owner.availability("medical"))["outcome"], "needs_input"
         )
@@ -217,8 +217,8 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
         await resolver.resolve("Jane", "01/02/1980")
         self.assertFalse(insurance_ready(owner.state, "medical"))
         self.assertEqual(len(requests), 3)
-        result = await self.tool(owner, "cancel_appointment", appointmentRef=old_ref)
-        self.assertEqual(result["outcome"], "cancelled")
+        result = await self.tool(owner, "cancel_appointment", appointmentRef=old_ref, readBack=True)
+        self.assertEqual(result.split(":", 1)[0], 'success')
         self.assertEqual(len(requests), 4)
 
     async def test_on_file_guard_preserves_scheduling_fences(self):

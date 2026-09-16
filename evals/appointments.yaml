@@ -1,0 +1,67 @@
+name: Abita appointment changes
+# Sandbox fixtures: Maya Singleproof, DOB 05/12/1985, +12025550148 must resolve
+# uniquely with accepted medical insurance, valid routing and no authorization
+# requirement. Booking needs at least one eligible future medical slot; reschedule
+# and cancellation each need a loaded upcoming medical appointment. Suite order is
+# not guaranteed even with concurrency 1. Run individual scenarios in book, reschedule,
+# cancel order when sharing a chart; recheck returned appointments before each action.
+# Userdata does not seed fixtures.
+# Verify tool arguments, receipts, backend state and spoken claims. Missing fixtures
+# leave the intended action unproven; safe failure handling alone is not a pass.
+scenarios:
+  - label: Book an appointment
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
+      Ask to book the soonest medical appointment for mild dry eyes for several
+      weeks, without pain or sudden vision changes. You have no referring doctor
+      and your insurance has not changed. Give your first name when asked and DOB
+      only if needed. Choose an actual returned slot and approve an accurate final
+      date, time and provider read-back. End after the result is explained.
+    agent_expectations: >
+      Resolves Maya through the existing-patient workflow, reuses known details,
+      searches medical availability and offers a returned slot. Obtains explicit
+      booking approval before book_appointment with readBack true. Exactly one new
+      appointment is booked. Claims success only from its receipt and gives the
+      correct date, time and provider. Does not register a new chart.
+      Fail if no booking succeeds.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Reschedule an appointment
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
+      Ask to move your next upcoming medical appointment to a later date. If several
+      visits exist, choose the earliest one using the actual dates the agent gives.
+      You have no referring doctor and your insurance has not changed. Choose an
+      actual later returned slot. Approve an accurate read-back of the old appointment
+      and replacement, then end after the result is explained.
+    agent_expectations: >
+      Resolves Maya, identifies the exact loaded appointment, and searches matching
+      medical availability. Obtains approval of old and new appointment details,
+      before reschedule_appointment with readBack true. Never
+      calls separate model-facing booking and cancellation tools to perform the move.
+      Backend receipts show the replacement booked before the original is cancelled.
+      Other visits remain unchanged. Reports both confirmed outcomes accurately.
+      Fail if no reschedule succeeds or the completion does not explicitly say
+      the old appointment was cancelled.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Cancel an appointment
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
+      Ask to cancel your next upcoming medical appointment. If several visits exist,
+      choose the earliest using its actual returned date. Approve cancellation after
+      an accurate date, time and provider read-back. Keep any other visits.
+      Do not request a new booking. End after the cancellation result is explained.
+    agent_expectations: >
+      Resolves Maya, identifies the exact loaded visit, and obtains explicit approval
+      before cancel_appointment with readBack true. Does not collect booking intake
+      or check insurance for cancellation. Exactly the selected visit is cancelled,
+      other visits remain unchanged, and success is claimed only after the receipt.
+      Fail if no cancellation succeeds, including when no appointments are found.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
