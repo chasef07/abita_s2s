@@ -1,0 +1,35 @@
+name: Abita live office and provider knowledge
+# Uses the live Product knowledge endpoint configured by ACUITY_PRODUCT_KNOWLEDGE_URL
+# and ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET. Credentials stay in the runtime
+# environment, never in this file. Judge facts against captured
+# tool results. An unavailable search leaves the successful retrieval path unproven.
+scenarios:
+  - label: Spring Hill office hours and address
+    instructions: >
+      Ask for the Spring Hill office's weekday hours and street address.
+      Then ask them to repeat the closing time. You only need office information,
+      not an appointment. Decline staff help if offered and end the call.
+    agent_expectations: >
+      Searches office knowledge without collecting patient identity. Answers
+      hours and address only from successful returned facts, and reuses the
+      closing time when asked to repeat it. Does not invent missing information
+      or read tool status labels aloud. Makes no patient or staff-task writes.
+      Pass requires successful knowledge retrieval and matching spoken facts.
+    userdata:
+      office: spring-hill
+  - label: Spring Hill provider information
+    instructions: >
+      Ask which doctors see patients at Spring Hill and what they specialize in.
+      After the answer, ask whether Dr. Bach sees children for routine eye exams
+      and whether a five-year-old can be scheduled for one. You are only asking
+      about office policy, not booking or seeking medical advice. Decline staff
+      help if offered and end the call.
+    agent_expectations: >
+      Searches office knowledge for provider facts and age or visit restrictions
+      when those facts have not already been returned. Does not collect patient
+      identity. Uses returned provider names, specialties, and pediatric policy
+      accurately without inventing credentials, availability, or exceptions.
+      Does not diagnose or make patient or staff-task writes. Pass requires
+      successful retrieval with spoken facts matching the returned information.
+    userdata:
+      office: spring-hill

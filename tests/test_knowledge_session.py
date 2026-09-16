@@ -32,8 +32,7 @@ class KnowledgeStream(llm.LLMStream):
             item for item in self._chat_ctx.items if item.type == "function_call_output"
         ]
         if outputs:
-            result = json.loads(outputs[-1].output)
-            delta = llm.ChoiceDelta(role="assistant", content=result["answer"])
+            delta = llm.ChoiceDelta(role="assistant", content=outputs[-1].output)
         else:
             delta = llm.ChoiceDelta(
                 role="assistant",
@@ -50,10 +49,17 @@ class KnowledgeStream(llm.LLMStream):
 
 class KnowledgeSessionTests(unittest.IsolatedAsyncioTestCase):
     async def test_tool_result_reaches_next_model_turn_and_followup(self):
-        for body in (
-            FOUND,
-            {"outcome": "no_relevant_information", "passages": []},
-            {"outcome": "temporary_failure", "passages": []},
+        for body, expected in (
+            (FOUND, "success: Weekdays 8:30 AM–4:30 PM. Closed weekends."),
+            (
+                {"outcome": "no_relevant_information", "passages": []},
+                "no_results: No information was found for this question. "
+                "This does not establish that the service is unavailable.",
+            ),
+            (
+                {"outcome": "temporary_failure", "passages": []},
+                "blocked: Office information could not be checked. Offer staff help if needed.",
+            ),
         ):
             with self.subTest(outcome=body["outcome"]):
                 requests = []
@@ -87,15 +93,14 @@ class KnowledgeSessionTests(unittest.IsolatedAsyncioTestCase):
                             if item.type == "function_call_output"
                         ]
                         self.assertTrue(consumed)
-                        result = json.loads(consumed[-1].output)
-                        self.assertEqual(result["outcome"], body["outcome"])
+                        self.assertEqual(consumed[-1].output, expected)
                         self.assertNotIn("revision-1", consumed[-1].output)
                         self.assertNotIn("Status:", consumed[-1].output)
                         self.assertTrue(
                             any(
                                 item.type == "message"
                                 and item.role == "assistant"
-                                and item.text_content == result["answer"]
+                                and item.text_content == expected
                                 for item in agent.chat_ctx.items
                             )
                         )

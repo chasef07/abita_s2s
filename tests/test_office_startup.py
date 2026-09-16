@@ -140,6 +140,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             config=Config(
                 "offline", middleware_url="https://production.test",
                 middleware_token="production-token", product_secret="product-token",
+                knowledge_url="https://product.test/v1/agent/knowledge/search",
                 interaction_url="https://product.test/v1/ai/interactions",
                 staff_tasks_url="https://product.test/v1/tasks",
             ),
@@ -155,7 +156,12 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(config.middleware_token, "sandbox-token")
         self.assertEqual(config.middleware_url, "https://abita-middleware-sandbox-test.run.app")
         self.assertIsNone(config.staff_tasks_url)
-        self.assertIsNone(config.product_secret)
+        self.assertEqual(config.product_secret, "product-token")
+        self.assertEqual(config.knowledge_url, "https://product.test/v1/agent/knowledge/search")
+        self.assertEqual(args["agent"]._knowledge._url, config.knowledge_url)
+        self.assertEqual(args["agent"]._knowledge._secret, "product-token")
+        self.assertIsNone(config.interaction_url)
+        self.assertIsNone(config.handoff)
 
     async def test_simulation_rejects_missing_or_non_sandbox_backend(self):
         sim = SimpleNamespace(userdata=lambda: {"office": "spring-hill"})
