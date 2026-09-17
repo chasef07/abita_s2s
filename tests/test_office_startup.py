@@ -314,7 +314,10 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         state = args["userdata"]
         ctx.primary_session = SimpleNamespace(userdata=state)
         report = {"chat_history": {"items": []}, "events": [{"type": "close", "reason": "participant_disconnected"}], "usage": []}
-        ctx.make_session_report = Mock(return_value=SimpleNamespace(to_dict=lambda: report))
+        ctx.make_session_report = Mock(return_value=SimpleNamespace(
+            to_dict=lambda: report, chat_history=SimpleNamespace(items=[]),
+        ))
+        ctx.tagger = Mock()
         entered, release = asyncio.Event(), asyncio.Event()
         async def write():
             entered.set()

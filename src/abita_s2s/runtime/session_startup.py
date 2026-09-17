@@ -14,6 +14,7 @@ from livekit.agents import AgentSession, JobContext, room_io
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.call_control import CallControl
 from abita_s2s.config import Config, load_config
+from abita_s2s.observability import evaluate_call
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.knowledge import OfficeKnowledge
@@ -303,5 +304,8 @@ async def finish_voice_call(ctx: JobContext) -> None:
         state = ctx.primary_session.userdata
     except RuntimeError:
         return  # Startup cleanup owns the failed closeout before session registration.
-    if state.reporter:
-        await state.reporter.finish(lambda: ctx.make_session_report().to_dict())
+    try:
+        if state.reporter:
+            await state.reporter.finish(lambda: ctx.make_session_report().to_dict())
+    finally:
+        await evaluate_call(ctx)
