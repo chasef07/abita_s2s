@@ -35,6 +35,7 @@ class Appointment(Record):
     provider: str = ""
     type: str = ""
     facility: str = ""
+    visitType: Literal["medical", "routine_vision"] | None = None
     officeId: str | None = None
     office: str | None = None
     confirmed: bool = False
