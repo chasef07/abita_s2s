@@ -71,8 +71,8 @@ depend on configuration and execution mode.
    the trusted trunk number. Unknown trunks fail explicitly. Console sessions
    require an explicit office; simulations provide office context.
 2. **Construct the call.** Create state, transports, the model, and tool owners.
-   Start private phone lookup and await its non-identifying hint before starting
-   the voice session. Phone candidates do not activate a patient.
+   Start private phone lookup alongside the voice session so the greeting does
+   not wait for patient data. Phone candidates do not activate a patient.
 3. **Greet and work.** The speaker greets the caller. The thinker uses tools to
    resolve identity, register patients, check insurance, manage appointments,
    answer office questions, deliver staff requests, or transfer/end the call.
@@ -88,6 +88,8 @@ depend on configuration and execution mode.
 - **Identity:** lookup completion belongs to `PatientResolver`. Duplicate waiters
   share one shielded read; cancelling a waiter leaves it running. Corrections and
   shutdown invalidate its token so stale results cannot activate a patient.
+  Resolution awaits the shared phone lookup, uses the caller's first name, and
+  requests DOB only when needed. No startup lookup hint is sent to the model.
 - **Field ownership:** `CallState.patient.active` is the canonical patient receipt.
   Identity owns verified identity activation; registration and insurance own
   their write results; scheduling owns appointment reconciliation. Read tasks,
@@ -96,6 +98,8 @@ depend on configuration and execution mode.
   returned references select slots or loaded appointments. Confirmed receipts
   update appointments through one reconciliation path, both after writes and
   after stale patient reloads. Backend identifiers and tokens stay private.
+  Booking replay matches the selected slot; cancelled or replaced bookings never
+  satisfy a new request. Fresh confirmed selections can create new appointments.
 - **Rescheduling:** book the replacement first, retain a recovery receipt, then
   cancel the old appointment only if the captured patient context is still current.
   A failed or uncertain cancellation preserves the booking and requires staff

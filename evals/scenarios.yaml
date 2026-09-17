@@ -65,7 +65,6 @@ scenarios:
     agent_expectations: >
       Interprets patient tool responses as a status followed by plain text.
       Does not read status labels or private appointment references aloud.
-      Uses the startup context indicating one possible phone lookup profile.
       Asks only for the patient's first name and immediately calls resolve_patient
       with firstName "Maya" and dob null. Does not ask for last name, name spelling,
       or DOB before attempting this match. The tool returns a plain-text success result for Maya
@@ -100,7 +99,6 @@ scenarios:
     agent_expectations: >
       Interprets patient tool responses as a status followed by plain text.
       Does not read status labels or private appointment references aloud.
-      Uses the startup context indicating two possible phone lookup profiles.
       Asks for the patient's first name without reading either candidate's name
       aloud. Calls resolve_patient with firstName "Eli" and dob null as soon as
       the name is supplied. Selects Eli from the loaded phone candidates and
@@ -136,9 +134,9 @@ scenarios:
       Interprets patient tool responses as a status followed by plain text.
       Does not read status labels or private appointment references aloud.
       Recognizes the caller as an existing patient despite unavailable caller ID.
-      Collects first name and DOB, then calls resolve_patient with firstName
-      "Owen" and dob "09/04/1976". Does not call resolve_patient with only a
-      first name when startup context says no phone profiles are available.
+      Calls resolve_patient with firstName "Owen", then collects DOB when the
+      tool requests it and calls again with dob "09/04/1976". If both details
+      were already supplied, calls once with firstName and dob.
       Searches by first name and DOB, loads the uniquely matched patient record,
       and promotes Owen Dobproof to the active patient with a verified result.
       Does not require a last name, phone number, or separate DOB read-back.

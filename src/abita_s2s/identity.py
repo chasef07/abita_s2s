@@ -78,11 +78,6 @@ class PatientResolver:
         self.state.patient.absence = None
         return self._token
 
-    def _apply_lookup(self, token: object, lookup: CandidateLookup) -> None:
-        if self._current(token):
-            self._token = None
-            self.state.patient.lookup = lookup
-
     def start_phone_lookup(self) -> None:
         if (
             self._task is not None
@@ -94,7 +89,7 @@ class PatientResolver:
         token = self._begin_lookup()
         self._precall = asyncio.create_task(self._lookup_phone(token))
 
-    async def _lookup_phone(self, token: object) -> None:
+    async def _lookup_phone(self, token: object) -> CandidateLookup:
         result = await self._middleware.resolve(
             self.state.call.called_office_key, {"phone": self.state.call.caller_phone}
         )
@@ -103,44 +98,26 @@ class PatientResolver:
         elif isinstance(result, Multiple):
             matches = result.matches
         else:
+            matches = []
+        if not matches:
             lookup = (
                 CandidateLookup("none")
                 if isinstance(result, NotFound)
                 else CandidateLookup("failed", failure_reason="lookup_failed")
             )
-            self._apply_lookup(token, lookup)
-            return
-        if len({c.patientId for c in matches}) != len(matches) or any(
+        elif len({c.patientId for c in matches}) != len(matches) or any(
             not candidate_first_name(c) for c in matches
         ):
             lookup = CandidateLookup("failed", failure_reason="invalid_response")
         else:
             lookup = CandidateLookup("found", tuple(matches))
-        self._apply_lookup(token, lookup)
+        if self._current(token):
+            self._token = None
+            self.state.patient.lookup = lookup
+        return lookup
 
     def close_admission(self) -> None:
         self._closed = True
-
-    async def phone_lookup_context(self) -> str | None:
-        """Expose only the startup lookup hint, never candidate identities."""
-        if self._precall is not None:
-            await asyncio.gather(self._precall, return_exceptions=True)
-        if self._closed or self.state.patient.active or self._pending != (None, None):
-            return None
-        count = len(self.state.patient.lookup.candidates)
-        if count:
-            return (
-                f"Startup phone lookup found {count} possible patient profile(s). "
-                "For an existing patient, ask for the patient's first name, then "
-                "call resolve_patient with firstName and dob:null unless DOB was "
-                "already provided. These profiles are not yet verified. Follow "
-                "later resolve_patient results; use new-patient intake if the caller says they are new."
-            )
-        return (
-            "Startup phone lookup has no available patient profiles. For an existing "
-            "patient, ask for the patient's first name and date of birth, then call "
-            "resolve_patient. This does not mean the patient is new."
-        )
 
     async def aclose(self) -> None:
         self._closed = True
@@ -189,13 +166,17 @@ class PatientResolver:
             self.state.patient.active = None
             self.state.patient.revision += 1
         token = self._begin_lookup()
-        for task in (self._task, self._precall):
-            if task is not None and not task.done():
-                task.cancel()
+        if self._task is not None and not self._task.done():
+            self._task.cancel()
 
         async def lookup():
             # The resolver owns completion; a cancelled waiter leaves the read running.
             try:
+                if self._precall is not None:
+                    candidates = await asyncio.shield(self._precall)
+                    if not self._current(token):
+                        return reply("superseded", "blocked: Patient details changed; use the latest resolution.")
+                    self.state.patient.lookup = candidates
                 return await self._resolve(first_name, dob, token, call_id=call_id)
             except asyncio.CancelledError:
                 if self._token is token:

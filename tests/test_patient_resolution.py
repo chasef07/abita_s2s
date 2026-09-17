@@ -5,7 +5,6 @@ import json
 import unittest
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import Mock, PropertyMock, patch
 
 import httpx
 from livekit.agents.llm.utils import build_strict_openai_schema
@@ -116,61 +115,32 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await r.resolve("Jane", None))["outcome"], "verified")
         self.assertEqual(len(calls), 1)
 
-    async def test_phone_context_waits_for_lookup_and_keeps_identities_private(self):
-        r, calls = self.resolver([
-            {"status": "multiple_matches", "matches": [candidate(), candidate("child", "John")]}
-        ])
+    async def test_resolution_waits_for_shared_phone_lookup(self):
+        started, release = asyncio.Event(), asyncio.Event()
+
+        async def delayed(request):
+            started.set()
+            await release.wait()
+            return httpx.Response(200, json=receipt())
+
+        r, calls = self.resolver([delayed])
         r.start_phone_lookup()
-        hint = await r.phone_lookup_context()
-        self.assertIn("2 possible patient", hint)
-        self.assertIn("dob:null", hint)
-        for private in ("Jane", "John", "Doe", "chart-jane", "child", "01/02/1980"):
-            self.assertNotIn(private, hint)
-        self.assertIsNone(r.state.patient.active)
+        await started.wait()
+        first = asyncio.create_task(r.resolve("Jane", None))
+        duplicate = asyncio.create_task(r.resolve("Jane", None))
+        try:
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            self.assertFalse(r._precall.done())
+            self.assertIsNone(r.state.patient.active)
+            first.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await first
+        finally:
+            release.set()
+        self.assertEqual((await duplicate)["outcome"], "verified")
+        self.assertEqual(r.state.patient.active.patientId, "chart-jane")
         self.assertEqual(len(calls), 1)
-
-    async def test_phone_context_without_profiles_requests_first_name_and_dob(self):
-        for body in ({"status": "not_found"}, {"status": "error"}):
-            r, _ = self.resolver([body, body])
-            r.start_phone_lookup()
-            hint = await r.phone_lookup_context()
-            self.assertIn("first name and date of birth", hint)
-            self.assertIn("does not mean the patient is new", hint)
-        r, calls = self.resolver([], call_state(None))
-        self.assertIn("first name and date of birth", await r.phone_lookup_context())
-        self.assertEqual(calls, [])
-
-    async def test_phone_context_is_not_injected_after_interactive_resolution(self):
-        r, _ = self.resolver([receipt()])
-        await self.preload(r)
-        await r.resolve("John", None)
-        self.assertIsNone(await r.phone_lookup_context())
-        await r.resolve("Jane", None)
-        self.assertIsNone(await r.phone_lookup_context())
-
-    async def test_agent_starts_with_phone_hint_and_greeting_does_not_change_context(self):
-        r, _ = self.resolver([receipt()])
-        r.start_phone_lookup()
-        agent = AbitaAgent(
-            SPRING_HILL, None, r, phone_lookup_context=await r.phone_lookup_context()
-        )
-        initial_items = list(agent.chat_ctx.items)
-        greeting = asyncio.get_running_loop().create_future()
-        greeting.set_result(None)
-        session = Mock()
-        session.generate_reply.return_value = greeting
-        with (
-            patch.object(AbitaAgent, "session", new_callable=PropertyMock, return_value=session),
-            patch.object(r, "phone_lookup_context") as lookup_context,
-        ):
-            await agent.on_enter()
-            lookup_context.assert_not_called()
-        session.generate_reply.assert_called_once()
-        self.assertEqual(agent.chat_ctx.items, initial_items)
-        hint = agent.chat_ctx.items[-1].text_content
-        self.assertIn("1 possible patient", hint)
-        self.assertNotIn("Jane", hint)
-        self.assertIsNone(r.state.patient.active)
 
     async def test_no_caller_id_requires_dob_then_hydrates(self):
         r, calls = self.resolver([search(candidate()), receipt()], call_state(None))
@@ -513,29 +483,55 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(r.state.patient.absence)
             self.assertEqual((await r.resolve("Jane", None))["answer"], "needs_input: What is the patient's date of birth?")
 
-    async def test_late_phone_result_cannot_overwrite_interactive_evidence(self):
+    async def test_correction_while_phone_lookup_is_pending_uses_latest_identity(self):
         started, release = asyncio.Event(), asyncio.Event()
+
+        async def delayed(request):
+            started.set()
+            await release.wait()
+            return httpx.Response(200, json={
+                "status": "multiple_matches",
+                "matches": [candidate(), candidate("john", "John")],
+            })
+
+        r, calls = self.resolver([delayed, receipt("john", "John")])
+        r.start_phone_lookup()
+        await started.wait()
+        first = asyncio.create_task(r.resolve("Jane", None))
+        await asyncio.sleep(0)
+        latest = asyncio.create_task(r.resolve("John", None))
+        await asyncio.sleep(0)
+        release.set()
+        self.assertEqual((await first)["outcome"], "superseded")
+        self.assertEqual((await latest)["outcome"], "verified")
+        self.assertEqual(r.state.patient.active.patientId, "john")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[1]["patientId"], "john")
+
+    async def test_shutdown_fences_pending_phone_lookup(self):
+        started, cancelled, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
 
         async def delayed(request):
             started.set()
             try:
                 await release.wait()
             except asyncio.CancelledError:
+                cancelled.set()
                 await release.wait()
             return httpx.Response(200, json=receipt())
 
-        r, calls = self.resolver(
-            [delayed, search(candidate("john", "John")), receipt("john", "John")]
-        )
+        r, _ = self.resolver([delayed])
         r.start_phone_lookup()
         await started.wait()
-        await r.resolve("John", "01/02/1980")
+        resolving = asyncio.create_task(r.resolve("Jane", None))
+        await asyncio.sleep(0)
+        closing = asyncio.create_task(r.aclose())
+        await cancelled.wait()
         release.set()
-        await r._precall
+        await closing
+        self.assertEqual((await resolving)["outcome"], "superseded")
+        self.assertIsNone(r.state.patient.active)
         self.assertEqual(r.state.patient.lookup.status, "not_attempted")
-        self.assertEqual(r.state.patient.active.patientId, "john")
-        r.start_phone_lookup()
-        self.assertEqual(len(calls), 3)
 
     async def test_close_fences_result_and_rejects_new_work(self):
         r, calls = self.resolver([])
