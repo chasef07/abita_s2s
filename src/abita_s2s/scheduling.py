@@ -569,6 +569,7 @@ class Scheduling:
         if old is None:
             return reply("needs_input", "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed.")
         if not old.cancellationToken:
+            self.state.patient.active = p.model_copy(update={"appointmentsStatus": "error"})
             return reply("needs_input", "needs_input: Reload appointments to obtain cancellation authorization, then reconfirm the exact appointment.")
         if confirmed is not True:
             return reply(
@@ -680,6 +681,7 @@ class Scheduling:
             body["routing"] = routing
         if old:
             if not old.rescheduleToken:
+                self.state.patient.active = p.model_copy(update={"appointmentsStatus": "error"})
                 return reply("needs_input", "needs_input: Reload appointments to obtain reschedule authorization, then reconfirm the move.")
             body["rescheduleToken"] = old.rescheduleToken
         self._invalidate()

@@ -768,6 +768,46 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Reload appointments", result)
         self.assertEqual(requests, [])
 
+    async def test_missing_action_tokens_force_real_patient_reload(self):
+        for action, field in (("cancel", "cancellationToken"), ("reschedule", "rescheduleToken")):
+            with self.subTest(action=action):
+                owner, requests = self.owner([inventory()] if action == "reschedule" else [])
+                verified(owner.state, appointmentsStatus="found", appointments=[appointment(**{field: None})])
+                old_ref = owner.appointments()[0]["appointmentRef"]
+                if action == "cancel":
+                    result = await self.tool(owner, "cancel_appointment", appointmentRef=old_ref, readBack=True)
+                else:
+                    slot_ref = await self.slots(owner)
+                    result = await self.tool(
+                        owner, "reschedule_appointment", oldAppointmentRef=old_ref,
+                        appointmentSlotRef=slot_ref, appointmentReason="Follow up",
+                        referringDoctor="none", readBack=True,
+                    )
+                self.assertIn("Reload appointments", result)
+                self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
+                self.assertFalse(any(path.startswith("/api/appointment/") for path, _, _ in requests))
+
+                # Proven call-local receipts cannot turn the incomplete read into found.
+                owner._receipts["chart-jane", "book", None] = MutationReceipt(
+                    {"outcome": "booked"}, booked=Appointment.model_validate(appointment(id=88)),
+                )
+                owner.appointments()
+                self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
+                self.assertIn(88, [a.id for a in owner.state.patient.active.appointments])
+                middleware = AsyncMock()
+                middleware.resolve.return_value = Receipt.model_validate(receipt(
+                    appointmentsStatus="found", appointments=[appointment()],
+                ))
+                resolver = PatientResolver(owner.state, middleware)
+                self.addAsyncCleanup(resolver.aclose)
+                resolved = await resolver.resolve("Jane", None)
+                self.assertEqual(resolved["outcome"], "verified")
+                middleware.resolve.assert_awaited_once()
+                self.assertTrue(getattr(owner.state.patient.active.appointments[0], field))
+                self.assertEqual(owner.state.patient.active.appointmentsStatus, "found")
+                owner.appointments()
+                self.assertEqual({a.id for a in owner.state.patient.active.appointments}, {77, 88})
+
     async def test_invalid_reschedule_receipt_is_uncertain_and_never_retried(self):
         for response in (
             {"status": "completed", "booking": booking()},
