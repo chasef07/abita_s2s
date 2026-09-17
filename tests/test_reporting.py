@@ -18,7 +18,7 @@ from abita_s2s.reporting import CallReporter, ReportingError
 from abita_s2s.staff_tasks import StaffTasks
 from abita_s2s.identity import PatientResolver
 from abita_s2s.middleware import PatientMiddleware
-from test_patient_resolution import candidate, receipt, search
+from test_patient_resolution import receipt
 from abita_s2s.runtime.session_startup import finish_voice_call
 
 ACK = {"status": "created", "interactionId": "d3665980-68ce-4336-87af-e2ba40ad2e8e"}
@@ -191,8 +191,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         state = call_state(None)
         state.reporter = reporter
         responses = [
-            search(candidate()), receipt(),
-            search(candidate("chart-john", "John", "03/04/1981")),
+            receipt(),
             receipt("chart-john", "John", "03/04/1981"),
         ]
         async with httpx.AsyncClient(transport=httpx.MockTransport(
@@ -217,7 +216,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         reporter.record("patient", {
             "outcome": "created", "externalPatientId": "chart-jane", "superseded": True,
         })
-        responses = [search(candidate()), receipt()]
+        responses = [receipt()]
         async with httpx.AsyncClient(transport=httpx.MockTransport(
             lambda request: httpx.Response(200, json=responses.pop(0))
         )) as client:

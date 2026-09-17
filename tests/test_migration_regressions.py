@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import httpx
 import test_scheduling
-from test_patient_resolution import CONFIG, call_state, candidate, receipt, search
+from test_patient_resolution import CONFIG, call_state, receipt, search
 from test_scheduling import NOW, inventory
 
 from abita_s2s.call_control import CallControl
@@ -68,7 +68,6 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
     async def resolved_owner(self, responses, **fields):
         state = call_state(None)
         responses = [
-            search(candidate()),
             receipt(routing="bach_only", preauthRequired=False, **fields),
             *responses,
         ]
@@ -101,7 +100,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(available["outcome"], "found", available)
         result = await self.book(owner, available["slots"][0]["appointmentSlotRef"])
         self.assertEqual(result.split(":", 1)[0], 'success')
-        self.assertEqual(len(requests), 4)
+        self.assertEqual(len(requests), 3)
 
     async def test_resolve_returning_patient_then_reschedule(self):
         owner, _, requests = await self.resolved_owner(
@@ -136,8 +135,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(plan=plan):
                 owner, resolver, requests = await self.resolved_owner(
                     [
-                        search(candidate("chart-john", "John", "03/04/1981")),
-                        receipt(
+                                    receipt(
                             "chart-john",
                             "John",
                             "03/04/1981",
@@ -145,8 +143,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
                             preauthRequired=False,
                         ),
                         inventory(),
-                        search(candidate()),
-                        receipt(routing="bach_only", preauthRequired=False),
+                                    receipt(routing="bach_only", preauthRequired=False),
                     ]
                 )
                 insurance = InsuranceRegistration(owner.state, resolver, None)
@@ -156,7 +153,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     (await owner.availability("medical"))["outcome"], "found"
                 )
-                self.assertEqual(len(requests), 5)
+                self.assertEqual(len(requests), 3)
                 # Switching away and back cannot revive Jane's rejected/stale check.
                 await resolver.resolve("Jane", "01/02/1980")
                 self.assertEqual(owner.state.patient.active.patientId, "chart-jane")
@@ -165,7 +162,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
     async def test_absent_patients_check_does_not_block_returning_patient(self):
         state = call_state(None)
         responses = [
-            search(), search(candidate()),
+            search(),
             receipt(routing="bach_only", preauthRequired=False), inventory(),
         ]
         async with httpx.AsyncClient(transport=httpx.MockTransport(
@@ -216,10 +213,10 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
         # Re-resolving the chart cannot silently restore a rejected on-file plan.
         await resolver.resolve("Jane", "01/02/1980")
         self.assertFalse(insurance_ready(owner.state, "medical"))
-        self.assertEqual(len(requests), 3)
+        self.assertEqual(len(requests), 2)
         result = await self.tool(owner, "cancel_appointment", appointmentRef=old_ref, readBack=True)
         self.assertEqual(result.split(":", 1)[0], 'success')
-        self.assertEqual(len(requests), 4)
+        self.assertEqual(len(requests), 3)
 
     async def test_on_file_guard_preserves_scheduling_fences(self):
         owner, resolver, requests = await self.resolved_owner([])
@@ -268,7 +265,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
         insurance.check("Self Pay", "medical")
         self.assertTrue(insurance_ready(state, "medical"))
         self.assertFalse(insurance_ready(state, "routine_vision"))
-        self.assertEqual(len(requests), 2)
+        self.assertEqual(len(requests), 1)
 
     async def test_optional_practice_does_not_block_staff_tasks_or_direct_office(self):
         for practice in ("", "invalid"):

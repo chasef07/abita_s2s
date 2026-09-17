@@ -4,7 +4,6 @@ import asyncio
 
 from abita_s2s.middleware import (
     Candidate,
-    Candidates,
     Multiple,
     NotFound,
     PatientMiddleware,
@@ -235,16 +234,7 @@ class PatientResolver:
             return reply(
                 "superseded", "blocked: Patient details changed; use the latest resolution."
             )
-        if not isinstance(result, Candidates) or not result.complete:
-            return failed()
-        if len({c.patientId for c in result.matches}) != len(result.matches):
-            return failed()
-        matches = [
-            c
-            for c in result.matches
-            if exact_name(name) == exact_name(c.firstName) and dob_matches(dob, c.dob)
-        ]
-        if not matches:
+        if isinstance(result, NotFound):
             self.state.patient.absence = PatientAbsence(
                 name, dob, self.state.call.called_office_key
             )
@@ -252,9 +242,11 @@ class PatientResolver:
                 "not_found",
                 "no_results: A complete search found no matching patient. Clarify the first-name spelling and DOB; if still unresolved, ask office staff for help.",
             )
-        if len(matches) > 1:
+        if isinstance(result, Multiple):
             return ambiguous(dob)
-        return await self._load_patient(matches[0], name, dob, token, phone=False, call_id=call_id)
+        if not isinstance(result, Receipt):
+            return failed()
+        return await self._load_patient(result, name, dob, token, phone=False, call_id=call_id)
 
     async def _load_patient(
         self,
@@ -272,9 +264,9 @@ class PatientResolver:
             )
         active = self.state.patient.active
         receipt = (
-            active if active and active.patientId == candidate.patientId else candidate
+            active if phone and active and active.patientId == candidate.patientId else candidate
         )
-        if not isinstance(receipt, Receipt) or receipt.appointmentsStatus == "error":
+        if not isinstance(receipt, Receipt) or (phone and receipt.appointmentsStatus == "error"):
             receipt = await self._middleware.resolve(
                 self.state.call.called_office_key, {"patientId": candidate.patientId}
             )

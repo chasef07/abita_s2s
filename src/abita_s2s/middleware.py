@@ -68,13 +68,6 @@ class Receipt(Record):
     appointments: list[Appointment]
 
 
-class Candidates(Record):
-    status: Literal["candidates"]
-    source: Literal["first_name"]
-    complete: bool
-    matches: list[Candidate]
-
-
 class Multiple(Record):
     status: Literal["multiple_matches"]
     matches: list[Annotated[Candidate | Receipt, Field(discriminator="status")]] = (
@@ -86,12 +79,17 @@ class NotFound(Record):
     status: Literal["not_found"]
 
 
+class Unresolved(Record):
+    status: Literal["unresolved"]
+    reason: Text
+
+
 class Failure(Record):
     status: Literal["error"] = "error"
     reason: str = "middleware_error"
 
 
-Result = Receipt | Candidates | Multiple | NotFound | Failure
+Result = Receipt | Multiple | NotFound | Unresolved | Failure
 RESULT = TypeAdapter(Annotated[Result, Field(discriminator="status")])
 
 
