@@ -150,7 +150,9 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                 return_value=SimpleNamespace(to_dict=lambda: REPORT)
             ),
         )
-        await finish_voice_call(ctx)
+        with patch("abita_s2s.runtime.session_startup.evaluate_call", new_callable=AsyncMock) as evaluate:
+            await finish_voice_call(ctx)
+            evaluate.assert_awaited_once_with(ctx)
         ctx.make_session_report.assert_called_once()
         self.assertEqual(self.requests[-1]["transcript"], REPORT)
 
