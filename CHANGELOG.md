@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/chasef07/abita_s2s/compare/v0.3.6...v0.4.0) (2026-09-17)
+
+
+### Features
+
+* **evals:** judge production calls with built-in LiveKit judges ([#28](https://github.com/chasef07/abita_s2s/issues/28)) ([8de3e4d](https://github.com/chasef07/abita_s2s/commit/8de3e4d648d5aae6c27359887391f0f9eca9bd14))
+
+
+### Bug Fixes
+
+* correct booking replay and streamline Sofia call startup ([#30](https://github.com/chasef07/abita_s2s/issues/30)) ([87dd8f9](https://github.com/chasef07/abita_s2s/commit/87dd8f9878ba24dcb4f60035fe12c0a1b26e8574))
+
 ## [0.3.6](https://github.com/chasef07/abita_s2s/compare/v0.3.5...v0.3.6) (2026-09-16)
 
 
