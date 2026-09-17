@@ -8,11 +8,11 @@ from unittest.mock import AsyncMock, Mock, patch
 from livekit.agents import ChatContext
 from livekit.agents.evals import EvaluationResult, JudgmentResult
 
-from abita_s2s.evaluation import evaluate_call
+from abita_s2s.observability import evaluate_call
 from abita_s2s.runtime.session_startup import finish_voice_call
 
 
-class EvaluationTests(unittest.IsolatedAsyncioTestCase):
+class ObservabilityTests(unittest.IsolatedAsyncioTestCase):
     def context(self):
         history = ChatContext()
         history.add_message(role="user", content="Please cancel my visit.")
@@ -27,7 +27,7 @@ class EvaluationTests(unittest.IsolatedAsyncioTestCase):
         group.evaluate = AsyncMock(return_value=EvaluationResult(judgments={
             "accuracy": JudgmentResult(verdict="fail", reasoning="Unsupported claim"),
         }))
-        with patch("abita_s2s.evaluation.JudgeGroup", return_value=group):
+        with patch("abita_s2s.observability.JudgeGroup", return_value=group):
             await evaluate_call(ctx)
         group.evaluate.assert_awaited_once_with(ctx.make_session_report.return_value.chat_history)
         ctx.tagger.add.assert_called_once_with("abita.evaluation:complete")
@@ -40,7 +40,7 @@ class EvaluationTests(unittest.IsolatedAsyncioTestCase):
                 llm=AsyncMock(),
             )
             group.evaluate = AsyncMock(return_value=EvaluationResult(judgments=judgments))
-            with patch("abita_s2s.evaluation.JudgeGroup", return_value=group):
+            with patch("abita_s2s.observability.JudgeGroup", return_value=group):
                 await evaluate_call(ctx)
             ctx.tagger.add.assert_called_once_with("abita.evaluation:incomplete")
 
@@ -53,8 +53,8 @@ class EvaluationTests(unittest.IsolatedAsyncioTestCase):
 
         group.evaluate = hang
         with (
-            patch("abita_s2s.evaluation.JudgeGroup", return_value=group),
-            patch("abita_s2s.evaluation.EVALUATION_SECONDS", 0.01),
+            patch("abita_s2s.observability.JudgeGroup", return_value=group),
+            patch("abita_s2s.observability.EVALUATION_SECONDS", 0.01),
         ):
             await evaluate_call(ctx)
         ctx.tagger.add.assert_called_once_with("abita.evaluation:incomplete")
@@ -63,7 +63,7 @@ class EvaluationTests(unittest.IsolatedAsyncioTestCase):
     async def test_no_caller_or_missing_report(self):
         ctx = self.context()
         ctx.make_session_report.return_value.chat_history = ChatContext()
-        with patch("abita_s2s.evaluation.JudgeGroup") as group:
+        with patch("abita_s2s.observability.JudgeGroup") as group:
             await evaluate_call(ctx)
             group.assert_not_called()
         ctx.tagger.add.assert_called_once_with("abita.evaluation:skipped")

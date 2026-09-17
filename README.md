@@ -62,7 +62,7 @@ depend on configuration and execution mode.
 | [staff_tasks.py](src/abita_s2s/staff_tasks.py) | Caller-approved staff requests, delivery receipts, and duplicate-delivery protection. |
 | [call_control.py](src/abita_s2s/call_control.py), [handoff.py](src/abita_s2s/handoff.py) | Transfer admission, trusted destinations, SIP transfer, and ending the call. |
 | [reporting.py](src/abita_s2s/reporting.py) | Ordered Product START/checkpoint/CLOSEOUT delivery, combining application evidence with the native session report. |
-| [evaluation.py](src/abita_s2s/evaluation.py) | Post-call LiveKit judgments for completion, accuracy, tool use, and conciseness. |
+| [observability.py](src/abita_s2s/observability.py) | Post-call LiveKit judgments for completion, accuracy, tool use, and conciseness. |
 | [offices.py](src/abita_s2s/offices.py), [config.py](src/abita_s2s/config.py) | Trusted office routing, greetings, capabilities, and runtime configuration. |
 
 ## Call lifecycle

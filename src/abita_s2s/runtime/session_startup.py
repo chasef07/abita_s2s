@@ -14,7 +14,7 @@ from livekit.agents import AgentSession, JobContext, room_io
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.call_control import CallControl
 from abita_s2s.config import Config, load_config
-from abita_s2s.evaluation import evaluate_call
+from abita_s2s.observability import evaluate_call
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.knowledge import OfficeKnowledge
