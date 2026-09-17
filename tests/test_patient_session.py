@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 from livekit.agents import AgentSession, llm
-from test_patient_resolution import CONFIG, call_state, candidate, receipt, search
+from test_patient_resolution import CONFIG, call_state, receipt
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.identity import PatientResolver
@@ -64,7 +64,7 @@ class PatientStream(llm.LLMStream):
 class PatientSessionTests(unittest.IsolatedAsyncioTestCase):
     async def test_first_name_dob_and_correction_through_session(self):
         requests = []
-        bodies = [search(candidate()), receipt()]
+        bodies = [receipt()]
 
         def handler(request):
             requests.append(json.loads(request.content))
@@ -100,5 +100,5 @@ class PatientSessionTests(unittest.IsolatedAsyncioTestCase):
                             "+15555550999",
                         ):
                             self.assertNotIn(private, output.output)
-                self.assertEqual(len(requests), 2)
-                self.assertEqual(requests[1]["patientId"], "chart-jane")
+                self.assertEqual(len(requests), 1)
+                self.assertNotIn("patientId", requests[0])

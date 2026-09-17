@@ -59,12 +59,14 @@ def receipt(patient_id="chart-jane", name="Jane", dob="01/02/1980", **extra):
 
 
 def search(*matches, complete=True):
-    return {
-        "status": "candidates",
-        "source": "first_name",
-        "complete": complete,
-        "matches": list(matches),
-    }
+    if not complete:
+        return {"status": "unresolved", "reason": "incomplete_identity"}
+    if not matches:
+        return {"status": "not_found"}
+    if len(matches) > 1:
+        return {"status": "multiple_matches", "matches": list(matches)}
+    m = matches[0]
+    return receipt(m["patientId"], m["firstName"], m["dob"])
 
 
 class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
@@ -143,7 +145,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(calls), 1)
 
     async def test_no_caller_id_requires_dob_then_hydrates(self):
-        r, calls = self.resolver([search(candidate()), receipt()], call_state(None))
+        r, calls = self.resolver([receipt()], call_state(None))
         r.start_phone_lookup()
         self.assertIsNone(r._precall)
         self.assertEqual((await r.resolve(None, None))["answer"], "needs_input: What is the patient's first name?")
@@ -154,7 +156,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
             calls[0],
             {"firstName": "Jane", "dob": "01/02/1980", "office": "+17275919997"},
         )
-        self.assertEqual(calls[1]["patientId"], "chart-jane")
+        self.assertEqual(len(calls), 1)
 
     async def test_shared_phone_and_caller_acting_for_other_patient(self):
         r, calls = self.resolver(
@@ -173,7 +175,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_patient_not_on_callers_phone_uses_name_dob(self):
         r, calls = self.resolver(
-            [receipt(), search(candidate("child", "John")), receipt("child", "John")]
+            [receipt(), receipt("child", "John")]
         )
         await self.preload(r)
         self.assertEqual((await r.resolve("John", None))["answer"], "needs_input: What is the patient's date of birth?")
@@ -224,7 +226,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self,
     ):
         r, calls = self.resolver(
-            [receipt(), search(candidate("john", "John")), receipt("john", "John")]
+            [receipt(), receipt("john", "John")]
         )
         await self.preload(r)
         await r.resolve("Jane", "01/02/1980")
@@ -260,9 +262,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
             (search(complete=False), "lookup_failed"),
             (search(candidate(), complete=False), "lookup_failed"),
             ({"status": "error"}, "lookup_failed"),
-            ({"status": "not_found"}, "lookup_failed"),
-            (receipt(), "lookup_failed"),
-            (search(candidate(), candidate()), "lookup_failed"),
+            ({"status": "candidates", "source": "first_name", "complete": True, "matches": [candidate()]}, "lookup_failed"),
         ]:
             with self.subTest(body=body):
                 r, _ = self.resolver([body, body])
@@ -287,7 +287,6 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_invalid_hydrated_receipts_never_activate_or_establish_absence(self):
         for override in (
-            {"patientId": "wrong"},
             {"name": "Doe, John"},
             {"dob": "02/03/1982"},
             {"patientId": ""},
@@ -295,10 +294,9 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
             {"dob": None},
             {"appointments": [{}]},
             {"appointmentsStatus": "unknown"},
-            {"status": "not_found"},
         ):
             with self.subTest(override=override):
-                r, _ = self.resolver([search(candidate()), {**receipt(), **override}])
+                r, _ = self.resolver([{**receipt(), **override}, {**receipt(), **override}])
                 self.assertEqual(
                     (await r.resolve("Jane", "01/02/1980"))["outcome"], "lookup_failed"
                 )
@@ -313,13 +311,13 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_appointment_load_error_is_retained_and_reloaded(self):
         r, calls = self.resolver(
-            [search(candidate()), receipt(appointmentsStatus="error"), receipt()]
+            [receipt(appointmentsStatus="error"), receipt()]
         )
         self.assertEqual((await r.resolve("Jane", "01/02/1980"))["outcome"], "verified")
         self.assertEqual(r.state.patient.active.appointmentsStatus, "error")
         await r.resolve("Jane", None)
         self.assertEqual(r.state.patient.active.appointmentsStatus, "none")
-        self.assertEqual(len(calls), 3)
+        self.assertEqual(len(calls), 2)
 
     async def test_duplicates_share_one_pending_read(self):
         started, release = asyncio.Event(), asyncio.Event()
@@ -329,7 +327,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
             await release.wait()
             return httpx.Response(200, json=search(candidate()))
 
-        r, calls = self.resolver([delayed, receipt()])
+        r, calls = self.resolver([delayed])
         first = asyncio.create_task(r.resolve("Jane", "01/02/1980"))
         await started.wait()
         duplicate = asyncio.create_task(r.resolve("Jane", "01/02/1980"))
@@ -337,7 +335,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         release.set()
         results = await asyncio.gather(first, duplicate)
         self.assertEqual([v["outcome"] for v in results], ["verified", "verified"])
-        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(calls), 1)
 
     async def test_superseded_read_cannot_commit_even_if_transport_ignores_cancellation(
         self,
@@ -354,9 +352,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
 
         r, _ = self.resolver(
             [
-                search(candidate()),
                 delayed,
-                search(candidate("john", "John")),
                 receipt("john", "John"),
             ]
         )
@@ -377,7 +373,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
                     await release.wait()
                     return httpx.Response(200, json=search(candidate()))
 
-                r, calls = self.resolver([delayed, receipt()])
+                r, calls = self.resolver([delayed])
                 first = asyncio.create_task(r.resolve("Jane", "01/02/1980"))
                 await started.wait()
                 second = asyncio.create_task(r.resolve("Jane", "01/02/1980"))
@@ -390,7 +386,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
                 result = await tasks[1 - cancelled_index]
                 self.assertEqual(result["outcome"], "verified")
                 self.assertEqual(r.state.patient.active.patientId, "chart-jane")
-                self.assertEqual(len(calls), 2)
+                self.assertEqual(len(calls), 1)
 
     async def test_lookup_finishes_after_its_only_waiter_leaves(self):
         started, release = asyncio.Event(), asyncio.Event()
@@ -400,7 +396,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
             await release.wait()
             return httpx.Response(200, json=search(candidate()))
 
-        r, calls = self.resolver([delayed, receipt()])
+        r, calls = self.resolver([delayed])
         task = asyncio.create_task(r.resolve("Jane", "01/02/1980"))
         await started.wait()
         task.cancel()
@@ -411,7 +407,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await r._task)["outcome"], "verified")
         self.assertIsNone(r._token)
         self.assertEqual((await r.resolve("Jane", "01/02/1980"))["outcome"], "verified")
-        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(calls), 1)
 
     async def test_shutdown_fences_read_even_if_transport_swallows_cancellation(
         self,
@@ -429,7 +425,6 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
 
         r, _ = self.resolver(
             [
-                search(candidate()),
                 delayed,
             ]
         )
