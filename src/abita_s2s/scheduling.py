@@ -9,8 +9,8 @@ from zoneinfo import ZoneInfo
 
 from livekit.agents import RunContext, function_tool
 
-from abita_s2s.insurance_state import insurance_ready
-from abita_s2s.middleware import Appointment
+from abita_s2s.insurance_state import AcceptedInsurance, insurance_ready
+from abita_s2s.middleware import Appointment, Receipt
 from abita_s2s.offices import get_office_profile
 from abita_s2s.scheduling_http import (
     SchedulingFailure,
@@ -51,13 +51,43 @@ def visit_type(appointment):
     return None
 
 
-@dataclass(repr=False)
+@dataclass(frozen=True, repr=False)
+class SchedulingContext:
+    patient_revision: int
+    patient_id: str | None
+    dob: str | None
+    routing: str | None
+    preauth_required: bool
+    routing_ambiguous: bool
+    insurance_carrier: str | None
+    insurance_checked: bool
+    accepted_insurance: AcceptedInsurance | None
+    acceptance_id: int
+    insurance_write_pending: bool
+    insurance_write_uncertain: bool
+    registration: str | None
+
+
+@dataclass(frozen=True, repr=False)
+class AvailabilitySearch:
+    context: SchedulingContext
+    office: str
+    visit: VisitType
+    start: date
+    today: date
+
+
+@dataclass(frozen=True, repr=False)
 class OfferedSlot:
     slot: Slot
-    context: tuple
+    context: SchedulingContext
     office: str
     visit: VisitType
     expires: datetime
+
+    @property
+    def selection(self):
+        return self.office, self.visit, self.slot.key
 
 
 @dataclass(repr=False)
@@ -65,11 +95,13 @@ class MutationReceipt:
     result: dict
     booked: Appointment | None = None
     cancelled_id: int | None = None
+    offered: OfferedSlot | None = None
+    booking: WriteReceipt | None = None
 
 
 @dataclass(repr=False)
 class PendingRead:
-    key: tuple
+    key: AvailabilitySearch
     task: asyncio.Task
     waiters: int = 0
 
@@ -113,24 +145,24 @@ class Scheduling:
         if self._write_task:
             await asyncio.shield(self._write_task)
 
-    def _context(self):
+    def _context(self) -> SchedulingContext:
         p = self.state.patient.active
-        return (
-            self.state.patient.revision,
-            p.patientId if p else None,
-            p.dob if p else None,
-            p.routing if p else None,
-            p.preauthRequired if p else None,
-            p.routingAmbiguous if p else None,
-            p.insuranceCarrier if p else None,
-            (self.state.call.called_office_key, p.patientId)
-            in self.state.insurance.checked_patients
-            if p else False,
-            self.state.insurance.accepted,
-            id(self.state.insurance.accepted),
-            self.state.insurance.write_pending,
-            self.state.insurance.write_uncertain,
-            self.state.insurance.registrations.get(p.patientId) if p else None,
+        insurance = self.state.insurance
+        return SchedulingContext(
+            patient_revision=self.state.patient.revision,
+            patient_id=p.patientId if p else None,
+            dob=p.dob if p else None,
+            routing=p.routing if p else None,
+            preauth_required=p.preauthRequired if p else False,
+            routing_ambiguous=p.routingAmbiguous if p else False,
+            insurance_carrier=p.insuranceCarrier if p else None,
+            insurance_checked=bool(p and (self.state.call.called_office_key, p.patientId)
+                                   in insurance.checked_patients),
+            accepted_insurance=insurance.accepted,
+            acceptance_id=id(insurance.accepted),
+            insurance_write_pending=insurance.write_pending,
+            insurance_write_uncertain=insurance.write_uncertain,
+            registration=insurance.registrations.get(p.patientId) if p else None,
         )
 
     def _reference(self, appointment):
@@ -179,13 +211,6 @@ class Scheduling:
         self._slots.clear()
         self._cache = None
         self._search_key = None
-
-    def _select(self, ref):
-        p = self.state.patient.active
-        if not p or p.appointmentsStatus != "found":
-            return None
-        matches = [a for a in p.appointments if self._reference(a) == ref.strip()]
-        return matches[0] if len(matches) == 1 else None
 
     def _office(self, requested):
         called = self.state.call.called_office_key
@@ -291,7 +316,7 @@ class Scheduling:
             body["routing"] = routing
         if p.preauthRequired:
             body["preauthRequired"] = True
-        key = (context, selected, visit, first, today)
+        key = AvailabilitySearch(context, selected, visit, first, today)
         if self._search_key != key:
             self._invalidate()
             self._search_key = key
@@ -325,7 +350,7 @@ class Scheduling:
 
     async def _load(self, body, key, generation, *, refreshed=False):
         result = await self.http.availability(body)
-        if generation != self._generation or key[0] != self._context():
+        if generation != self._generation or key.context != self._context():
             return reply(
                 "stale",
                 "blocked: The patient or appointment details changed. Check again with current details.",
@@ -403,15 +428,15 @@ class Scheduling:
             prior = previous.get(slot.key)
             if (
                 prior
-                and prior[1].context == key[0]
-                and prior[1].office == key[1]
-                and prior[1].visit == key[2]
+                and prior[1].context == key.context
+                and prior[1].office == key.office
+                and prior[1].visit == key.visit
             ):
                 ref = prior[0]
             else:
                 self._next_ref += 1
                 ref = f"S{self._next_ref}"
-            self._slots[ref] = OfferedSlot(slot, key[0], key[1], key[2], expiry)
+            self._slots[ref] = OfferedSlot(slot, key.context, key.office, key.visit, expiry)
         answer = reply(
             "found",
             "success: Found eligible openings.",
@@ -454,12 +479,9 @@ class Scheduling:
                 narrate the internal value.
         """
         return await self._execute(
-            context,
-            "book",
-            appointmentSlotRef,
-            appointmentReason,
-            referringDoctor,
-            readBack,
+            context, self._book,
+            slot_ref=appointmentSlotRef, reason=appointmentReason,
+            referrer=referringDoctor, confirmed=readBack,
         )
 
     @function_tool
@@ -472,7 +494,7 @@ class Scheduling:
         the exact date, time, provider and intent to cancel.
         Claim success only from the result; never retry uncertain cancellation.
         """
-        return await self._execute(context, "cancel", confirmed=readBack, old_ref=appointmentRef)
+        return await self._execute(context, self._cancel, confirmed=readBack, old_ref=appointmentRef)
 
     @function_tool
     async def reschedule_appointment(
@@ -498,123 +520,124 @@ class Scheduling:
                 narrate the internal value.
         """
         return await self._execute(
-            context,
-            "reschedule",
-            appointmentSlotRef,
-            appointmentReason,
-            referringDoctor,
-            readBack,
-            oldAppointmentRef,
+            context, self._reschedule,
+            slot_ref=appointmentSlotRef, reason=appointmentReason,
+            referrer=referringDoctor, confirmed=readBack, old_ref=oldAppointmentRef,
         )
 
-    async def _execute(
-        self,
-        context,
-        action,
-        slot_ref=None,
-        reason=None,
-        referrer=None,
-        confirmed=None,
-        old_ref=None,
-    ):
+    async def _execute(self, context: RunContext[CallState], operation, **arguments) -> str:
         if context.userdata is not self.state or self._closed:
             return "blocked: Scheduling is unavailable."
         if self._write_task and not self._write_task.done():
             return "blocked: An appointment change is already in progress. Wait for its result; do not repeat it."
-        # LiveKit tools are not cancellable. Shield also covers explicit session shutdown.
-        self._write_task = asyncio.create_task(
-            self._change(action, slot_ref, reason, referrer, confirmed, old_ref, context.function_call.call_id)
-        )
+        patient = self.state.patient.active
+        if not patient:
+            return "needs_input: Verify the patient before changing appointments."
+        for (patient_id, _, _), receipt in self._receipts.items():
+            if patient_id == patient.patientId and receipt.result["outcome"] in (
+                "uncertain", "partial_reschedule",
+            ):
+                return receipt.result["answer"] + self.appointments_text()
+        captured = self._context()
+
+        async def change():
+            if self._closed or self._context() != captured:
+                return reply("stale", "blocked: The call or patient changed before the appointment operation started.")
+            result = await operation(patient, captured, call_id=context.function_call.call_id, **arguments)
+            return self._finish_change(result, captured)
+
+        # Retain both the write and reconciliation even if the tool caller leaves.
+        self._write_task = asyncio.create_task(change())
         result = await asyncio.shield(self._write_task)
         return result["answer"] + self.appointments_text()
 
-    async def _change(self, action, slot_ref, reason, referrer, confirmed, old_ref, call_id):
-        p = self.state.patient.active
-        captured = self._context()
-        if not p:
-            return reply(
-                "needs_input", "needs_input: Verify the patient before changing appointments."
-            )
-        # Unknown writes and partial moves block further mutations for this patient.
-        for (patient_id, _, _), receipt in self._receipts.items():
-            if patient_id == p.patientId and receipt.result["outcome"] in (
-                "uncertain",
-                "partial_reschedule",
-            ):
-                return receipt.result
-        if action == "book" and (p.patientId, "book", None) in self._receipts:
-            return self._receipts[p.patientId, "book", None].result
-        old = self._select(old_ref) if old_ref else None
-        if action != "book" and old is None:
-            # Exact completed reference replay is safe, including after removal from active appointments.
-            for (_, patient_id, appointment_id), ref in self._references.items():
-                if patient_id == p.patientId and ref == old_ref:
-                    saved = self._receipts.get((patient_id, action, appointment_id))
-                    if saved:
-                        return saved.result
-            return reply(
-                "needs_input",
-                "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed.",
-            )
-        receipt_key = (p.patientId, action, old.id if old else None)
-        saved = self._receipts.get(receipt_key)
-        selected = self._slots.get((slot_ref or "").strip().upper())
-        # A caller may intentionally move the replacement to a different returned slot.
-        different_move = (
-            action == "reschedule"
-            and saved
-            and saved.booked
-            and selected
-            and selected.context == captured
-            and (
-                selected.slot.date,
-                selected.slot.time,
-                provider_name(selected.slot.provider),
-            )
-            != (saved.booked.date, saved.booked.time, saved.booked.provider)
+    def _target(self, patient: Receipt, action: str, ref: str):
+        matches = [a for a in patient.appointments if self._reference(a) == ref.strip()]
+        old = matches[0] if patient.appointmentsStatus == "found" and len(matches) == 1 else None
+        appointment_id = old.id if old else next((
+            appointment_id for (_, patient_id, appointment_id), known_ref in self._references.items()
+            if patient_id == patient.patientId and known_ref == ref.strip()
+        ), None)
+        return old, (patient.patientId, action, appointment_id)
+
+    def _cancelled(self, patient_id: str, appointment_id: int) -> bool:
+        return any(
+            receipt.cancelled_id == appointment_id
+            for (owner_id, _, _), receipt in self._receipts.items()
+            if owner_id == patient_id
         )
-        if saved and not different_move:
-            return saved.result
-        if action == "cancel":
-            if confirmed is not True:
-                return reply(
-                    "needs_confirmation",
-                    f"needs_input: Confirm cancellation of {old.date} at {old.time} Eastern"
-                    f" with {provider_name(old.provider)} before cancelling.",
-                )
-            self._invalidate()
-            self._receipts[receipt_key] = MutationReceipt(
-                self._write_failure(
-                    SchedulingFailure(reason="pending", uncertain=True), "cancellation"
-                )
+
+    def _replay(self, patient: Receipt, saved: MutationReceipt) -> dict:
+        if saved.booked and self._cancelled(patient.patientId, saved.booked.id):
+            return reply(
+                "superseded",
+                "blocked: That booking was cancelled or replaced. Select and confirm a current returned slot for a new booking.",
             )
-            result = await self.http.cancel(self._cancel_body(p, old))
-            outcome = self._cancel_result(result)
-            self._report(p, cancellation_outcome=outcome["outcome"], old=old, call_id=call_id)
-            if (
-                outcome["outcome"] != "cancelled"
-                and isinstance(result, WriteReceipt)
-                and result.outcome == "invalid_cancellation_token"
-                and self._context() == captured
-            ):
-                self.state.patient.active = p.model_copy(
-                    update={"appointments": [], "appointmentsStatus": "error"}
-                )
-            if outcome["outcome"] in ("cancelled", "uncertain"):
-                self._receipts[receipt_key] = MutationReceipt(
-                    outcome,
-                    cancelled_id=old.id if outcome["outcome"] == "cancelled" else None,
-                )
-            else:
-                self._receipts.pop(receipt_key, None)
-            return self._finish_change(outcome, captured)
-        offered = self._slots.get((slot_ref or "").strip().upper())
+        return saved.result
+
+    async def _cancel(
+        self, p: Receipt, captured: SchedulingContext, *, old_ref: str,
+        confirmed: bool | None, call_id: str,
+    ) -> dict:
+        old, receipt_key = self._target(p, "cancel", old_ref)
+        if saved := self._receipts.get(receipt_key):
+            return saved.result
+        if old is None:
+            return reply("needs_input", "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed.")
+        if confirmed is not True:
+            return reply(
+                "needs_confirmation",
+                f"needs_input: Confirm cancellation of {old.date} at {old.time} Eastern"
+                f" with {provider_name(old.provider)} before cancelling.",
+            )
+        self._invalidate()
+        self._receipts[receipt_key] = MutationReceipt(
+            self._write_failure(
+                SchedulingFailure(reason="pending", uncertain=True), "cancellation"
+            )
+        )
+        result = await self.http.cancel(self._cancel_body(p, old))
+        outcome = self._cancel_result(result)
+        self._report(p, cancellation_outcome=outcome["outcome"], old=old, call_id=call_id)
+        if (
+            outcome["outcome"] != "cancelled"
+            and isinstance(result, WriteReceipt)
+            and result.outcome == "invalid_cancellation_token"
+            and self._context() == captured
+        ):
+            self.state.patient.active = p.model_copy(
+                update={"appointments": [], "appointmentsStatus": "error"}
+            )
+        if outcome["outcome"] in ("cancelled", "uncertain"):
+            self._receipts[receipt_key] = MutationReceipt(
+                outcome,
+                cancelled_id=old.id if outcome["outcome"] == "cancelled" else None,
+            )
+        else:
+            self._receipts.pop(receipt_key, None)
+        return outcome
+
+    async def _book(
+        self, p: Receipt, captured: SchedulingContext, *, slot_ref: str, reason: str,
+        referrer: str, confirmed: bool | None, call_id: str, old: Appointment | None = None,
+    ) -> dict:
+        slot_ref = slot_ref.strip().upper()
+        receipt_key = (p.patientId, "reschedule", old.id) if old else (p.patientId, "book", slot_ref)
+        if not old and (saved := self._receipts.get(receipt_key)):
+            return self._replay(p, saved)
+        offered = self._slots.get(slot_ref)
         if not offered or offered.context != captured or offered.expires <= self.now():
             self._invalidate()
             return reply(
                 "needs_input",
                 "needs_input: Search availability again and choose a current returned slot.",
             )
+        if not old:
+            for (patient_id, _, _), saved in self._receipts.items():
+                if (patient_id == p.patientId and saved.offered and saved.booked
+                        and saved.offered.selection == offered.selection
+                        and not self._cancelled(p.patientId, saved.booked.id)):
+                    return saved.result
         if not insurance_ready(self.state, offered.visit):
             self._invalidate()
             return reply(
@@ -712,7 +735,7 @@ class Scheduling:
                 self._receipts[receipt_key] = MutationReceipt(outcome)
             else:
                 self._receipts.pop(receipt_key, None)
-            return self._finish_change(outcome, captured)
+            return outcome
         appointment = Appointment(
             id=result.appointmentId,
             date=slot.date,
@@ -726,18 +749,42 @@ class Scheduling:
             rescheduleToken=result.rescheduleToken,
             confirmed=True,
         )
-        if not old:
-            self._receipts[receipt_key] = MutationReceipt(outcome, booked=appointment)
-            return self._finish_change(outcome, captured)
+        self._receipts[receipt_key] = MutationReceipt(
+            outcome, booked=appointment, offered=offered, booking=result,
+        )
+        return outcome
+
+    async def _reschedule(
+        self, p: Receipt, captured: SchedulingContext, *, old_ref: str, slot_ref: str,
+        reason: str, referrer: str, confirmed: bool | None, call_id: str,
+    ) -> dict:
+        old, receipt_key = self._target(p, "reschedule", old_ref)
+        saved = self._receipts.get(receipt_key)
+        offered = self._slots.get(slot_ref.strip().upper())
+        if saved and (offered is None or (
+            saved.offered and saved.offered.selection == offered.selection
+        )):
+            return self._replay(p, saved)
+        if old is None:
+            return reply("needs_input", "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed.")
+        outcome = await self._book(
+            p, captured, slot_ref=slot_ref, reason=reason, referrer=referrer,
+            confirmed=confirmed, call_id=call_id, old=old,
+        )
+        if outcome["outcome"] not in ("booked", "partial_booking"):
+            return outcome
+        saved = self._receipts[receipt_key]
+        appointment, result, slot = saved.booked, saved.booking, saved.offered.slot
+        description = f"{slot.date} at {slot.time} Eastern with {provider_name(slot.provider)}"
         # Persist a recovery receipt before the second write; a switch must never lose it.
         partial = reply(
             "partial_reschedule",
             f"blocked: The new appointment is booked for {description}, but cancellation of the old appointment requires staff reconciliation. Do not book again."
             + (" The patient note did not save; ask staff to complete it." if outcome["outcome"] == "partial_booking" else ""),
         )
-        self._receipts[receipt_key] = MutationReceipt(partial, booked=appointment)
+        saved.result = partial
         if self._context() != captured:
-            return self._finish_change(partial, captured)
+            return partial
         self._reconcile_receipts()
         cancellation = await self.http.cancel(self._cancel_body(p, old))
         cancellation_outcome = self._cancel_result(cancellation)["outcome"]
@@ -746,22 +793,18 @@ class Scheduling:
             cancellation_outcome=cancellation_outcome, old=old, slot=slot, call_id=call_id,
         )
         if cancellation_outcome != "cancelled":
-            return self._finish_change(partial, captured)
+            return partial
         outcome = reply(
             "rescheduled",
             f"{'blocked' if outcome['outcome'] == 'partial_booking' else 'success'}: Your new appointment is booked for {description}. "
             f"Your old appointment on {old.date} at {old.time} is cancelled. Tell the caller both outcomes."
             + (" The patient note did not save; ask staff to complete it." if outcome["outcome"] == "partial_booking" else ""),
         )
-        self._receipts[receipt_key] = MutationReceipt(
-            outcome, booked=appointment, cancelled_id=old.id
-        )
+        saved.result = outcome
+        saved.cancelled_id = old.id
         # Protect repeating the same move using the replacement reference.
-        if self._context() == captured:
-            self._receipts[p.patientId, action, appointment.id] = self._receipts[
-                receipt_key
-            ]
-        return self._finish_change(outcome, captured)
+        self._receipts[p.patientId, "reschedule", appointment.id] = saved
+        return outcome
 
     def _report(
         self, patient, *, call_id, booking=None, booking_outcome=None,

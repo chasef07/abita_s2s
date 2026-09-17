@@ -271,7 +271,6 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         )
         scheduling = Scheduling(state, SchedulingHTTP(client, config))
         staff_tasks = StaffTasks(state, resolver, client, config)
-        phone_lookup_context = await resolver.phone_lookup_context()
         await start_session(
             session,
             ctx,
@@ -284,7 +283,6 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
                 scheduling=scheduling,
                 staff_tasks=staff_tasks,
                 call_control=control,
-                phone_lookup_context=phone_lookup_context,
             ),
         )
         if state.reporter:

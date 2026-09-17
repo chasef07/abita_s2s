@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, PropertyMock, patch
 
 import httpx
 
@@ -70,32 +70,38 @@ class OfficeRoutingTests(unittest.TestCase):
 
 
 class StartupTests(unittest.IsolatedAsyncioTestCase):
-    async def test_phone_lookup_finishes_before_session_starts(self):
-        entered, release = asyncio.Event(), asyncio.Event()
+    async def test_session_and_greeting_start_while_phone_lookup_is_pending(self):
+        entered, release, greeted = asyncio.Event(), asyncio.Event(), asyncio.Event()
 
         async def lookup(*args):
             entered.set()
             await release.wait()
             return NotFound(status="not_found")
 
-        async def start_with_context(session, ctx, room_options, agent):
-            self.assertTrue(release.is_set())
-            self.assertEqual(agent._resolver.state.patient.lookup.status, "none")
-            self.assertIn("first name and date of birth", agent.chat_ctx.items[-1].text_content)
+        async def start_with_greeting(session, ctx, room_options, agent):
+            def generate_reply(**kwargs):
+                self.assertFalse(release.is_set())
+                greeted.set()
+                handle = asyncio.get_running_loop().create_future()
+                handle.set_result(None)
+                return handle
+
+            with patch.object(AbitaAgent, "session", new_callable=PropertyMock,
+                              return_value=SimpleNamespace(generate_reply=generate_reply)):
+                await agent.on_enter()
             await start_session(session, ctx, room_options, agent)
 
         with (
             patch("abita_s2s.runtime.session_startup.PatientMiddleware.resolve", side_effect=lookup),
-            patch("abita_s2s.runtime.session_startup.start_session", side_effect=start_with_context) as start,
+            patch("abita_s2s.runtime.session_startup.start_session", side_effect=start_with_greeting),
         ):
             task = asyncio.create_task(self.run_startup(False))
             try:
                 await asyncio.wait_for(entered.wait(), 2)
-                start.assert_not_called()
+                await asyncio.wait_for(greeted.wait(), 0.2)
             finally:
                 release.set()
                 await asyncio.wait_for(task, 2)
-            start.assert_awaited_once()
 
     async def run_startup(self, fake, trunk="+18135484830", env=None, config=None, model_error=None, simulation=None):
         participant = SimpleNamespace(identity="caller", attributes={"sip.trunkPhoneNumber": trunk, "sip.phoneNumber": "+15555550101", "sip.callID": "sip-test"})

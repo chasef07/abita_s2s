@@ -1,11 +1,11 @@
 import unittest
 from dataclasses import FrozenInstanceError
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 from test_patient_resolution import call_state, receipt
 
 from abita_s2s.identity import PatientResolver
-from abita_s2s.middleware import Receipt
+from abita_s2s.middleware import NotFound, Receipt
 from abita_s2s.state import CallState, CandidateLookup
 
 
@@ -72,18 +72,21 @@ class CallStateTests(unittest.IsolatedAsyncioTestCase):
         resolver, other = self.resolver(), self.resolver()
         patient = Receipt.model_validate(receipt())
         token = resolver._begin_lookup()
-        found = CandidateLookup("found", (patient,))
-        other._apply_lookup(token, found)
+        other._middleware.resolve = AsyncMock(return_value=patient)
+        resolver._middleware.resolve = AsyncMock(side_effect=[
+            patient, NotFound(status="not_found"), NotFound(status="not_found"),
+        ])
+        await other._lookup_phone(token)
         self.assertEqual(other.state.patient.lookup.status, "not_attempted")
-        resolver._apply_lookup(token, found)
+        await resolver._lookup_phone(token)
         self.assertIsNone(resolver.state.patient.active)
-        resolver._apply_lookup(token, CandidateLookup("none"))
+        await resolver._lookup_phone(token)
         self.assertEqual(resolver.state.patient.lookup.status, "found")
         # A fresh private read also cannot replace the active patient.
         await resolver._load_patient(
             patient, "Jane", None, resolver._begin_lookup(), phone=True
         )
-        resolver._apply_lookup(resolver._begin_lookup(), CandidateLookup("none"))
+        await resolver._lookup_phone(resolver._begin_lookup())
         self.assertIs(resolver.state.patient.active, patient)
 
     def test_lookup_failure_is_distinct_from_absence(self):

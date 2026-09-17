@@ -403,6 +403,49 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await self.book(owner, ref)).split(":", 1)[0], "needs_input")
             self.assertEqual(len(requests), 1)
 
+    async def test_cancelled_booking_cannot_satisfy_a_new_booking(self):
+        owner, requests = self.owner([
+            inventory(), {"status": "booked", "appointmentId": 888},
+            {"status": "cancelled"}, inventory(),
+            {"status": "booked", "appointmentId": 999},
+        ])
+        first = await self.slots(owner)
+        await self.book(owner, first)
+        await self.tool(owner, "cancel_appointment",
+                        appointmentRef=owner.appointments()[0]["appointmentRef"], readBack=True)
+        replay = await self.book(owner, first)
+        self.assertTrue(replay.startswith("blocked:"), replay)
+        self.assertIn("cancelled", replay)
+        second = await self.slots(owner)
+        self.assertNotEqual(first, second)
+        result = await self.book(owner, second)
+        self.assertTrue(result.startswith("success:"), result)
+        self.assertEqual([a.id for a in owner.state.patient.active.appointments], [999])
+        self.assertEqual([path for path, _, _ in requests], [
+            "/api/scheduler/slots", "/api/appointment/book", "/api/appointment/cancel",
+            "/api/scheduler/slots", "/api/appointment/book",
+        ])
+
+    async def test_booking_replay_is_scoped_to_the_selected_slot(self):
+        later = inventory()
+        later["slots"][0].update(datetime="2026-09-16T09:00", bookingToken="second-slot")
+        owner, requests = self.owner([
+            inventory(), {"status": "booked", "appointmentId": 888},
+            inventory(), later, {"status": "booked", "appointmentId": 999},
+        ])
+        first = await self.slots(owner)
+        original = await self.book(owner, first)
+        self.assertEqual(await self.book(owner, first), original)
+        # A fresh reference/token for the same live appointment is still a duplicate.
+        same_slot = await self.slots(owner)
+        self.assertEqual(await self.book(owner, same_slot), original)
+        second = await self.slots(owner, startDate="2026-09-16")
+        result = await self.book(owner, second)
+        self.assertIn("Booked 2026-09-16", result)
+        self.assertEqual([a.id for a in owner.state.patient.active.appointments], [888, 999])
+        self.assertEqual([body["bookingToken"] for path, body, _ in requests
+                          if path == "/api/appointment/book"], ["private-signed-slot", "second-slot"])
+
     async def test_uncertain_book_never_repeats_even_after_reload(self):
         for response in (
             {"status": "booked"},
@@ -418,6 +461,67 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await self.book(owner, ref)).split(":", 1)[0], 'blocked')
             self.assertEqual(len(requests), 3)
             self.assertEqual(owner.state.patient.active.appointments, [])
+
+    async def test_booking_rechecks_admission_when_write_task_starts(self):
+        for change in ("patient", "shutdown"):
+            with self.subTest(change=change):
+                owner, requests = self.owner([inventory()])
+                ref = await self.slots(owner)
+                callback = (lambda: verified(owner.state, "chart-john")) if change == "patient" else owner.close_admission
+                asyncio.get_running_loop().call_soon(callback)
+                result = await self.book(owner, ref)
+                self.assertTrue(result.startswith("blocked:"), result)
+                self.assertEqual(len(requests), 1)
+
+    async def test_same_patient_coverage_correction_invalidates_offered_slots(self):
+        owner, requests = self.owner([inventory()])
+        ref = await self.slots(owner)
+        # Even a new acceptance with identical values represents a fresh check.
+        previous = owner.state.insurance.accepted
+        verified(owner.state)
+        self.assertEqual(previous, owner.state.insurance.accepted)
+        self.assertIsNot(previous, owner.state.insurance.accepted)
+        self.assertTrue((await self.book(owner, ref)).startswith("needs_input:"))
+        self.assertEqual(len(requests), 1)
+
+    async def test_chained_moves_preserve_receipts_and_reject_obsolete_booking_replay(self):
+        later = inventory()
+        later["slots"][0].update(datetime="2026-09-16T09:00", bookingToken="second-slot")
+        last = inventory()
+        last["slots"][0].update(datetime="2026-09-17T09:00", bookingToken="third-slot")
+        owner, requests = self.owner([
+            inventory(), {"status": "booked", "appointmentId": 888, "appointmentTypeId": 1007},
+            later, {"status": "booked", "appointmentId": 999, "appointmentTypeId": 1007}, {"status": "cancelled"},
+            last, {"status": "booked", "appointmentId": 1000, "appointmentTypeId": 1007}, {"status": "cancelled"},
+            {"status": "cancelled"}, inventory(), {"status": "booked", "appointmentId": 1001},
+        ])
+        initial = await self.slots(owner)
+        await self.book(owner, initial)
+        moves = []
+        for day, expected_id in (("2026-09-16", 999), ("2026-09-17", 1000)):
+            old_ref = owner.appointments()[0]["appointmentRef"]
+            slot_ref = await self.slots(owner, startDate=day)
+            args = dict(oldAppointmentRef=old_ref, appointmentSlotRef=slot_ref,
+                        appointmentReason="Annual follow up", referringDoctor="none", readBack=True)
+            if moves:
+                # A different selection cannot replay success for an obsolete old reference.
+                stale = await self.tool(owner, "reschedule_appointment",
+                                        **{**moves[0], "appointmentSlotRef": slot_ref})
+                self.assertTrue(stale.startswith("needs_input:"), stale)
+            result = await self.tool(owner, "reschedule_appointment", **args)
+            self.assertTrue(result.startswith("success:"), result)
+            self.assertEqual([a.id for a in owner.state.patient.active.appointments], [expected_id])
+            self.assertEqual(await self.tool(owner, "reschedule_appointment", **args), result)
+            moves.append(args)
+        self.assertTrue((await self.book(owner, initial)).startswith("blocked:"))
+        self.assertTrue((await self.tool(owner, "reschedule_appointment", **moves[0])).startswith("blocked:"))
+        await self.tool(owner, "cancel_appointment", appointmentRef=owner.appointments()[0]["appointmentRef"], readBack=True)
+        await self.book(owner, await self.slots(owner))
+        # A stale backend reload must not resurrect any earlier booking.
+        verified(owner.state, appointmentsStatus="found", appointments=[appointment(id=888)])
+        owner.appointments()
+        self.assertEqual([a.id for a in owner.state.patient.active.appointments], [1001])
+        self.assertEqual(len(requests), 11)
 
     async def test_write_continues_after_caller_cancel_and_records_old_patient(self):
         entered, release = asyncio.Event(), asyncio.Event()
