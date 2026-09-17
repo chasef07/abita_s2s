@@ -353,12 +353,16 @@ class Scheduling:
                 retry_same_search=retry and count < 2,
             )
         self._failures.pop(key, None)
+        if result.outcome == "no_eligible_providers" and not result.slots:
+            answer = reply(
+                "unsupported",
+                "blocked: No providers are eligible for the selected office, visit type, and patient requirements. Confirm the office and visit type or ask staff for help; changing dates will not resolve this restriction.",
+            )
+            self._cache = (key, self.now() + timedelta(seconds=60), answer)
+            return answer
         first = date.fromisoformat(body["startDate"])
         through = (first + timedelta(days=13)).isoformat()
-        if (
-            result.outcome in ("no_availability", "no_eligible_providers")
-            and not result.slots
-        ):
+        if result.outcome == "no_availability" and not result.slots:
             answer = reply(
                 "none",
                 "no_results: No eligible openings in the searched window. Ask what other dates work.",

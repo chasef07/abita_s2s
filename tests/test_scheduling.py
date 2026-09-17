@@ -255,8 +255,12 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             state = call_state(None, get_office_profile(key))
             verified(state, visit=visit)
             owner, requests = self.owner([inventory(outcome="no_eligible_providers", slots=[])], state=state)
-            result = await owner.availability(visit)
-            self.assertEqual(result["outcome"], "none")
+            result = await self.tool(owner, "list_available_appointments", visitType=visit)
+            self.assertTrue(result.startswith("blocked: No providers are eligible"), result)
+            self.assertIn("Confirm the office and visit type or ask staff for help", result)
+            self.assertNotIn("Searched", result)
+            self.assertNotIn("other dates", result)
+            self.assertEqual(owner._cache[2]["outcome"], "unsupported")
             self.assertEqual(requests[0][1]["visitType"], visit)
 
     async def test_eastern_date_and_correction_invalidates_slots(self):
