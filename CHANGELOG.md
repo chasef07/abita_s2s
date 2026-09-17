@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/chasef07/abita_s2s/compare/v0.4.1...v0.5.0) (2026-09-17)
+
+
+### Features
+
+* **insurance:** consume authoritative middleware decisions ([#34](https://github.com/chasef07/abita_s2s/issues/34)) ([5b9f75e](https://github.com/chasef07/abita_s2s/commit/5b9f75eb880f1c85e6c80d58ece0a0b4f4d26e57))
+
+
+### Bug Fixes
+
+* **scheduling:** consume middleware metadata and reschedule receipts ([#33](https://github.com/chasef07/abita_s2s/issues/33)) ([2e87765](https://github.com/chasef07/abita_s2s/commit/2e877651bb3f08a4410afae0d2712fe27eea2834))
+
 ## [0.4.1](https://github.com/chasef07/abita_s2s/compare/v0.4.0...v0.4.1) (2026-09-17)
 
 
