@@ -10,7 +10,7 @@ from test_patient_resolution import CONFIG, call_state, receipt, search
 
 from insurance_fixtures import decision, check_response
 from abita_s2s.identity import PatientResolver
-from abita_s2s.insurance import InsuranceRegistration, Registration
+from abita_s2s.insurance import InsuranceRegistration, Registration, normalize
 from abita_s2s.insurance_state import accepted_insurance, insurance_ready
 from abita_s2s.middleware import PatientMiddleware, Receipt
 from abita_s2s.registration_middleware import RegistrationMiddleware
@@ -63,6 +63,11 @@ def updated(**changes):
 
 
 class RegistrationTests(unittest.IsolatedAsyncioTestCase):
+    def test_receipt_comparison_ignores_punctuation_but_preserves_product(self):
+        self.assertEqual(normalize("HMO & PPO"), normalize("HMO and PPO"))
+        self.assertEqual(normalize("Cigna: Open-Access"), normalize("CIGNA Open Access"))
+        self.assertNotEqual(normalize("NHP HMO Only"), normalize("NHP HMO Access"))
+
     def owner(self, responses):
         self.requests = []
 

@@ -25,7 +25,7 @@ from abita_s2s.state import CallState
 
 
 def normalize(text: str) -> str:
-    return " ".join(text.casefold().split())
+    return re.sub(r"[^a-z0-9]+", " ", text.casefold().replace("&", " and ")).strip()
 
 
 class Registration(Record):

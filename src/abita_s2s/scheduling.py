@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 from livekit.agents import RunContext, function_tool
 
-from abita_s2s.insurance_state import AcceptedInsurance, accepted_insurance, insurance_ready
+from abita_s2s.insurance_state import AcceptedInsurance, insurance_ready, scheduling_insurance
 from abita_s2s.middleware import Appointment, Receipt
 from abita_s2s.offices import get_office_profile
 from abita_s2s.scheduling_http import (
@@ -305,20 +305,21 @@ class Scheduling:
                 "blocked: An appointment change is in progress. Wait for its result.",
             )
         p = self.state.patient.active
-        checked = accepted_insurance(self.state, visit)
-        routing = "optical_only" if visit == "routine_vision" else p.routing
+        decision = scheduling_insurance(self.state, visit)
+        assert decision is not None  # validated above, with no intervening await
+        routing = decision.routing
         body = {
             "office": get_office_profile(selected).trunk_numbers[0],
             "startDate": first.isoformat(),
             "rangeDays": 14,
             "patientId": p.patientId,
             "coverageType": visit,
-            "insurancePlan": (checked.decision.canonicalPlan if checked else p.insuranceCarrier),
+            "insurancePlan": decision.canonicalPlan,
             "dob": p.dob,
         }
         if routing:
             body["routing"] = routing
-        if p.preauthRequired:
+        if decision.requirements:
             body["preauthRequired"] = True
         key = AvailabilitySearch(context, selected, visit, first, today)
         if self._search_key != key:
@@ -700,13 +701,15 @@ class Scheduling:
                 r"\bestablished\b|\bfollow[\s_-]*up\b", old.type, re.IGNORECASE
             ):
                 status = "established"
-        checked = accepted_insurance(self.state, offered.visit)
+        decision = scheduling_insurance(self.state, offered.visit)
+        if decision is None:
+            return reply("needs_input", "needs_input: Recheck insurance before booking.")
         body = {
             "patientId": p.patientId,
             "patientName": p.name,
             "dob": p.dob,
             "bookingToken": slot.bookingToken,
-            "insurancePlan": (checked.decision.canonicalPlan if checked else p.insuranceCarrier),
+            "insurancePlan": decision.canonicalPlan,
             "visitCategory": offered.visit,
             "patientStatus": status,
             "appointmentReason": reason.strip(),
@@ -715,7 +718,7 @@ class Scheduling:
             "hospitalName": hospital_name or "",
             "hospitalDate": hospital_date or "",
         }
-        routing = "optical_only" if offered.visit == "routine_vision" else p.routing
+        routing = decision.routing
         if routing:
             body["routing"] = routing
         if (

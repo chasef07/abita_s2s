@@ -61,15 +61,15 @@ def accepted_insurance(
     )
 
 
-def insurance_ready(state: "CallState", coverage_type: CoverageType) -> bool:
-    """Scheduling guard for this domain; does not replace appointment policy checks."""
+def scheduling_insurance(state: "CallState", coverage_type: CoverageType) -> InsuranceDecision | None:
+    """The one current insurance decision eligible for a scheduling request."""
     if state.insurance.write_pending or state.insurance.write_uncertain:
-        return False
+        return None
     active = state.patient.active
     if not active:
-        return False
+        return None
     if state.insurance.registrations.get(active.patientId) == "partial":
-        return False
+        return None
     checked = state.insurance.accepted
     if checked is not None and checked.patient_id == active.patientId:
         current = accepted_insurance(state, coverage_type)
@@ -79,10 +79,14 @@ def insurance_ready(state: "CallState", coverage_type: CoverageType) -> bool:
         or (state.call.called_office_key, active.patientId)
         in state.insurance.checked_patients
     ):
-        return False
+        return None
     else:
         decision = active.insuranceDecision
-    return bool(
-        decision and decision.canSchedule and decision.coverageType == coverage_type
-        and decision.officeId.replace("_", "-") == state.call.called_office_key
-    )
+    if (decision and decision.canSchedule and decision.coverageType == coverage_type
+        and decision.officeId.replace("_", "-") == state.call.called_office_key):
+        return decision
+    return None
+
+
+def insurance_ready(state: "CallState", coverage_type: CoverageType) -> bool:
+    return scheduling_insurance(state, coverage_type) is not None

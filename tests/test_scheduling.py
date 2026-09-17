@@ -118,6 +118,32 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             **extra,
         )
 
+    async def test_search_and_booking_use_one_authoritative_insurance_decision(self):
+        for use_check in (False, True):
+            with self.subTest(call_local_check=use_check):
+                state = call_state(None)
+                verified(state)
+                authoritative = InsuranceDecision.model_validate(decision(
+                    "Canonical Product", "medical", "spring_hill", routing="bach_only"
+                ))
+                state.patient.active = state.patient.active.model_copy(update={
+                    "insuranceCarrier": "GENERIC OLD CARRIER", "routing": "all_three",
+                    "preauthRequired": True, "insuranceDecision": authoritative,
+                })
+                state.insurance.accepted = (AcceptedInsurance(
+                    "spring-hill", state.patient.revision, "chart-jane", None, authoritative
+                ) if use_check else None)
+                owner, requests = self.owner([
+                    inventory(), {"status": "booked", "appointmentId": 888}
+                ], state=state)
+                ref = await self.slots(owner)
+                await self.book(owner, ref)
+                self.assertEqual(len(requests), 2)
+                for _, payload, _ in requests:
+                    self.assertEqual(payload["insurancePlan"], "Canonical Product")
+                    self.assertEqual(payload["routing"], "bach_only")
+                    self.assertNotIn("preauthRequired", payload)
+
     async def test_availability_contract_cache_private_tokens_and_office(self):
         state = call_state(None, get_office_profile("sweetwater"))
         owner, requests = self.owner([inventory()], state=state)
@@ -142,7 +168,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 "startDate": "2026-09-15",
                 "rangeDays": 14,
                 "dob": "01/02/1980",
-                "routing": "bach_only",
+                "routing": "all_three",
             },
         )
         self.assertEqual(requests[0][2]["authorization"], "test-auth")
