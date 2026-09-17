@@ -4,7 +4,7 @@ import asyncio
 from typing import Literal
 
 import httpx
-from pydantic import Field, ValidationError
+from pydantic import Field, ValidationError, model_validator
 
 from abita_s2s.config import Config
 from abita_s2s.middleware import Record, Text
@@ -55,6 +55,10 @@ class WriteReceipt(Record):
     appointmentId: int | None = Field(default=None, gt=0)
     appointmentTypeId: int | None = Field(default=None, gt=0)
     rescheduleToken: str | None = None
+    cancellationToken: str | None = None
+    officeId: str | None = None
+    office: str | None = None
+    visitType: Literal["medical", "routine_vision"] | None = None
     providerName: str | None = None
     locationName: str | None = None
     appointmentTypeName: str | None = None
@@ -68,6 +72,27 @@ class WriteReceipt(Record):
             "office",
         ]
     ] = Field(default_factory=list)
+
+
+class RescheduleReceipt(Record):
+    status: Literal["completed", "partial", "failed", "uncertain"]
+    outcome: str | None = None
+    booking: WriteReceipt | None = None
+    cancellation: WriteReceipt | None = None
+
+    @model_validator(mode="after")
+    def validate_effects(self):
+        if self.status in ("completed", "partial"):
+            if not self.booking or self.booking.status not in ("booked", "partial") or not self.booking.appointmentId:
+                raise ValueError("Missing replacement receipt")
+        if self.status == "completed":
+            if (not self.cancellation or self.cancellation.status != "cancelled"
+                    or not self.cancellation.appointmentId
+                    or self.cancellation.appointmentId == self.booking.appointmentId):
+                raise ValueError("Missing original cancellation receipt")
+        if self.status in ("failed", "uncertain") and (self.booking or self.cancellation):
+            raise ValueError("Unconfirmed reschedule cannot contain confirmed writes")
+        return self
 
 
 class SchedulingFailure(Record):
@@ -87,6 +112,11 @@ class SchedulingHTTP:
 
     async def book(self, body: dict) -> WriteReceipt | SchedulingFailure:
         return await self._post("/api/appointment/book", body, WriteReceipt, write=True)
+
+    async def reschedule(self, body: dict) -> RescheduleReceipt | SchedulingFailure:
+        return await self._post(
+            "/api/appointment/reschedule", body, RescheduleReceipt, write=True
+        )
 
     async def cancel(self, body: dict) -> WriteReceipt | SchedulingFailure:
         return await self._post(

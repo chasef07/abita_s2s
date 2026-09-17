@@ -100,10 +100,12 @@ depend on configuration and execution mode.
   after stale patient reloads. Backend identifiers and tokens stay private.
   Booking replay matches the selected slot; cancelled or replaced bookings never
   satisfy a new request. Fresh confirmed selections can create new appointments.
-- **Rescheduling:** book the replacement first, retain a recovery receipt, then
-  cancel the old appointment only if the captured patient context is still current.
-  A failed or uncertain cancellation preserves the booking and requires staff
-  reconciliation. Uncertain writes and partial moves block repeated mutations.
+- **Rescheduling:** send one confirmed command to middleware. Middleware owns
+  replacement booking, original cancellation, and provider
+  reconciliation. Python applies completed/partial receipts to the captured
+  patient and retains uncertainty without repeating writes. Appointment office,
+  visit type, and action tokens come from middleware; missing authority requires
+  a reload, never facility-text or provider-ID guessing.
 - **Transport:** eligible patient reads have a bounded retry; scheduling writes
   are never automatically retried. Registration and staff delivery retain their
   own receipt and duplicate-handling policies.
@@ -157,3 +159,22 @@ agent](.github/workflows/deploy.yml).
 Prompt and eval versions advance only when their content changes. Deployments
 verify release identity and health; packaging an [eval suite](evals/) does not
 execute it or establish live behavioral correctness.
+
+### Scheduling contract verification
+
+Deploy the middleware scheduling contract before this agent. No additional
+infrastructure or deployment settings are required. Reschedule writes are sent
+once; call-local receipts prevent repeated tool calls from repeating writes.
+Partial or uncertain outcomes require staff reconciliation. There is no
+persistent deduplication across calls or middleware restarts. Patient resolution
+is unchanged.
+
+To verify Python through the real middleware HTTP handlers with mocked provider
+writes, run this from the matching middleware checkout:
+
+```sh
+PYTHON_SCHEDULING_WORKTREE=/absolute/path/to/abita_s2s go test ./internal/scheduling -run TestPythonSchedulingContract -v
+```
+
+The local-only runner is `tests/middleware_contract.py`. Middleware's
+`docs/scheduling-ownership.md` describes receipt recovery and deployment limits.
