@@ -1,7 +1,6 @@
 """One per-call scheduling owner: private references, inventory and write receipts."""
 
 import asyncio
-import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal
@@ -13,6 +12,7 @@ from abita_s2s.insurance_state import AcceptedInsurance, insurance_ready
 from abita_s2s.middleware import Appointment, Receipt
 from abita_s2s.offices import get_office_profile
 from abita_s2s.scheduling_http import (
+    RescheduleReceipt,
     SchedulingFailure,
     SchedulingHTTP,
     Slot,
@@ -21,10 +21,6 @@ from abita_s2s.scheduling_http import (
 from abita_s2s.state import CallState
 
 VisitType = Literal["medical", "routine_vision"]
-MEDICAL_TYPES = {1004, 1005, 1006, 1007, 1008, 6167, 6168, 6169}
-ROUTINE_TYPES = {1010, 3364, 4244, 4245}
-NEW_TYPES = {1004, 1006, 1010, 4244, 6167}
-ESTABLISHED_TYPES = {1005, 1007, 3364, 4245, 6169}
 EASTERN = ZoneInfo("America/New_York")
 
 
@@ -41,14 +37,6 @@ def provider_name(name):
     ):
         name = name.replace(old, new)
     return name
-
-
-def visit_type(appointment):
-    if appointment.appointmentTypeId in MEDICAL_TYPES:
-        return "medical"
-    if appointment.appointmentTypeId in ROUTINE_TYPES:
-        return "routine_vision"
-    return None
 
 
 @dataclass(frozen=True, repr=False)
@@ -96,7 +84,6 @@ class MutationReceipt:
     booked: Appointment | None = None
     cancelled_id: int | None = None
     offered: OfferedSlot | None = None
-    booking: WriteReceipt | None = None
 
 
 @dataclass(repr=False)
@@ -185,7 +172,7 @@ class Scheduling:
                 "time": a.time,
                 "provider": provider_name(a.provider),
                 "facility": a.facility,
-                "visitType": visit_type(a),
+                "visitType": a.visitType,
             }
             for a in p.appointments
         ]
@@ -283,14 +270,6 @@ class Scheduling:
                 "needs_input",
                 "needs_input: Ask for Hollywood or Sweetwater on those office calls; omit office for other calls.",
             )
-        if (selected == "crystal-river" and visit == "routine_vision") or (
-            selected == "north-miami-beach-optical" and visit == "medical"
-        ):
-            self._invalidate()
-            return reply(
-                "unsupported",
-                "blocked: This office does not schedule that visit type. Use an appropriate office or ask staff for help.",
-            )
         if visit not in ("medical", "routine_vision") or not insurance_ready(
             self.state, visit
         ):
@@ -310,6 +289,7 @@ class Scheduling:
             "office": get_office_profile(selected).trunk_numbers[0],
             "startDate": first.isoformat(),
             "rangeDays": 14,
+            "visitType": visit,
             "dob": p.dob,
         }
         if routing:
@@ -584,6 +564,8 @@ class Scheduling:
             return saved.result
         if old is None:
             return reply("needs_input", "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed.")
+        if not old.cancellationToken:
+            return reply("needs_input", "needs_input: Reload appointments to obtain cancellation authorization, then reconfirm the exact appointment.")
         if confirmed is not True:
             return reply(
                 "needs_confirmation",
@@ -644,15 +626,15 @@ class Scheduling:
                 "needs_input",
                 "needs_input: Resolve registration, insurance acceptance and authorization requirements before booking.",
             )
-        if old and visit_type(old) is None:
+        if old and old.visitType is None:
             return reply(
                 "needs_staff_review",
                 "blocked: The existing appointment's visit type could not be verified. Ask staff to reschedule it; no appointment was changed.",
             )
-        if old and visit_type(old) != offered.visit:
+        if old and old.visitType != offered.visit:
             return reply(
                 "needs_input",
-                f"needs_input: Load {visit_type(old)} availability to match the existing appointment.",
+                f"needs_input: Load {old.visitType} availability to match the existing appointment.",
             )
         if not reason or not reason.strip():
             return reply(
@@ -678,17 +660,6 @@ class Scheduling:
             if p.patientId in self.state.insurance.registrations
             else "established"
         )
-        if old:
-            if old.appointmentTypeId in NEW_TYPES:
-                status = "new"
-            elif old.appointmentTypeId in ESTABLISHED_TYPES:
-                status = "established"
-            elif re.search(r"\bnew\b", old.type, re.IGNORECASE):
-                status = "new"
-            elif re.search(
-                r"\bestablished\b|\bfollow[\s_-]*up\b", old.type, re.IGNORECASE
-            ):
-                status = "established"
         body = {
             "patientId": p.patientId,
             "patientName": p.name,
@@ -703,17 +674,9 @@ class Scheduling:
         routing = "optical_only" if offered.visit == "routine_vision" else p.routing
         if routing:
             body["routing"] = routing
-        if (
-            old
-            and old.appointmentTypeId
-            and (
-                old.rescheduleToken
-                or old.appointmentTypeId
-                in MEDICAL_TYPES | NEW_TYPES | ESTABLISHED_TYPES
-            )
-        ):
-            body["appointmentTypeId"] = old.appointmentTypeId
-        if old and old.rescheduleToken:
+        if old:
+            if not old.rescheduleToken:
+                return reply("needs_input", "needs_input: Reload appointments to obtain reschedule authorization, then reconfirm the move.")
             body["rescheduleToken"] = old.rescheduleToken
         self._invalidate()
         self._receipts[receipt_key] = MutationReceipt(
@@ -721,9 +684,25 @@ class Scheduling:
                 SchedulingFailure(reason="pending", uncertain=True), "booking"
             )
         )
-        result = await self.http.book(body)
+        reschedule = None
+        if old:
+            reschedule = await self.http.reschedule(body)
+            if (not isinstance(reschedule, RescheduleReceipt) or reschedule.booking is None
+                    or reschedule.outcome == "reschedule_conflict"):
+                outcome = (
+                    reply("failed", "blocked: The reschedule failed. Reload appointments or ask staff to reconcile before another change.")
+                    if isinstance(reschedule, RescheduleReceipt) and reschedule.status == "failed"
+                    else self._write_failure(SchedulingFailure(reason="reschedule", uncertain=True), "reschedule")
+                )
+                self._receipts[receipt_key] = MutationReceipt(outcome)
+                self._report(p, booking=reschedule, booking_outcome=outcome["outcome"], old=old, slot=slot, call_id=call_id)
+                return outcome
+            result = reschedule.booking
+        else:
+            result = await self.http.book(body)
         outcome = self._book_result(result, description)
-        self._report(p, booking=result, booking_outcome=outcome["outcome"], old=old, slot=slot, call_id=call_id)
+        if not old:
+            self._report(p, booking=result, booking_outcome=outcome["outcome"], slot=slot, call_id=call_id)
         if outcome["outcome"] not in ("booked", "partial_booking"):
             if old:
                 outcome = {
@@ -743,15 +722,40 @@ class Scheduling:
             provider=provider_name(result.providerName or slot.provider),
             facility=result.locationName
             or get_office_profile(offered.office).display_name,
-            office=offered.office,
+            office=result.office,
+            officeId=result.officeId,
+            visitType=result.visitType,
+            cancellationToken=result.cancellationToken,
             type=result.appointmentTypeName or "Appointment",
             appointmentTypeId=result.appointmentTypeId,
             rescheduleToken=result.rescheduleToken,
             confirmed=True,
         )
-        self._receipts[receipt_key] = MutationReceipt(
-            outcome, booked=appointment, offered=offered, booking=result,
+        cancelled_id = None
+        if old:
+            cancelled = (
+                reschedule.status == "completed"
+                and reschedule.cancellation is not None
+                and reschedule.cancellation.status == "cancelled"
+                and reschedule.cancellation.appointmentId == old.id
+                and appointment.id != old.id
+            )
+            cancelled_id = old.id if cancelled else None
+            note = " The patient note did not save; ask staff to complete it." if outcome["outcome"] == "partial_booking" else ""
+            outcome = reply(
+                "rescheduled" if cancelled else "partial_reschedule",
+                (f"{'blocked' if note else 'success'}: Your new appointment is booked for {description}. Your old appointment on {old.date} at {old.time} is cancelled. Tell the caller both outcomes."
+                 if cancelled else f"blocked: The new appointment is booked for {description}, but cancellation of the old appointment requires staff reconciliation. Do not book again.") + note,
+            )
+            self._report(p, booking=result, booking_outcome="partial_booking" if note else "booked",
+                         cancellation_outcome="cancelled" if cancelled else "uncertain",
+                         old=old, slot=slot, call_id=call_id)
+        saved = MutationReceipt(
+            outcome, booked=appointment, cancelled_id=cancelled_id, offered=offered,
         )
+        self._receipts[receipt_key] = saved
+        if old and cancelled_id:
+            self._receipts[p.patientId, "reschedule", appointment.id] = saved
         return outcome
 
     async def _reschedule(
@@ -761,50 +765,19 @@ class Scheduling:
         old, receipt_key = self._target(p, "reschedule", old_ref)
         saved = self._receipts.get(receipt_key)
         offered = self._slots.get(slot_ref.strip().upper())
-        if saved and (offered is None or (
-            saved.offered and saved.offered.selection == offered.selection
-        )):
-            return self._replay(p, saved)
+        if saved:
+            different = offered and saved.offered and offered.selection != saved.offered.selection
+            replacement_move = old and saved.booked and old.id == saved.booked.id and saved.cancelled_id is not None
+            if not (different and replacement_move):
+                if different and saved.cancelled_id is not None:
+                    return reply("needs_input", "needs_input: Choose the current appointment reference for a different move.")
+                return self._replay(p, saved)
         if old is None:
             return reply("needs_input", "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed.")
-        outcome = await self._book(
+        return await self._book(
             p, captured, slot_ref=slot_ref, reason=reason, referrer=referrer,
             confirmed=confirmed, call_id=call_id, old=old,
         )
-        if outcome["outcome"] not in ("booked", "partial_booking"):
-            return outcome
-        saved = self._receipts[receipt_key]
-        appointment, result, slot = saved.booked, saved.booking, saved.offered.slot
-        description = f"{slot.date} at {slot.time} Eastern with {provider_name(slot.provider)}"
-        # Persist a recovery receipt before the second write; a switch must never lose it.
-        partial = reply(
-            "partial_reschedule",
-            f"blocked: The new appointment is booked for {description}, but cancellation of the old appointment requires staff reconciliation. Do not book again."
-            + (" The patient note did not save; ask staff to complete it." if outcome["outcome"] == "partial_booking" else ""),
-        )
-        saved.result = partial
-        if self._context() != captured:
-            return partial
-        self._reconcile_receipts()
-        cancellation = await self.http.cancel(self._cancel_body(p, old))
-        cancellation_outcome = self._cancel_result(cancellation)["outcome"]
-        self._report(
-            p, booking=result, booking_outcome=outcome["outcome"],
-            cancellation_outcome=cancellation_outcome, old=old, slot=slot, call_id=call_id,
-        )
-        if cancellation_outcome != "cancelled":
-            return partial
-        outcome = reply(
-            "rescheduled",
-            f"{'blocked' if outcome['outcome'] == 'partial_booking' else 'success'}: Your new appointment is booked for {description}. "
-            f"Your old appointment on {old.date} at {old.time} is cancelled. Tell the caller both outcomes."
-            + (" The patient note did not save; ask staff to complete it." if outcome["outcome"] == "partial_booking" else ""),
-        )
-        saved.result = outcome
-        saved.cancelled_id = old.id
-        # Protect repeating the same move using the replacement reference.
-        self._receipts[p.patientId, "reschedule", appointment.id] = saved
-        return outcome
 
     def _report(
         self, patient, *, call_id, booking=None, booking_outcome=None,
@@ -885,24 +858,7 @@ class Scheduling:
         return result
 
     def _cancel_body(self, patient, appointment):
-        if appointment.cancellationToken:
-            return {"cancellationToken": appointment.cancellationToken}
-        office = self.state.call.called_office_key
-        facility = appointment.facility.lower().replace("-", " ")
-        for aliases, key in (
-            (("crystal river", "eye radiance"), "crystal-river"),
-            (("spring hill",), "spring-hill"),
-            (("hollywood",), "hollywood"),
-            (("sweetwater",), "sweetwater"),
-        ):
-            if any(alias in facility for alias in aliases):
-                office = key
-                break
-        return {
-            "patientId": patient.patientId,
-            "appointmentId": appointment.id,
-            "office": get_office_profile(office).trunk_numbers[0],
-        }
+        return {"patientId": patient.patientId, "cancellationToken": appointment.cancellationToken}
 
     @staticmethod
     def _cancel_result(result):

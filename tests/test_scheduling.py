@@ -51,11 +51,26 @@ def appointment(**extra):
         "time": "10:00 AM",
         "provider": "Dr. Bach",
         "appointmentTypeId": 1007,
+        "visitType": "medical",
+        "officeId": "spring_hill",
+        "office": "Spring Hill",
         "type": "Established Adult Medical",
         "cancellationToken": "private-cancel",
         "rescheduleToken": "private-reschedule",
         **extra,
     }
+
+
+def booking(appointment_id=888, status="booked"):
+    return {"status": status, "appointmentId": appointment_id, "appointmentTypeId": 1007,
+            "visitType": "medical", "officeId": "spring_hill", "office": "Spring Hill",
+            "cancellationToken": "new-cancel", "rescheduleToken": "new-reschedule"}
+
+
+def rescheduled(status="cancelled", appointment_id=888, old_id=77, note=False):
+    return {"status": "completed" if status == "cancelled" else "partial",
+            "booking": booking(appointment_id, "partial" if note else "booked"),
+            "cancellation": {"status": "cancelled", "appointmentId": old_id} if status == "cancelled" else None}
 
 
 def verified(state, patient_id="chart-jane", visit="medical", **extra):
@@ -137,6 +152,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 "office": "+19542872010",
                 "startDate": "2026-09-15",
                 "rangeDays": 14,
+                "visitType": "medical",
                 "dob": "01/02/1980",
                 "routing": "bach_only",
             },
@@ -235,15 +251,13 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 (await owner.availability("medical"))["outcome"], "needs_input"
             )
         self.assertEqual(requests, [])
-        for key, visit in (
-            ("crystal-river", "routine_vision"),
-            ("north-miami-beach-optical", "medical"),
-        ):
+        for key, visit in (("crystal-river", "routine_vision"), ("north-miami-beach-optical", "medical")):
             state = call_state(None, get_office_profile(key))
-            owner, requests = self.owner([], state=state)
-            self.assertEqual(
-                (await owner.availability(visit))["outcome"], "unsupported"
-            )
+            verified(state, visit=visit)
+            owner, requests = self.owner([inventory(outcome="no_eligible_providers", slots=[])], state=state)
+            result = await owner.availability(visit)
+            self.assertEqual(result["outcome"], "none")
+            self.assertEqual(requests[0][1]["visitType"], visit)
 
     async def test_eastern_date_and_correction_invalidates_slots(self):
         owner, requests = self.owner(
@@ -338,7 +352,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         owner, requests = self.owner(
             [
                 inventory(),
-                {"status": "partial", "appointmentId": 888, "appointmentTypeId": 1007},
+                booking(888, "partial"),
                 {"status": "cancelled"},
             ]
         )
@@ -386,7 +400,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             requests[-1][1],
-            {"appointmentId": 888, "patientId": "chart-jane", "office": "+17275919997"},
+            {"patientId": "chart-jane", "cancellationToken": "new-cancel"},
         )
         self.assertEqual(owner.state.patient.active.appointments, [])
         self.assertEqual(len(requests), 3)
@@ -405,7 +419,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_cancelled_booking_cannot_satisfy_a_new_booking(self):
         owner, requests = self.owner([
-            inventory(), {"status": "booked", "appointmentId": 888},
+            inventory(), booking(),
             {"status": "cancelled"}, inventory(),
             {"status": "booked", "appointmentId": 999},
         ])
@@ -490,9 +504,9 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         last = inventory()
         last["slots"][0].update(datetime="2026-09-17T09:00", bookingToken="third-slot")
         owner, requests = self.owner([
-            inventory(), {"status": "booked", "appointmentId": 888, "appointmentTypeId": 1007},
-            later, {"status": "booked", "appointmentId": 999, "appointmentTypeId": 1007}, {"status": "cancelled"},
-            last, {"status": "booked", "appointmentId": 1000, "appointmentTypeId": 1007}, {"status": "cancelled"},
+            inventory(), booking(888, "booked"),
+            later, rescheduled(appointment_id=999, old_id=888),
+            last, rescheduled(appointment_id=1000, old_id=999),
             {"status": "cancelled"}, inventory(), {"status": "booked", "appointmentId": 1001},
         ])
         initial = await self.slots(owner)
@@ -521,7 +535,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         verified(owner.state, appointmentsStatus="found", appointments=[appointment(id=888)])
         owner.appointments()
         self.assertEqual([a.id for a in owner.state.patient.active.appointments], [1001])
-        self.assertEqual(len(requests), 11)
+        self.assertEqual(len(requests), 9)
 
     async def test_write_continues_after_caller_cancel_and_records_old_patient(self):
         entered, release = asyncio.Event(), asyncio.Event()
@@ -590,15 +604,8 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
     async def test_partial_note_reschedule_reconciles_during_write_and_after_reload(self):
         for cancellation_status in ("cancelled", "error"):
             with self.subTest(cancellation_status=cancellation_status):
-                async def cancel(request):
-                    # The confirmed booking is visible while cancellation is pending.
-                    self.assertEqual([a.id for a in owner.state.patient.active.appointments], [77, 888])
-                    return httpx.Response(200, json={"status": cancellation_status})
-
                 owner, requests = self.owner([
-                    inventory(),
-                    {"status": "partial", "appointmentId": 888, "appointmentTypeId": 1007},
-                    cancel,
+                    inventory(), rescheduled(cancellation_status, note=True),
                 ])
                 verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
                 old_ref = owner.appointments()[0]["appointmentRef"]
@@ -613,10 +620,10 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 expected_ids = [888] if cancellation_status == "cancelled" else [77, 888]
                 self.assertEqual([a.id for a in owner.state.patient.active.appointments], expected_ids)
                 checkpoints = [c.args[0] for c in owner.state.reporter.appointment.call_args_list]
-                self.assertEqual([c["bookingResult"]["status"] for c in checkpoints], ["partial", "partial"])
+                self.assertEqual([c["bookingResult"]["status"] for c in checkpoints], ["partial"])
                 self.assertEqual(
                     [c["cancellationResult"]["status"] for c in checkpoints],
-                    ["not_attempted", "cancelled" if cancellation_status == "cancelled" else "uncertain"],
+                    ["cancelled" if cancellation_status == "cancelled" else "uncertain"],
                 )
                 # A stale reload must produce the same appointment list, repeatedly.
                 verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
@@ -625,7 +632,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual([a.id for a in owner.state.patient.active.appointments], expected_ids)
                 replay = await self.tool(owner, "reschedule_appointment", **args)
                 self.assertEqual(replay, result)
-                self.assertEqual(len(requests), 3)
+                self.assertEqual(len(requests), 2)
 
     async def test_cancellation_requires_confirmation_without_writing(self):
         owner, requests = self.owner([{"status": "cancelled"}])
@@ -645,7 +652,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_vague_reason_is_preserved_and_booking_requires_confirmation(self):
         owner, requests = self.owner([
-            inventory(), {"status": "booked", "appointmentId": 888, "appointmentTypeId": 1007},
+            inventory(), booking(888, "booked"),
         ])
         ref = await self.slots(owner)
         args = dict(appointmentSlotRef=ref, appointmentReason="eye problems",
@@ -683,22 +690,12 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             (await self.tool(owner, "cancel_appointment", appointmentRef=ref, readBack=True)).split(":", 1)[0],
             'needs_input',
         )
-        self.assertEqual(requests[0][1], {"cancellationToken": "private-cancel"})
+        self.assertEqual(requests[0][1], {"patientId": "chart-jane", "cancellationToken": "private-cancel"})
         self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
 
     async def test_reschedule_partial_and_success_never_rebooks(self):
         for status in ("cancelled", "error"):
-            owner, requests = self.owner(
-                [
-                    inventory(),
-                    {
-                        "status": "booked",
-                        "appointmentId": 888,
-                        "appointmentTypeId": 1007,
-                    },
-                    {"status": status},
-                ]
-            )
+            owner, requests = self.owner([inventory(), rescheduled(status)])
             verified(
                 owner.state, appointmentsStatus="found", appointments=[appointment()]
             )
@@ -735,21 +732,19 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 result.split(":", 1)[0],
             )
             checkpoints = [c.args[0] for c in owner.state.reporter.appointment.call_args_list]
-            self.assertEqual(len(checkpoints), 2)
-            self.assertEqual(checkpoints[0]["cancellationResult"]["status"], "not_attempted")
-            self.assertEqual(checkpoints[1]["cancellationResult"]["status"],
+            self.assertEqual(len(checkpoints), 1)
+            self.assertEqual(checkpoints[0]["cancellationResult"]["status"],
                              "cancelled" if status == "cancelled" else "uncertain")
             self.assertTrue(all(c["externalPatientId"] == "chart-jane" for c in checkpoints))
             self.assertTrue(all(c["action"] == "RESCHEDULED" for c in checkpoints))
             self.assertNotIn("private-reschedule", json.dumps(checkpoints))
             self.assertEqual(requests[1][1]["rescheduleToken"], "private-reschedule")
-            self.assertEqual(requests[1][1]["appointmentTypeId"], 1007)
+            self.assertNotIn("appointmentTypeId", requests[1][1])
             self.assertEqual(
                 [r[0] for r in requests],
                 [
                     "/api/scheduler/slots",
-                    "/api/appointment/book",
-                    "/api/appointment/cancel",
+                    "/api/appointment/reschedule",
                 ],
             )
             self.assertEqual(
@@ -757,10 +752,41 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 [888] if status == "cancelled" else [77, 888],
             )
 
+    async def test_metadata_authority_and_missing_action_tokens(self):
+        owner, requests = self.owner([])
+        verified(owner.state, appointmentsStatus="found", appointments=[appointment(
+            appointmentTypeId=99999, visitType="routine_vision", facility="Spring Hill",
+            officeId="crystal_river", cancellationToken=None,
+        )])
+        entry = owner.appointments()[0]
+        self.assertEqual(entry["visitType"], "routine_vision")
+        result = await self.tool(owner, "cancel_appointment", appointmentRef=entry["appointmentRef"], readBack=True)
+        self.assertIn("Reload appointments", result)
+        self.assertEqual(requests, [])
+
+    async def test_invalid_reschedule_receipt_is_uncertain_and_never_retried(self):
+        for response in (
+            {"status": "completed", "booking": booking()},
+            {"status": "completed", "booking": booking(), "cancellation": {"status": "cancelled", "appointmentId": 888}},
+            {"status": "partial"},
+            {"status": "uncertain", "outcome": "reschedule_conflict", "booking": booking(999)},
+        ):
+            owner, requests = self.owner([inventory(), response])
+            verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+            old_ref = owner.appointments()[0]["appointmentRef"]
+            ref = await self.slots(owner)
+            args = dict(oldAppointmentRef=old_ref, appointmentSlotRef=ref,
+                        appointmentReason="Follow up", referringDoctor="none", readBack=True)
+            result = await self.tool(owner, "reschedule_appointment", **args)
+            self.assertIn("could not be confirmed", result)
+            self.assertEqual(await self.tool(owner, "reschedule_appointment", **args), result)
+            self.assertEqual([a.id for a in owner.state.patient.active.appointments], [77])
+            self.assertEqual(len(requests), 2)
+
     async def test_unknown_appointment_type_does_not_guess_reschedule_visit(self):
         for type_id in (None, 99999):
             owner, requests = self.owner([inventory(), {"status": "cancelled"}])
-            verified(owner.state, appointmentsStatus="found", appointments=[appointment(appointmentTypeId=type_id)])
+            verified(owner.state, appointmentsStatus="found", appointments=[appointment(appointmentTypeId=type_id, visitType=None)])
             old = owner.appointments()[0]
             self.assertIsNone(old["visitType"])
             ref = await self.slots(owner)
@@ -778,7 +804,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_failed_reschedule_does_not_cancel_old(self):
         owner, requests = self.owner(
-            [inventory(), {"status": "error", "outcome": "slot_unavailable"}]
+            [inventory(), {"status": "failed", "outcome": "slot_unavailable"}]
         )
         verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
         old_ref = owner.appointments()[0]["appointmentRef"]
@@ -792,7 +818,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             referringDoctor="none",
             readBack=True,
         )
-        self.assertEqual(result.split(":", 1)[0], 'needs_input')
+        self.assertEqual(result.split(":", 1)[0], 'blocked')
         self.assertEqual(len(requests), 2)
         self.assertEqual([a.id for a in owner.state.patient.active.appointments], [77])
 
@@ -846,11 +872,11 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.book(owner, ref)).split(":", 1)[0], 'success')
         self.assertEqual(len(requests), 4)
 
-    async def test_reschedule_patient_switch_preserves_booking_without_cancelling(self):
+    async def test_reschedule_patient_switch_preserves_middleware_result_for_original_patient(self):
         async def switched(request):
             owner.state.patient.revision += 1
             verified(owner.state, "chart-john")
-            return httpx.Response(200, json={"status": "booked", "appointmentId": 888})
+            return httpx.Response(200, json=rescheduled())
 
         owner, requests = self.owner([inventory(), switched])
         verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
@@ -865,16 +891,18 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             referringDoctor="none",
             readBack=True,
         )
-        self.assertEqual(result.split(":", 1)[0], 'blocked')
+        self.assertEqual(result.split(":", 1)[0], 'success')
         self.assertEqual(owner.state.patient.active.appointments, [])
         evidence = owner.state.reporter.appointment.call_args.args[0]
         self.assertEqual(evidence["externalPatientId"], "chart-jane")
-        self.assertEqual(evidence["cancellationResult"]["status"], "not_attempted")
+        self.assertEqual(evidence["cancellationResult"]["status"], "cancelled")
         self.assertEqual(owner.state.reporter.appointment.call_args.kwargs["call_id"], "native-call-id")
         self.assertEqual(len(requests), 2)
         owner.state.patient.revision += 1
         verified(owner.state)
-        self.assertEqual((await self.book(owner, ref)).split(":", 1)[0], 'blocked')
+        owner.appointments()
+        self.assertEqual([a.id for a in owner.state.patient.active.appointments], [888])
+        self.assertEqual((await self.book(owner, ref)).split(":", 1)[0], 'needs_input')
         self.assertEqual(len(requests), 2)
 
     async def test_completed_cancellation_survives_same_patient_reload(self):
@@ -1000,11 +1028,10 @@ class SchedulingSessionTests(unittest.IsolatedAsyncioTestCase):
         owner, requests = self.owner(
             [
                 inventory(),
-                {"status": "booked", "appointmentId": 888, "appointmentTypeId": 1007},
+                booking(888, "booked"),
                 {"status": "cancelled"},
                 inventory(),
-                {"status": "booked", "appointmentId": 999, "appointmentTypeId": 1007},
-                {"status": "cancelled"},
+                rescheduled(appointment_id=999),
             ]
         )
         verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
@@ -1038,5 +1065,5 @@ class SchedulingSessionTests(unittest.IsolatedAsyncioTestCase):
                         "chart-jane",
                     ):
                         self.assertNotIn(secret, output.output)
-        self.assertEqual(len(requests), 6)
+        self.assertEqual(len(requests), 5)
         self.assertEqual([a.id for a in owner.state.patient.active.appointments], [999])

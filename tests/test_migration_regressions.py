@@ -106,8 +106,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
         owner, _, requests = await self.resolved_owner(
             [
                 inventory(),
-                {"status": "booked", "appointmentId": 888},
-                {"status": "cancelled"},
+                test_scheduling.rescheduled(),
             ],
             appointmentsStatus="found",
             appointments=[test_scheduling.appointment()],
@@ -126,8 +125,8 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.split(":", 1)[0], 'success')
         self.assertEqual(
-            [r.url.path for r in requests[-2:]],
-            ["/api/appointment/book", "/api/appointment/cancel"],
+            [r.url.path for r in requests[-1:]],
+            ["/api/appointment/reschedule"],
         )
 
     async def test_previous_patients_check_does_not_block_returning_patient(self):
