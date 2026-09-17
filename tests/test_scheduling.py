@@ -69,8 +69,6 @@ def verified(state, patient_id="chart-jane", visit="medical", **extra):
         state.patient.revision,
         patient_id,
         None,
-        "Test Insurance",
-        visit,
         InsuranceDecision.model_validate(decision("Test Insurance", visit, state.call.called_office_key.replace("-", "_"))),
     )
 

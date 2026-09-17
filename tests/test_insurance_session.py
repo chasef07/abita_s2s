@@ -13,7 +13,7 @@ from test_patient_resolution import CONFIG, call_state, receipt, search
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.identity import PatientResolver
-from insurance_fixtures import check_response
+from insurance_fixtures import check_response, decision
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.middleware import PatientMiddleware
@@ -156,7 +156,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_partial_and_uncertain_creation_through_session(self):
         for backend, outcome in [
-            (created("partial"), "partial"),
+            (created("partial", insuranceDecision=decision("Self Pay")), "partial"),
             ({"status": "error", "outcome": "indeterminate_write"}, "uncertain"),
         ]:
             bodies = [search(), backend]
@@ -238,7 +238,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
             writes.append(request.url.path)
             entered.set()
             await finish.wait()
-            return httpx.Response(200, json=created())
+            return httpx.Response(200, json=created(insuranceDecision=decision("Self Pay")))
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             state = call_state()

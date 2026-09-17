@@ -144,7 +144,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             ("VSP", "member-example"),
         ]:
             state, _, owner = await self.prepared(
-                [created()], plan=plan, coverage="routine_vision"
+                [created(insuranceDecision=decision(plan, "routine_vision"))], plan=plan, coverage="routine_vision"
             )
             await owner.add(
                 registration(
@@ -157,6 +157,25 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(body["coverageType"], "routine_vision")
             self.assertEqual(state.call.caller_phone, "+15555550101")
             self.assertEqual(state.patient.active.phone, "5555550999")
+
+    async def test_creation_without_backend_decision_cannot_reuse_previous_check(self):
+        state, _, owner = await self.prepared([created(insuranceDecision=None)])
+        self.assertEqual((await owner.add(registration()))["outcome"], "created")
+        self.assertIsNone(accepted_insurance(state))
+        self.assertFalse(insurance_ready(state, "medical"))
+
+    async def test_write_decision_must_match_requested_plan_office_and_coverage(self):
+        for changed in (
+            decision("Different Product"), decision(office="hollywood"),
+            decision(coverage="routine_vision"),
+        ):
+            with self.subTest(decision=changed):
+                state, _, owner = await self.prepared([created(insuranceDecision=changed)])
+                self.assertEqual((await owner.add(registration()))["outcome"], "uncertain")
+                self.assertTrue(state.insurance.write_uncertain)
+                self.assertFalse(insurance_ready(state, "medical"))
+                await owner.add(registration())
+                self.assertEqual(len(self.requests), 2)
 
     async def test_partial_receipt_keeps_chart_and_blocks_scheduling_and_duplicate(
         self,
@@ -249,6 +268,15 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(insurance_ready(state, "medical"))
         await owner.update("member-example")
         self.assertEqual(len(self.requests), 1)
+
+    async def test_update_without_decision_does_not_reuse_on_file_or_checked_acceptance(self):
+        state, _, owner = self.owner([updated(insuranceDecision=None)])
+        state.patient.active = Receipt.model_validate(receipt(preauthRequired=False))
+        await owner.check("Aetna", "medical")
+        self.assertEqual((await owner.update("member-example"))["outcome"], "updated")
+        self.assertIsNone(accepted_insurance(state))
+        self.assertIsNone(state.patient.active.insuranceDecision)
+        self.assertFalse(insurance_ready(state, "medical"))
 
     async def test_failed_or_mismatched_update_blocks_further_writes(self):
         for response in [

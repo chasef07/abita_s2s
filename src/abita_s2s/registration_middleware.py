@@ -108,6 +108,14 @@ class RegistrationMiddleware:
                 return WriteFailure(
                     status="failed" if safe else "uncertain", reason="backend_failure"
                 )
-            return receipt.model_validate(body)
+            result = receipt.model_validate(body)
+            decision = result.insuranceDecision
+            if decision is not None and (
+                decision.officeId.replace("_", "-") != office
+                or decision.coverageType != payload.get("coverageType", "medical")
+                or decision.canonicalPlan != payload["insurance"]
+            ):
+                return WriteFailure(status="uncertain", reason="mismatched_insurance_decision")
+            return result
         except (httpx.HTTPError, TimeoutError, ValueError):
             return WriteFailure(status="uncertain", reason="unverified_write")

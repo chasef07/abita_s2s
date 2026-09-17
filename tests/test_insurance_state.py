@@ -20,7 +20,7 @@ class InsuranceStateTests(unittest.TestCase):
         absence = PatientAbsence("Jane", "01/02/1980", "spring-hill")
         state.patient.absence = absence
         checked = AcceptedInsurance(
-            "spring-hill", 0, None, absence, "Self Pay", "medical"
+            "spring-hill", 0, None, absence, InsuranceDecision.model_validate(decision("Self Pay"))
         )
         state.insurance.accepted = checked
         self.assertIs(accepted_insurance(state, "medical"), checked)
@@ -32,7 +32,7 @@ class InsuranceStateTests(unittest.TestCase):
         state = call_state(None)
         state.patient.active = Receipt.model_validate(receipt(preauthRequired=False))
         state.insurance.accepted = AcceptedInsurance(
-            "spring-hill", 0, "chart-jane", None, "Self Pay", "medical", InsuranceDecision.model_validate(decision("Self Pay"))
+            "spring-hill", 0, "chart-jane", None, InsuranceDecision.model_validate(decision("Self Pay"))
         )
         self.assertTrue(insurance_ready(state, "medical"))
         from dataclasses import replace

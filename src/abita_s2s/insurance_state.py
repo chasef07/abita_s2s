@@ -17,9 +17,7 @@ class AcceptedInsurance:
     patient_revision: int
     patient_id: str | None
     absence: "PatientAbsence | None"
-    plan: str
-    coverage_type: CoverageType
-    decision: InsuranceDecision | None = field(default=None, hash=False)
+    decision: InsuranceDecision = field(hash=False)
 
 
 @dataclass(repr=False)
@@ -52,7 +50,7 @@ def accepted_insurance(
         return None
     if checked.patient_revision != patient.revision:
         return None
-    if coverage_type is not None and checked.coverage_type != coverage_type:
+    if coverage_type is not None and checked.decision.coverageType != coverage_type:
         return None
     if patient.active:
         return checked if checked.patient_id == patient.active.patientId else None
@@ -75,16 +73,16 @@ def insurance_ready(state: "CallState", coverage_type: CoverageType) -> bool:
     checked = state.insurance.accepted
     if checked is not None and checked.patient_id == active.patientId:
         current = accepted_insurance(state, coverage_type)
-        return bool(
-            current and current.decision and current.decision.canSchedule
-            and current.decision.coverageType == coverage_type
-            and current.decision.officeId.replace("_", "-") == state.call.called_office_key
-        )
-    decision = active.insuranceDecision
+        decision = current.decision if current else None
+    elif (
+        active.patientId in state.insurance.registrations
+        or (state.call.called_office_key, active.patientId)
+        in state.insurance.checked_patients
+    ):
+        return False
+    else:
+        decision = active.insuranceDecision
     return bool(
         decision and decision.canSchedule and decision.coverageType == coverage_type
         and decision.officeId.replace("_", "-") == state.call.called_office_key
-        and active.patientId not in state.insurance.registrations
-        and (state.call.called_office_key, active.patientId)
-        not in state.insurance.checked_patients
     )

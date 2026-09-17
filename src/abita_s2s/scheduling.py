@@ -313,7 +313,7 @@ class Scheduling:
             "rangeDays": 14,
             "patientId": p.patientId,
             "coverageType": visit,
-            "insurancePlan": (checked.plan if checked else p.insuranceCarrier),
+            "insurancePlan": (checked.decision.canonicalPlan if checked else p.insuranceCarrier),
             "dob": p.dob,
         }
         if routing:
@@ -706,7 +706,7 @@ class Scheduling:
             "patientName": p.name,
             "dob": p.dob,
             "bookingToken": slot.bookingToken,
-            "insurancePlan": (checked.plan if checked else p.insuranceCarrier),
+            "insurancePlan": (checked.decision.canonicalPlan if checked else p.insuranceCarrier),
             "visitCategory": offered.visit,
             "patientStatus": status,
             "appointmentReason": reason.strip(),

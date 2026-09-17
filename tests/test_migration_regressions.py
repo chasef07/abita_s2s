@@ -248,13 +248,12 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
             state.patient.revision,
             active.patientId,
             None,
-            "Self Pay",
-            "medical",
+            InsuranceDecision.model_validate(decision("Self Pay")),
         )
         for change in (
             {"office_key": "crystal-river"},
             {"patient_revision": state.patient.revision - 1},
-            {"coverage_type": "routine_vision"},
+            {"decision": InsuranceDecision.model_validate(decision(coverage="routine_vision"))},
         ):
             state.insurance.accepted = replace(checked, **change)
             self.assertFalse(insurance_ready(state, "medical"))

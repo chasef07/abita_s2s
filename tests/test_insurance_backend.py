@@ -42,7 +42,7 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
         state.patient.active = Receipt.model_validate(receipt())
         result = await owner.check("Caller's exact unfamiliar wording", "medical")
         checked = accepted_insurance(state)
-        self.assertEqual(checked.plan, "Backend Product")
+        self.assertEqual(checked.decision.canonicalPlan, "Backend Product")
         self.assertEqual(checked.decision.carrierCode, "SYNTHETIC")
         self.assertEqual(checked.decision.requirements[0].verification, "unverified")
         self.assertFalse(insurance_ready(state, "medical"))
