@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import httpx
+from insurance_fixtures import decision
 from livekit.agents.llm.utils import build_strict_openai_schema
 
 from abita_s2s.agent import AbitaAgent
@@ -40,6 +41,8 @@ def candidate(patient_id="chart-jane", name="Jane", dob="01/02/1980"):
     }
 
 
+
+
 def receipt(patient_id="chart-jane", name="Jane", dob="01/02/1980", **extra):
     return {
         "status": "verified",
@@ -48,6 +51,7 @@ def receipt(patient_id="chart-jane", name="Jane", dob="01/02/1980", **extra):
         "dob": dob,
         "phone": "+15555550999",
         "insuranceCarrier": "Test Insurance",
+        "insuranceDecision": decision(),
         "insPlanId": "private-plan",
         "respPartyId": "private-party",
         "routing": "optical_only",

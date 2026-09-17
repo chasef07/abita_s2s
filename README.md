@@ -55,7 +55,7 @@ depend on configuration and execution mode.
 | [model_config.py](src/abita_s2s/model_config.py), [prompts/](src/abita_s2s/prompts/) | GPT-Live speaker, delegated thinker, and their instructions. The thinker receives a fixed call-start Eastern timestamp. |
 | [state.py](src/abita_s2s/state.py) | Call metadata, private lookup candidates, the canonical active patient receipt, patient revision, insurance state, and reporter handle. |
 | [identity.py](src/abita_s2s/identity.py) | Phone candidates, first-name/DOB resolution, identity matching, lookup freshness, and verified patient activation. |
-| [insurance.py](src/abita_s2s/insurance.py), [insurance_state.py](src/abita_s2s/insurance_state.py), [insurance_rules.py](src/abita_s2s/insurance_rules.py) | Plan participation, registration, insurance updates, and scheduling readiness. |
+| [insurance.py](src/abita_s2s/insurance.py), [insurance_state.py](src/abita_s2s/insurance_state.py), [insurance_contract.py](src/abita_s2s/insurance_contract.py) | Backend insurance decisions, registration, insurance updates, and call-local readiness. |
 | [scheduling.py](src/abita_s2s/scheduling.py) | Availability, private slot/appointment references, serialized mutations, receipts, appointment reconciliation, and scheduling outcomes. |
 | [middleware.py](src/abita_s2s/middleware.py), [registration_middleware.py](src/abita_s2s/registration_middleware.py), [scheduling_http.py](src/abita_s2s/scheduling_http.py) | Separate adapters for patient reads, registration writes, and appointment operations. |
 | [knowledge.py](src/abita_s2s/knowledge.py) | Office-scoped Product knowledge retrieval and result validation. |
@@ -157,3 +157,14 @@ agent](.github/workflows/deploy.yml).
 Prompt and eval versions advance only when their content changes. Deployments
 verify release identity and health; packaging an [eval suite](evals/) does not
 execute it or establish live behavioral correctness.
+
+Insurance participation is checked through middleware's `/api/insurance/decision`.
+The agent retains the returned code, requirements and provider policy for the current
+patient and coverage type. It does not bundle a plan catalog. Required referrals and
+authorizations stay unverified until trusted backend evidence exists; callers cannot
+clear them by saying they have one. Participation is not active individual coverage.
+
+Deploy the middleware decision endpoint and `insuranceDecision` receipts before this
+consumer. Missing or invalid decisions block registration/scheduling without a local
+fallback. See the middleware `INSURANCE_CROSSWALK.md` for corrected carrier codes,
+unresolved transport-ID mappings, source conflicts and integration dependencies.

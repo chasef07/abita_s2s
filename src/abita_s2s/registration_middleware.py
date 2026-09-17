@@ -7,11 +7,13 @@ import httpx
 from pydantic import Field
 
 from abita_s2s.config import Config
+from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.middleware import Record, Text
 from abita_s2s.offices import get_office_profile
 
 
 class CreationReceipt(Record):
+    insuranceDecision: InsuranceDecision | None = None
     status: Literal["created", "partial"]
     patientId: Text
     name: Text
@@ -22,6 +24,7 @@ class CreationReceipt(Record):
 
 
 class UpdatedReceipt(Record):
+    insuranceDecision: InsuranceDecision | None = None
     status: Literal["updated"]
     patientId: Text
     newInsurance: Text
@@ -43,6 +46,26 @@ class RegistrationMiddleware:
         self._client = client
         self._config = config
         self._deadline = deadline
+
+    async def check(self, office: str, plan: str, coverage: str, dob: str = "") -> InsuranceDecision | None:
+        if not self._config.middleware_url or not self._config.middleware_token:
+            return None
+        try:
+            async with asyncio.timeout(self._deadline):
+                response = await self._client.post(
+                    self._config.middleware_url.rstrip("/") + "/api/insurance/decision",
+                    headers={"Authorization": self._config.middleware_token},
+                    json={"office": get_office_profile(office).trunk_numbers[0],
+                          "plan": plan, "coverageType": coverage, "dob": dob},
+                    timeout=self._deadline, follow_redirects=False,
+                )
+                response.raise_for_status()
+                decision = InsuranceDecision.model_validate(response.json())
+                if decision.officeId.replace("_", "-") != office or decision.coverageType != coverage:
+                    return None
+                return decision
+        except (httpx.HTTPError, TimeoutError, ValueError):
+            return None
 
     async def create(
         self, office: str, payload: dict

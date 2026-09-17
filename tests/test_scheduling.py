@@ -17,6 +17,8 @@ from abita_s2s.agent import AbitaAgent
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance_state import AcceptedInsurance
 from abita_s2s.middleware import Appointment, Receipt
+from insurance_fixtures import decision
+from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.offices import SPRING_HILL, get_office_profile
 from abita_s2s.scheduling import MutationReceipt, Scheduling
 from abita_s2s.scheduling_http import SchedulingHTTP
@@ -69,6 +71,7 @@ def verified(state, patient_id="chart-jane", visit="medical", **extra):
         None,
         "Test Insurance",
         visit,
+        InsuranceDecision.model_validate(decision("Test Insurance", visit, state.call.called_office_key.replace("-", "_"))),
     )
 
 
@@ -135,6 +138,9 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             requests[0][1],
             {
                 "office": "+19542872010",
+                "patientId": "chart-jane",
+                "coverageType": "medical",
+                "insurancePlan": "Test Insurance",
                 "startDate": "2026-09-15",
                 "rangeDays": 14,
                 "dob": "01/02/1980",
@@ -221,13 +227,14 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             elif change == "uncertain":
                 owner.state.insurance.write_uncertain = True
             elif change == "preauth":
+                owner.state.insurance.accepted = None
                 owner.state.patient.active = owner.state.patient.active.model_copy(
-                    update={"preauthRequired": True}
+                    update={"insuranceDecision": None}
                 )
             elif change == "acceptance":
                 owner.state.insurance.accepted = None
                 owner.state.patient.active = owner.state.patient.active.model_copy(
-                    update={"insuranceCarrier": None}
+                    update={"insuranceCarrier": None, "insuranceDecision": None}
                 )
             else:
                 owner.state.patient.active = None
@@ -795,6 +802,22 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.split(":", 1)[0], 'needs_input')
         self.assertEqual(len(requests), 2)
         self.assertEqual([a.id for a in owner.state.patient.active.appointments], [77])
+
+    async def test_hospital_details_reach_backend_and_missing_details_are_explained(self):
+        owner, requests = self.owner([inventory(), {"status": "booked", "appointmentId": 123}])
+        ref = await self.slots(owner)
+        output = await self.tool(owner, "book_appointment", appointmentSlotRef=ref,
+                                 appointmentReason="Hospital follow-up", referringDoctor="none", readBack=True,
+                                 hospitalName="Example Hospital", hospitalDate="September 10")
+        self.assertTrue(output.startswith("success:"), output)
+        self.assertEqual(requests[-1][1]["hospitalName"], "Example Hospital")
+        self.assertEqual(requests[-1][1]["hospitalDate"], "September 10")
+        owner, _ = self.owner([inventory(), {"status": "error", "outcome": "validation",
+                                             "missing": ["hospitalName", "hospitalDate"]}])
+        ref = await self.slots(owner)
+        output = await self.book(owner, ref)
+        self.assertIn("which hospital and when", output)
+        self.assertTrue(output.startswith("needs_input:"), output)
 
     async def test_closed_owner_cannot_start_new_reads_or_writes(self):
         owner, requests = self.owner([])

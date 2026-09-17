@@ -14,6 +14,7 @@ from pydantic import (
 )
 
 from abita_s2s.config import Config
+from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.offices import get_office_profile
 
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -51,6 +52,7 @@ class Candidate(Record):
 
 
 class Receipt(Record):
+    insuranceDecision: InsuranceDecision | None = None
     status: Literal["verified"]
     patientId: Text
     name: Text

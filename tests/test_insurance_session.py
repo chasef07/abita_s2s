@@ -13,6 +13,7 @@ from test_patient_resolution import CONFIG, call_state, receipt, search
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.identity import PatientResolver
+from insurance_fixtures import check_response
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.middleware import PatientMiddleware
@@ -43,7 +44,7 @@ class InsuranceStream(llm.LLMStream):
         outputs = [item for item in items[last:] if item.type == "function_call_output"]
         if outputs:
             delta = llm.ChoiceDelta(
-                role="assistant", content=outputs[-1].output if outputs[-1].name == "add_patient" or outputs[-1].name == "resolve_patient" else json.loads(outputs[-1].output)["answer"]
+                role="assistant", content=outputs[-1].output if outputs[-1].name in ("add_patient", "resolve_patient", "check_insurance") else json.loads(outputs[-1].output)["answer"]
             )
         else:
             name, args = json.loads(items[last].text_content)
@@ -68,6 +69,8 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
         requests = []
 
         def handler(request):
+            if request.url.path == "/api/insurance/decision":
+                return check_response(request)
             requests.append((request.url.path, json.loads(request.content)))
             return httpx.Response(200, json=bodies.pop(0))
 
@@ -133,7 +136,9 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                         for item in model.requests[-1].items
                         if item.type == "function_call_output"
                     ][-1]
-                    if name in ("add_patient", "resolve_patient"):
+                    if name == "check_insurance":
+                        self.assertIn("participates", output.output)
+                    elif name in ("add_patient", "resolve_patient"):
                         self.assertTrue(output.output.startswith(outcome + ": "), output.output)
                     else:
                         self.assertEqual(json.loads(output.output)["outcome"], outcome)
@@ -158,6 +163,8 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
             requests = []
 
             def handler(request, requests=requests, bodies=bodies):
+                if request.url.path == "/api/insurance/decision":
+                    return check_response(request)
                 requests.append(request.url.path)
                 return httpx.Response(200, json=bodies.pop(0))
 
@@ -224,6 +231,8 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
         writes = []
 
         async def handler(request):
+            if request.url.path == "/api/insurance/decision":
+                return check_response(request)
             if request.url.path == "/api/patient/resolve":
                 return httpx.Response(200, json=search())
             writes.append(request.url.path)

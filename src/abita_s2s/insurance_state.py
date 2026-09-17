@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
+from abita_s2s.insurance_contract import InsuranceDecision
+
 if TYPE_CHECKING:
     from abita_s2s.state import CallState, PatientAbsence
 
@@ -17,6 +19,7 @@ class AcceptedInsurance:
     absence: "PatientAbsence | None"
     plan: str
     coverage_type: CoverageType
+    decision: InsuranceDecision | None = field(default=None, hash=False)
 
 
 @dataclass(repr=False)
@@ -29,6 +32,7 @@ class InsuranceState:
     registrations: dict[str, Literal["created", "partial"]] = field(
         default_factory=dict
     )
+    check_revision: int = 0
     write_pending: bool = False
     write_uncertain: bool = False
 
@@ -64,17 +68,22 @@ def insurance_ready(state: "CallState", coverage_type: CoverageType) -> bool:
     if state.insurance.write_pending or state.insurance.write_uncertain:
         return False
     active = state.patient.active
-    if not active or active.preauthRequired or active.routingAmbiguous:
+    if not active:
         return False
     if state.insurance.registrations.get(active.patientId) == "partial":
         return False
     checked = state.insurance.accepted
     if checked is not None and checked.patient_id == active.patientId:
-        return accepted_insurance(state, coverage_type) is not None
+        current = accepted_insurance(state, coverage_type)
+        return bool(
+            current and current.decision and current.decision.canSchedule
+            and current.decision.coverageType == coverage_type
+            and current.decision.officeId.replace("_", "-") == state.call.called_office_key
+        )
+    decision = active.insuranceDecision
     return bool(
-        active.insuranceCarrier
-        and active.insuranceCarrier.strip()
-        and active.routing
+        decision and decision.canSchedule and decision.coverageType == coverage_type
+        and decision.officeId.replace("_", "-") == state.call.called_office_key
         and active.patientId not in state.insurance.registrations
         and (state.call.called_office_key, active.patientId)
         not in state.insurance.checked_patients

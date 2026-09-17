@@ -83,8 +83,8 @@ class AbitaAgent(Agent):
         or staff-review instructions; acceptance does not establish active benefits.
         """
         if self._insurance is None or self._insurance.state is not context.userdata:
-            return json.dumps(staff())
-        return json.dumps(self._insurance.check(plan, coverageType))
+            return staff()["answer"]
+        return (await self._insurance.check(plan, coverageType))["answer"]
 
     @function_tool
     async def add_patient(
