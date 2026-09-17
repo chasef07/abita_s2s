@@ -8,8 +8,9 @@ from unittest.mock import Mock
 import httpx
 from test_patient_resolution import CONFIG, call_state, receipt, search
 
+from insurance_fixtures import decision, check_response
 from abita_s2s.identity import PatientResolver
-from abita_s2s.insurance import InsuranceRegistration, Registration
+from abita_s2s.insurance import InsuranceRegistration, Registration, normalize
 from abita_s2s.insurance_state import accepted_insurance, insurance_ready
 from abita_s2s.middleware import PatientMiddleware, Receipt
 from abita_s2s.registration_middleware import RegistrationMiddleware
@@ -41,6 +42,7 @@ def registration(**changes):
 def created(status="created", **changes):
     return {
         "status": status,
+        "insuranceDecision": decision(),
         "patientId": "new-chart",
         "name": "Doe, Jane",
         "dob": "01/02/1980",
@@ -52,6 +54,7 @@ def created(status="created", **changes):
 def updated(**changes):
     return {
         "status": "updated",
+        "insuranceDecision": decision(changes.get("newInsurance", "Aetna"), "routine_vision" if changes.get("newInsurance") == "VSP" else "medical"),
         "patientId": "chart-jane",
         "newInsurance": "Aetna",
         "routing": "all",
@@ -60,10 +63,17 @@ def updated(**changes):
 
 
 class RegistrationTests(unittest.IsolatedAsyncioTestCase):
+    def test_receipt_comparison_ignores_punctuation_but_preserves_product(self):
+        self.assertEqual(normalize("HMO & PPO"), normalize("HMO and PPO"))
+        self.assertEqual(normalize("Cigna: Open-Access"), normalize("CIGNA Open Access"))
+        self.assertNotEqual(normalize("NHP HMO Only"), normalize("NHP HMO Access"))
+
     def owner(self, responses):
         self.requests = []
 
         async def handler(request):
+            if request.url.path == "/api/insurance/decision":
+                return check_response(request)
             self.requests.append((request.url.path, json.loads(request.content)))
             result = responses.pop(0)
             if callable(result):
@@ -87,7 +97,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
     async def prepared(self, responses, plan="Aetna", coverage="medical"):
         state, resolver, owner = self.owner([search(), *responses])
         await resolver.resolve("Jane", "01/02/1980")
-        self.assertEqual(owner.check(plan, coverage)["outcome"], "accepted")
+        self.assertEqual((await owner.check(plan, coverage))["outcome"], "accepted")
         return state, resolver, owner
 
     async def test_full_creation_validates_identity_and_caches_duplicate(self):
@@ -111,7 +121,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_new_patient_creation_without_any_lookup(self):
         state, _, owner = self.owner([created()])
         self.assertIsNone(state.patient.absence)
-        self.assertEqual(owner.check("Aetna", "medical")["outcome"], "accepted")
+        self.assertEqual((await owner.check("Aetna", "medical"))["outcome"], "accepted")
         self.assertEqual(self.requests, [])
         result = await owner.add(registration())
         self.assertEqual(result["outcome"], "created")
@@ -139,7 +149,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             ("VSP", "member-example"),
         ]:
             state, _, owner = await self.prepared(
-                [created()], plan=plan, coverage="routine_vision"
+                [created(insuranceDecision=decision(plan, "routine_vision"))], plan=plan, coverage="routine_vision"
             )
             await owner.add(
                 registration(
@@ -152,6 +162,25 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(body["coverageType"], "routine_vision")
             self.assertEqual(state.call.caller_phone, "+15555550101")
             self.assertEqual(state.patient.active.phone, "5555550999")
+
+    async def test_creation_without_backend_decision_cannot_reuse_previous_check(self):
+        state, _, owner = await self.prepared([created(insuranceDecision=None)])
+        self.assertEqual((await owner.add(registration()))["outcome"], "created")
+        self.assertIsNone(accepted_insurance(state))
+        self.assertFalse(insurance_ready(state, "medical"))
+
+    async def test_write_decision_must_match_requested_plan_office_and_coverage(self):
+        for changed in (
+            decision("Different Product"), decision(office="hollywood"),
+            decision(coverage="routine_vision"),
+        ):
+            with self.subTest(decision=changed):
+                state, _, owner = await self.prepared([created(insuranceDecision=changed)])
+                self.assertEqual((await owner.add(registration()))["outcome"], "uncertain")
+                self.assertTrue(state.insurance.write_uncertain)
+                self.assertFalse(insurance_ready(state, "medical"))
+                await owner.add(registration())
+                self.assertEqual(len(self.requests), 2)
 
     async def test_partial_receipt_keeps_chart_and_blocks_scheduling_and_duplicate(
         self,
@@ -220,9 +249,9 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_acceptance_corrections_are_scoped(self):
         state, resolver, owner = await self.prepared([])
-        owner.check("Unknown insurance", "medical")
+        (await owner.check("Unknown insurance", "medical"))
         self.assertIsNone(accepted_insurance(state))
-        owner.check("VSP", "routine_vision")
+        (await owner.check("VSP", "routine_vision"))
         self.assertIsNone(accepted_insurance(state, "medical"))
         await resolver.resolve("John", None)
         self.assertIsNone(accepted_insurance(state))
@@ -234,7 +263,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_update_uses_verified_backend_refs_and_receipt_and_no_duplicate(self):
         state, _, owner = self.owner([updated()])
         state.patient.active = Receipt.model_validate(receipt(preauthRequired=False))
-        owner.check("Aetna", "medical")
+        (await owner.check("Aetna", "medical"))
         result = await owner.update("member-example")
         self.assertEqual(result["outcome"], "updated")
         self.assertEqual(self.requests[0][1]["insPlanId"], "private-plan")
@@ -244,6 +273,15 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(insurance_ready(state, "medical"))
         await owner.update("member-example")
         self.assertEqual(len(self.requests), 1)
+
+    async def test_update_without_decision_does_not_reuse_on_file_or_checked_acceptance(self):
+        state, _, owner = self.owner([updated(insuranceDecision=None)])
+        state.patient.active = Receipt.model_validate(receipt(preauthRequired=False))
+        await owner.check("Aetna", "medical")
+        self.assertEqual((await owner.update("member-example"))["outcome"], "updated")
+        self.assertIsNone(accepted_insurance(state))
+        self.assertIsNone(state.patient.active.insuranceDecision)
+        self.assertFalse(insurance_ready(state, "medical"))
 
     async def test_failed_or_mismatched_update_blocks_further_writes(self):
         for response in [
@@ -256,7 +294,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             state.patient.active = Receipt.model_validate(
                 receipt(preauthRequired=False)
             )
-            owner.check("Aetna", "medical")
+            (await owner.check("Aetna", "medical"))
             self.assertEqual(
                 (await owner.update("member-example"))["outcome"], "uncertain"
             )
@@ -275,7 +313,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
 
         state, resolver, owner = self.owner([delayed])
         state.patient.active = Receipt.model_validate(receipt(preauthRequired=False))
-        owner.check("Aetna", "medical")
+        (await owner.check("Aetna", "medical"))
         task = asyncio.create_task(owner.update("member-example"))
         await entered.wait()
         await resolver.resolve("John", None)
@@ -296,14 +334,14 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
 
         state, _, owner = self.owner([delayed])
         state.patient.active = Receipt.model_validate(receipt(preauthRequired=False))
-        owner.check("Aetna", "medical")
+        (await owner.check("Aetna", "medical"))
         task = asyncio.create_task(owner.update("member-example"))
         await entered.wait()
         self.assertFalse(insurance_ready(state, "medical"))
         self.assertEqual(
             (await owner.update("member-example"))["outcome"], "write_pending"
         )
-        owner.check("VSP", "routine_vision")
+        (await owner.check("VSP", "routine_vision"))
         task.cancel()
         with self.assertRaises(asyncio.CancelledError):
             await task
@@ -330,7 +368,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             ("VSP", "routine_vision"),
             ("Aetna", "medical"),
         ]:
-            owner.check(plan, coverage)
+            (await owner.check(plan, coverage))
             self.assertEqual(
                 (await owner.update("member-example"))["outcome"], "updated"
             )
@@ -359,7 +397,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             state.patient.active = Receipt.model_validate(
                 receipt(insuranceCarrier="Aetna", insPlanId=None)
             )
-            owner.check("VSP", "routine_vision")
+            (await owner.check("VSP", "routine_vision"))
             self.assertEqual(
                 (await owner.update("member-example"))["outcome"],
                 "needs_staff_review",
@@ -384,13 +422,13 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             state.patient.active = Receipt.model_validate(
                 receipt(insuranceCarrier="Aetna", insPlanId=None)
             )
-            owner.check("VSP", "routine_vision")
+            (await owner.check("VSP", "routine_vision"))
             task = asyncio.create_task(owner.update("member-example"))
             await entered.wait()
             if correction == "patient":
                 await resolver.resolve("John", None)
             else:
-                owner.check("Aetna", "medical")
+                (await owner.check("Aetna", "medical"))
             finish.set()
             self.assertEqual((await task)["outcome"], "needs_staff_review")
             self.assertEqual(len(self.requests), 1)
@@ -427,7 +465,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         finish.set()
         await task
         await resolver.resolve("Jane", "01/02/1980")
-        owner.check("Aetna", "medical")
+        (await owner.check("Aetna", "medical"))
         result = await owner.add(registration(lastName="Smith"))
         self.assertEqual(result["outcome"], "created")
         self.assertIn("Doe, Jane", result["answer"])
@@ -448,7 +486,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         state.patient.active = Receipt.model_validate(
             receipt(preauthRequired=False, appointmentsStatus="error")
         )
-        owner.check("Aetna", "medical")
+        (await owner.check("Aetna", "medical"))
         reading = asyncio.create_task(resolver.resolve("Jane", "01/02/1980"))
         await entered.wait()
         self.assertEqual((await owner.update("member-example"))["outcome"], "updated")

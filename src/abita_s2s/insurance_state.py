@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
+from abita_s2s.insurance_contract import InsuranceDecision
+
 if TYPE_CHECKING:
     from abita_s2s.state import CallState, PatientAbsence
 
@@ -15,8 +17,7 @@ class AcceptedInsurance:
     patient_revision: int
     patient_id: str | None
     absence: "PatientAbsence | None"
-    plan: str
-    coverage_type: CoverageType
+    decision: InsuranceDecision = field(hash=False)
 
 
 @dataclass(repr=False)
@@ -29,6 +30,7 @@ class InsuranceState:
     registrations: dict[str, Literal["created", "partial"]] = field(
         default_factory=dict
     )
+    check_revision: int = 0
     write_pending: bool = False
     write_uncertain: bool = False
 
@@ -48,7 +50,7 @@ def accepted_insurance(
         return None
     if checked.patient_revision != patient.revision:
         return None
-    if coverage_type is not None and checked.coverage_type != coverage_type:
+    if coverage_type is not None and checked.decision.coverageType != coverage_type:
         return None
     if patient.active:
         return checked if checked.patient_id == patient.active.patientId else None
@@ -59,23 +61,32 @@ def accepted_insurance(
     )
 
 
-def insurance_ready(state: "CallState", coverage_type: CoverageType) -> bool:
-    """Scheduling guard for this domain; does not replace appointment policy checks."""
+def scheduling_insurance(state: "CallState", coverage_type: CoverageType) -> InsuranceDecision | None:
+    """The one current insurance decision eligible for a scheduling request."""
     if state.insurance.write_pending or state.insurance.write_uncertain:
-        return False
+        return None
     active = state.patient.active
-    if not active or active.preauthRequired or active.routingAmbiguous:
-        return False
+    if not active:
+        return None
     if state.insurance.registrations.get(active.patientId) == "partial":
-        return False
+        return None
     checked = state.insurance.accepted
     if checked is not None and checked.patient_id == active.patientId:
-        return accepted_insurance(state, coverage_type) is not None
-    return bool(
-        active.insuranceCarrier
-        and active.insuranceCarrier.strip()
-        and active.routing
-        and active.patientId not in state.insurance.registrations
-        and (state.call.called_office_key, active.patientId)
-        not in state.insurance.checked_patients
-    )
+        current = accepted_insurance(state, coverage_type)
+        decision = current.decision if current else None
+    elif (
+        active.patientId in state.insurance.registrations
+        or (state.call.called_office_key, active.patientId)
+        in state.insurance.checked_patients
+    ):
+        return None
+    else:
+        decision = active.insuranceDecision
+    if (decision and decision.canSchedule and decision.coverageType == coverage_type
+        and decision.officeId.replace("_", "-") == state.call.called_office_key):
+        return decision
+    return None
+
+
+def insurance_ready(state: "CallState", coverage_type: CoverageType) -> bool:
+    return scheduling_insurance(state, coverage_type) is not None

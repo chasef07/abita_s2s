@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 from livekit.agents import RunContext, function_tool
 
-from abita_s2s.insurance_state import AcceptedInsurance, insurance_ready
+from abita_s2s.insurance_state import AcceptedInsurance, insurance_ready, scheduling_insurance
 from abita_s2s.middleware import Appointment, Receipt
 from abita_s2s.offices import get_office_profile
 from abita_s2s.scheduling_http import (
@@ -284,17 +284,22 @@ class Scheduling:
                 "blocked: An appointment change is in progress. Wait for its result.",
             )
         p = self.state.patient.active
-        routing = "optical_only" if visit == "routine_vision" else p.routing
+        decision = scheduling_insurance(self.state, visit)
+        assert decision is not None  # validated above, with no intervening await
+        routing = decision.routing
         body = {
             "office": get_office_profile(selected).trunk_numbers[0],
             "startDate": first.isoformat(),
             "rangeDays": 14,
+            "patientId": p.patientId,
+            "coverageType": visit,
+            "insurancePlan": decision.canonicalPlan,
             "visitType": visit,
             "dob": p.dob,
         }
         if routing:
             body["routing"] = routing
-        if p.preauthRequired:
+        if decision.requirements:
             body["preauthRequired"] = True
         key = AvailabilitySearch(context, selected, visit, first, today)
         if self._search_key != key:
@@ -447,6 +452,8 @@ class Scheduling:
         appointmentReason: str,
         referringDoctor: str,
         readBack: Literal[True] | None,
+        hospitalName: str | None = None,
+        hospitalDate: str | None = None,
     ) -> str:
         """Book a new appointment using a returned slot after caller confirmation of date, time and provider.
 
@@ -465,6 +472,7 @@ class Scheduling:
         return await self._execute(
             context, self._book,
             slot_ref=appointmentSlotRef, reason=appointmentReason,
+            hospital_name=hospitalName, hospital_date=hospitalDate,
             referrer=referringDoctor, confirmed=readBack,
         )
 
@@ -489,6 +497,8 @@ class Scheduling:
         appointmentReason: str,
         referringDoctor: str,
         readBack: Literal[True] | None,
+        hospitalName: str | None = None,
+        hospitalDate: str | None = None,
     ) -> str:
         """Move the caller-confirmed loaded appointment to a confirmed returned slot.
 
@@ -506,6 +516,7 @@ class Scheduling:
         return await self._execute(
             context, self._reschedule,
             slot_ref=appointmentSlotRef, reason=appointmentReason,
+            hospital_name=hospitalName, hospital_date=hospitalDate,
             referrer=referringDoctor, confirmed=readBack, old_ref=oldAppointmentRef,
         )
 
@@ -607,6 +618,7 @@ class Scheduling:
     async def _book(
         self, p: Receipt, captured: SchedulingContext, *, slot_ref: str, reason: str,
         referrer: str, confirmed: bool | None, call_id: str, old: Appointment | None = None,
+        hospital_name: str | None = None, hospital_date: str | None = None,
     ) -> dict:
         slot_ref = slot_ref.strip().upper()
         receipt_key = (p.patientId, "reschedule", old.id) if old else (p.patientId, "book", slot_ref)
@@ -665,18 +677,24 @@ class Scheduling:
             if p.patientId in self.state.insurance.registrations
             else "established"
         )
+        decision = scheduling_insurance(self.state, offered.visit)
+        if decision is None:
+            return reply("needs_input", "needs_input: Recheck insurance before booking.")
         body = {
             "patientId": p.patientId,
             "patientName": p.name,
             "dob": p.dob,
             "bookingToken": slot.bookingToken,
+            "insurancePlan": decision.canonicalPlan,
             "visitCategory": offered.visit,
             "patientStatus": status,
             "appointmentReason": reason.strip(),
             "visitReason": reason.strip(),
             "referringDoctor": referrer.strip(),
+            "hospitalName": hospital_name or "",
+            "hospitalDate": hospital_date or "",
         }
-        routing = "optical_only" if offered.visit == "routine_vision" else p.routing
+        routing = decision.routing
         if routing:
             body["routing"] = routing
         if old:
@@ -769,6 +787,7 @@ class Scheduling:
     async def _reschedule(
         self, p: Receipt, captured: SchedulingContext, *, old_ref: str, slot_ref: str,
         reason: str, referrer: str, confirmed: bool | None, call_id: str,
+        hospital_name: str | None = None, hospital_date: str | None = None,
     ) -> dict:
         old, receipt_key = self._target(p, "reschedule", old_ref)
         saved = self._receipts.get(receipt_key)
@@ -784,6 +803,7 @@ class Scheduling:
             return reply("needs_input", "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed.")
         return await self._book(
             p, captured, slot_ref=slot_ref, reason=reason, referrer=referrer,
+            hospital_name=hospital_name, hospital_date=hospital_date,
             confirmed=confirmed, call_id=call_id, old=old,
         )
 
@@ -898,6 +918,8 @@ class Scheduling:
                         else ""
                     ),
                 )
+            if any(field in result.missing for field in ("hospitalName", "hospitalDate")):
+                return reply("needs_input", "needs_input: Ask which hospital and when the hospital visit occurred before scheduling the follow-up.")
             if result.outcome == "appointment_type_unresolved" and result.missing:
                 return reply(
                     "needs_input",

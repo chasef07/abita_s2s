@@ -9,6 +9,7 @@ import httpx
 from test_patient_resolution import call_state
 from test_scheduling import verified
 
+from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.offices import get_office_profile
 from abita_s2s.scheduling import Scheduling
 from abita_s2s.scheduling_http import SchedulingHTTP
@@ -34,6 +35,11 @@ async def main(url):
             verified(state, patient_id="12345", dob="01/15/1980",
                      appointmentsStatus=loaded["appointmentsStatus"],
                      appointments=loaded["appointments"])
+            state.patient.active = state.patient.active.model_copy(update={
+                "insuranceDecision": InsuranceDecision.model_validate(loaded["insuranceDecision"]),
+                "insuranceCarrier": loaded["insuranceCarrier"],
+            })
+            state.insurance.accepted = None
             old_ref = owner.appointments()[0]["appointmentRef"]
             available = await owner.availability("medical", "2026-06-03")
             assert available["outcome"] == "found", available

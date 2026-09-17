@@ -59,10 +59,6 @@ def smoke() -> None:
     assert server is not None
     for name in ("speaker", "thinker"):
         assert load_prompt(name)
-    files = list((PACKAGE / "insurance_data").glob("*.json"))
-    assert len(files) == 4
-    for path in files:
-        assert json.loads(path.read_text())
     print(json.dumps(identity(), sort_keys=True))
 
 
