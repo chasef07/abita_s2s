@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/chasef07/abita_s2s/compare/v0.4.0...v0.4.1) (2026-09-17)
+
+
+### Bug Fixes
+
+* **identity:** consume middleware-owned patient resolution ([#31](https://github.com/chasef07/abita_s2s/issues/31)) ([2c955da](https://github.com/chasef07/abita_s2s/commit/2c955dafe5b9695e959ff46c7fe56b01f3b6d170))
+
 ## [0.4.0](https://github.com/chasef07/abita_s2s/compare/v0.3.6...v0.4.0) (2026-09-17)
 
 
