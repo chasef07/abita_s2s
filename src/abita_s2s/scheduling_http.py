@@ -90,8 +90,8 @@ class RescheduleReceipt(Record):
                     or not self.cancellation.appointmentId
                     or self.cancellation.appointmentId == self.booking.appointmentId):
                 raise ValueError("Missing original cancellation receipt")
-        if self.status == "failed" and (self.booking or self.cancellation):
-            raise ValueError("Failed reschedule cannot contain confirmed writes")
+        if self.status in ("failed", "uncertain") and (self.booking or self.cancellation):
+            raise ValueError("Unconfirmed reschedule cannot contain confirmed writes")
         return self
 
 

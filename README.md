@@ -101,7 +101,7 @@ depend on configuration and execution mode.
   Booking replay matches the selected slot; cancelled or replaced bookings never
   satisfy a new request. Fresh confirmed selections can create new appointments.
 - **Rescheduling:** send one confirmed command to middleware. Middleware owns
-  the durable claim, replacement booking, original cancellation, and provider
+  replacement booking, original cancellation, and provider
   reconciliation. Python applies completed/partial receipts to the captured
   patient and retains uncertainty without repeating writes. Appointment office,
   visit type, and action tokens come from middleware; missing authority requires
@@ -162,10 +162,12 @@ execute it or establish live behavioral correctness.
 
 ### Scheduling contract verification
 
-Deploy the middleware scheduling contract before this agent. Middleware requires
-`RESCHEDULE_RECEIPTS_BUCKET` and private GCS access for durable claims. Without
-that setup, rescheduling fails closed. Existing patient-resolution behavior is
-unchanged.
+Deploy the middleware scheduling contract before this agent. No additional
+infrastructure or deployment settings are required. Reschedule writes are sent
+once; call-local receipts prevent repeated tool calls from repeating writes.
+Partial or uncertain outcomes require staff reconciliation. There is no
+persistent deduplication across calls or middleware restarts. Patient resolution
+is unchanged.
 
 To verify Python through the real middleware HTTP handlers with mocked provider
 writes, run this from the matching middleware checkout:

@@ -43,13 +43,13 @@ async def main(url):
             ids = [a.id for a in state.patient.active.appointments]
             expected_ids = {"success": [98765], "partial": [54321, 98765], "failure": [54321]}[fixture["scenario"]]
             assert ids == expected_ids, (ids, expected_ids)
-            assert await owner.reschedule_appointment(context, **args) == result
-            # A fresh HTTP caller replays the durable receipt with the same tokens.
-            body = {"patientId": "12345", "dob": "01/15/1980", "bookingToken": next(iter(owner._receipts.values())).offered.slot.bookingToken,
-                    "rescheduleToken": fixture["appointment"]["rescheduleToken"], "visitCategory": "medical"} if fixture["scenario"] != "failure" else None
-            if body:
-                replay = await owner.http.reschedule(body)
-                assert replay.status == ("completed" if fixture["scenario"] == "success" else "partial")
+            repeated = await owner.reschedule_appointment(context, **args)
+            if fixture["scenario"] == "failure":
+                assert repeated.startswith("needs_input:"), repeated
+            else:
+                assert repeated == result
+            # Repeated tools are handled by call-local receipts. The HTTP write
+            # is single-shot and must never be retried after a lost response.
             for appointment in state.patient.active.appointments:
                 if appointment.id == 98765:
                     assert appointment.visitType == "medical"

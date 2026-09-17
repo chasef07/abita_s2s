@@ -687,14 +687,16 @@ class Scheduling:
         reschedule = None
         if old:
             reschedule = await self.http.reschedule(body)
-            if (not isinstance(reschedule, RescheduleReceipt) or reschedule.booking is None
-                    or reschedule.outcome == "reschedule_conflict"):
+            if not isinstance(reschedule, RescheduleReceipt) or reschedule.booking is None:
                 outcome = (
                     reply("failed", "blocked: The reschedule failed. Reload appointments or ask staff to reconcile before another change.")
                     if isinstance(reschedule, RescheduleReceipt) and reschedule.status == "failed"
                     else self._write_failure(SchedulingFailure(reason="reschedule", uncertain=True), "reschedule")
                 )
-                self._receipts[receipt_key] = MutationReceipt(outcome)
+                if outcome["outcome"] == "uncertain":
+                    self._receipts[receipt_key] = MutationReceipt(outcome)
+                else:
+                    self._receipts.pop(receipt_key, None)
                 self._report(p, booking=reschedule, booking_outcome=outcome["outcome"], old=old, slot=slot, call_id=call_id)
                 return outcome
             result = reschedule.booking

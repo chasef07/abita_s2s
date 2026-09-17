@@ -769,7 +769,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             {"status": "completed", "booking": booking()},
             {"status": "completed", "booking": booking(), "cancellation": {"status": "cancelled", "appointmentId": 888}},
             {"status": "partial"},
-            {"status": "uncertain", "outcome": "reschedule_conflict", "booking": booking(999)},
+            {"status": "uncertain", "booking": booking(999)},
         ):
             owner, requests = self.owner([inventory(), response])
             verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
@@ -820,6 +820,46 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.split(":", 1)[0], 'blocked')
         self.assertEqual(len(requests), 2)
+        self.assertEqual([a.id for a in owner.state.patient.active.appointments], [77])
+
+    async def test_reschedule_retries_only_after_definite_failure_and_fresh_confirmation(self):
+        owner, requests = self.owner([
+            inventory(), {"status": "failed", "outcome": "write_failed"},
+            inventory(), rescheduled(),
+        ])
+        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        old_ref = owner.appointments()[0]["appointmentRef"]
+        slot_ref = await self.slots(owner)
+        args = dict(oldAppointmentRef=old_ref, appointmentSlotRef=slot_ref,
+                    appointmentReason="Follow up", referringDoctor="none", readBack=True)
+        self.assertIn("reschedule failed", await self.tool(owner, "reschedule_appointment", **args))
+        self.assertTrue((await self.tool(owner, "reschedule_appointment", **args)).startswith("needs_input:"))
+        self.assertEqual(len(requests), 2)
+        args["appointmentSlotRef"] = await self.slots(owner)
+        self.assertTrue((await self.tool(owner, "reschedule_appointment", **{**args, "readBack": None})).startswith("needs_input: Confirm"))
+        self.assertEqual(len(requests), 3)
+        self.assertTrue((await self.tool(owner, "reschedule_appointment", **args)).startswith("success:"))
+        self.assertEqual([a.id for a in owner.state.patient.active.appointments], [888])
+        self.assertEqual(len(requests), 4)
+
+    async def test_reschedule_transport_failure_fences_further_writes(self):
+        async def timed_out(request):
+            raise httpx.ReadTimeout("response lost", request=request)
+
+        owner, requests = self.owner([inventory(), timed_out, inventory()])
+        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        old_ref = owner.appointments()[0]["appointmentRef"]
+        slot_ref = await self.slots(owner)
+        args = dict(oldAppointmentRef=old_ref, appointmentSlotRef=slot_ref,
+                    appointmentReason="Follow up", referringDoctor="none", readBack=True)
+        result = await self.tool(owner, "reschedule_appointment", **args)
+        self.assertIn("could not be confirmed", result)
+        self.assertEqual(await self.tool(owner, "reschedule_appointment", **args), result)
+        self.assertEqual(len(requests), 2)
+        fresh_slot = await self.slots(owner)
+        self.assertIn("could not be confirmed", await self.book(owner, fresh_slot))
+        self.assertEqual(await self.tool(owner, "cancel_appointment", appointmentRef=old_ref, readBack=True), result)
+        self.assertEqual(len(requests), 3)
         self.assertEqual([a.id for a in owner.state.patient.active.appointments], [77])
 
     async def test_closed_owner_cannot_start_new_reads_or_writes(self):
