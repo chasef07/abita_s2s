@@ -67,11 +67,20 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
         paths = []
         def handler(request):
             paths.append(request.url.path)
-            return httpx.Response(200, json=decision("United Golden Rule", carrierCode="GOL05", canRegister=False, canSchedule=False, outcome="needs_staff_task"))
-        _, owner = self.owner(handler)
+            return httpx.Response(200, json=decision("United Golden Rule", carrierCode="GOL05", canRegister=False, canSchedule=False, outcome="accepted"))
+        state, owner = self.owner(handler)
         await owner.check("United Golden Rule", "medical")
-        self.assertEqual((await owner.add(registration()))["outcome"], "needs_staff_task")
+        result = await owner.add(registration())
+        self.assertEqual(result["outcome"], "needs_staff_task")
+        self.assertIn("billing setup", result["answer"])
         self.assertEqual(paths, ["/api/insurance/decision"])
+        state.patient.active = Receipt.model_validate(receipt())
+        await owner.check("United Golden Rule", "medical")
+        result = await owner.update("member-example")
+        self.assertEqual(result["outcome"], "needs_staff_task")
+        self.assertIn("billing setup", result["answer"])
+        self.assertEqual(paths, ["/api/insurance/decision", "/api/insurance/decision"])
+        self.assertFalse(insurance_ready(state, "medical"))
 
     async def test_patient_switch_and_out_of_order_checks_cannot_restore_old_acceptance(self):
         entered, finish = asyncio.Event(), asyncio.Event()
