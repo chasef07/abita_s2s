@@ -25,17 +25,16 @@ class InsuranceDecision(BaseModel):
     allowedProviders: list[str]
     requirements: list[InsuranceRequirement]
     eligibility: Literal["not_checked"]
-    canRegister: bool
     canSchedule: bool
     selfPay: bool
     answer: str
 
     @model_validator(mode="after")
     def coherent(self):
-        if (self.canRegister or self.canSchedule) and (
-            self.participation != "accepted" or not self.canonicalPlan
-        ):
+        if self.participation == "accepted" and not self.canonicalPlan:
             raise ValueError("Missing accepted plan")
+        if self.canSchedule and self.participation != "accepted":
+            raise ValueError("Scheduling requires an accepted plan")
         if self.canSchedule and (self.requirements or not self.allowedProviders):
             raise ValueError("Scheduling requires verified backend policy")
         return self
