@@ -257,9 +257,6 @@ class InsuranceRegistration:
             dob=result.dob,
             phone=r.phone or self.state.call.caller_phone,
             insuranceCarrier=checked.decision.canonicalPlan if result.status == "created" else None,
-            routing=result.routing,
-            allowedProviders=result.allowedProviders,
-            preauthRequired=result.preauthRequired,
             insuranceDecision=result.insuranceDecision,
             appointmentsStatus="none",
             appointments=[],
@@ -364,13 +361,8 @@ class InsuranceRegistration:
                 updated = active.model_copy(
                     update={
                         "insuranceCarrier": result.newInsurance,
-                        "insuranceCarrierId": None,
                         "insPlanId": None,
                         "respPartyId": references.respPartyId,
-                        "routing": result.routing,
-                        "allowedProviders": result.allowedProviders,
-                        "routingAmbiguous": result.routingAmbiguous,
-                        "preauthRequired": result.preauthRequired,
                         "insuranceDecision": result.insuranceDecision,
                     }
                 )

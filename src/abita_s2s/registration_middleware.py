@@ -4,7 +4,6 @@ import asyncio
 from typing import Literal
 
 import httpx
-from pydantic import Field
 
 from abita_s2s.config import Config
 from abita_s2s.insurance_contract import InsuranceDecision
@@ -18,9 +17,6 @@ class CreationReceipt(Record):
     patientId: Text
     name: Text
     dob: Text
-    routing: str | None = None
-    allowedProviders: list[str] = Field(default_factory=list)
-    preauthRequired: bool = False
 
 
 class UpdatedReceipt(Record):
@@ -28,10 +24,6 @@ class UpdatedReceipt(Record):
     status: Literal["updated"]
     patientId: Text
     newInsurance: Text
-    routing: str | None = None
-    allowedProviders: list[str] = Field(default_factory=list)
-    routingAmbiguous: bool = False
-    preauthRequired: bool = False
 
 
 class WriteFailure(Record):

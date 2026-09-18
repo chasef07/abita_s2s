@@ -44,10 +44,6 @@ class SchedulingContext:
     patient_revision: int
     patient_id: str | None
     dob: str | None
-    routing: str | None
-    preauth_required: bool
-    routing_ambiguous: bool
-    insurance_carrier: str | None
     insurance_checked: bool
     accepted_insurance: AcceptedInsurance | None
     acceptance_id: int
@@ -139,10 +135,6 @@ class Scheduling:
             patient_revision=self.state.patient.revision,
             patient_id=p.patientId if p else None,
             dob=p.dob if p else None,
-            routing=p.routing if p else None,
-            preauth_required=p.preauthRequired if p else False,
-            routing_ambiguous=p.routingAmbiguous if p else False,
-            insurance_carrier=p.insuranceCarrier if p else None,
             insurance_checked=bool(p and (self.state.call.called_office_key, p.patientId)
                                    in insurance.checked_patients),
             accepted_insurance=insurance.accepted,
@@ -308,8 +300,6 @@ class Scheduling:
         }
         if routing:
             body["routing"] = routing
-        if decision.requirements:
-            body["preauthRequired"] = True
         key = AvailabilitySearch(context, selected, visit, first, today)
         if self._search_key != key:
             self._invalidate()
@@ -342,7 +332,7 @@ class Scheduling:
                     self._search = None
                     self._invalidate()
 
-    async def _load(self, body, key, generation, *, refreshed=False):
+    async def _load(self, body, key, generation):
         result = await self.http.availability(body)
         if generation != self._generation or key.context != self._context():
             return reply(
@@ -351,77 +341,54 @@ class Scheduling:
             )
         previous = {item.slot.key: (ref, item) for ref, item in self._slots.items()}
         self._slots.clear()
+        first = key.start.isoformat()
+        through = (key.start + timedelta(days=13)).isoformat()
+        expired = False
+        if not isinstance(result, SchedulingFailure):
+            if (
+                (result.searchedFrom is not None and result.searchedFrom != first)
+                or (result.searchedThrough is not None and result.searchedThrough != through)
+                or any(not first <= slot.date <= through for slot in result.slots)
+            ):
+                result = SchedulingFailure(reason="invalid_search_window")
+            elif result.outcome == "availability_found":
+                expired = result.bookingTokenExpiresAt <= self.now()
+                if expired:
+                    result = SchedulingFailure(reason="expired_inventory")
         if (
             isinstance(result, SchedulingFailure)
             or result.outcome == "availability_search_incomplete"
             or result.status == "error"
         ):
-            retry = (
-                isinstance(result, SchedulingFailure) or result.shouldRetrySameSearch
-            )
+            retry = isinstance(result, SchedulingFailure) or result.shouldRetrySameSearch
             count = self._failures.get(key, (0, False))[0] + 1
             self._failures[key] = (count, retry)
+            if expired and count < 2:
+                return await self._load(body, key, generation)
             return reply(
                 "availability_failed",
                 "blocked: Availability could not be verified; this does not mean no openings.",
                 retry_same_search=retry and count < 2,
             )
         self._failures.pop(key, None)
-        if result.outcome == "no_eligible_providers" and not result.slots:
+        if result.outcome == "no_eligible_providers":
             answer = reply(
                 "unsupported",
                 "blocked: No providers are eligible for the selected office, visit type, and patient requirements. Confirm the office and visit type or ask staff for help; changing dates will not resolve this restriction.",
             )
             self._cache = (key, self.now() + timedelta(seconds=60), answer)
             return answer
-        first = date.fromisoformat(body["startDate"])
-        through = (first + timedelta(days=13)).isoformat()
-        if result.outcome == "no_availability" and not result.slots:
+        if result.outcome == "no_availability":
             answer = reply(
                 "none",
                 "no_results: No eligible openings in the searched window. Ask what other dates work.",
-                searchedFrom=first.isoformat(),
+                searchedFrom=first,
                 searchedThrough=through,
             )
             self._cache = (key, self.now() + timedelta(seconds=60), answer)
             return answer
-        try:
-            expiry = datetime.fromisoformat(result.bookingTokenExpiresAt or "")
-            if expiry.tzinfo is None:
-                raise ValueError()
-            if expiry <= self.now():
-                if not refreshed:
-                    return await self._load(body, key, generation, refreshed=True)
-                self._failures[key] = (2, False)
-                return reply(
-                    "availability_failed",
-                    "blocked: Openings expired twice before they could be offered. Ask staff for help.",
-                )
-        except ValueError:
-            return reply(
-                "availability_failed",
-                "blocked: Openings expired or could not be verified. Search again before offering or booking.",
-            )
-        if (
-            not result.slots
-            or result.outcome != "availability_found"
-            or any(
-                not slot.bookingToken or not slot.bookingToken.strip()
-                for slot in result.slots
-            )
-        ):
-            return reply(
-                "availability_failed",
-                "blocked: Availability returned an invalid result. Ask staff for help.",
-            )
-        unique = {}
-        for slot in result.slots:
-            if not first.isoformat() <= slot.date <= through:
-                return reply(
-                    "availability_failed",
-                    "blocked: Availability returned dates outside the requested window. Ask staff for help.",
-                )
-            unique[slot.key] = slot
+        expiry = result.bookingTokenExpiresAt
+        unique = {slot.key: slot for slot in result.slots}
         for slot in unique.values():
             prior = previous.get(slot.key)
             if (
@@ -438,7 +405,7 @@ class Scheduling:
         answer = reply(
             "found",
             "success: Found eligible openings.",
-            searchedFrom=first.isoformat(),
+            searchedFrom=first,
             searchedThrough=through,
             slots=[
                 {

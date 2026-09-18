@@ -71,7 +71,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
     async def resolved_owner(self, responses, **fields):
         state = call_state(None)
         responses = [
-            receipt(routing="bach_only", preauthRequired=False, **fields),
+            receipt(**fields),
             *responses,
         ]
         requests = []
@@ -141,11 +141,9 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
                             "chart-john",
                             "John",
                             "03/04/1981",
-                            routing="bach_only",
-                            preauthRequired=False,
                         ),
                         inventory(),
-                                    receipt(routing="bach_only", preauthRequired=False),
+                        receipt(),
                     ]
                 )
                 insurance = InsuranceRegistration(owner.state, resolver, AsyncMock(check=AsyncMock(return_value=None)))
@@ -165,7 +163,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
         state = call_state(None)
         responses = [
             search(),
-            receipt(routing="bach_only", preauthRequired=False), inventory(),
+            receipt(), inventory(),
         ]
         async with httpx.AsyncClient(transport=httpx.MockTransport(
             lambda request: httpx.Response(200, json=responses.pop(0))

@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import json
 import re
-from typing import Literal
+from typing import Literal, get_args
 from uuid import UUID
 
 import httpx
@@ -26,14 +26,6 @@ Category = Literal[
     "post_op",
 ]
 Urgency = Literal["high_priority", "normal", "non_urgent"]
-CATEGORIES = {
-    "appointments",
-    "documentation",
-    "medication",
-    "optical",
-    "referrals",
-    "other",
-}
 
 
 def _phone(value: str | None) -> str:
@@ -151,7 +143,7 @@ class StaffTasks:
             )
         if not self._url or not self._secret:
             raise ValueError("Staff delivery is not configured. No request was sent.")
-        if category not in CATEGORIES:
+        if category not in get_args(Category):
             raise ValueError(
                 "Product does not support this category. No request was sent. Do not relabel it to bypass this restriction; offer office help."
             )

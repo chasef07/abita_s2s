@@ -1,6 +1,5 @@
 """Define the voice persona, greeting, and model-facing tools."""
 
-import json
 import logging
 from typing import Literal
 
@@ -153,10 +152,9 @@ class AbitaAgent(Agent):
         uncertain result or repeat a completed write.
         """
         if self._insurance is None or self._insurance.state is not context.userdata:
-            return json.dumps(staff())
-        return json.dumps(
-            await self._insurance.update(insuranceMemberId, call_id=context.function_call.call_id)
-        )
+            return staff()["answer"]
+        result = await self._insurance.update(insuranceMemberId, call_id=context.function_call.call_id)
+        return f"{result['outcome']}: {result['answer']}"
 
     @function_tool
     async def search_office_knowledge(
@@ -207,17 +205,19 @@ class AbitaAgent(Agent):
         """
         context.disallow_interruptions()
         if self._staff_tasks is None or self._staff_tasks.state is not context.userdata:
-            return json.dumps(
-                {
-                    "outcome": "failed",
-                    "answer": "Staff delivery is unavailable. No request was sent.",
-                }
-            )
-        return json.dumps(
-            await self._staff_tasks.submit(
-                category, urgency, summary, message, call_id=context.function_call.call_id
-            )
+            return "failed: Staff delivery is unavailable. No request was sent."
+        result = await self._staff_tasks.submit(
+            category, urgency, summary, message, call_id=context.function_call.call_id
         )
+        answer = f"{result['outcome']}: {result['answer']}"
+        if "summary" in result:
+            answer += f"\nRequest: {result['summary']}"
+            patient = result["patient"]
+            answer += (
+                f"\nPatient: {patient['name']} ({'verified' if patient['verified'] else 'unverified'})."
+                if patient else "\nPatient: not identified."
+            )
+        return answer
 
     async def on_exit(self) -> None:
         if self._resolver is not None:

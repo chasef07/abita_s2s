@@ -1,7 +1,6 @@
 """Own transfer sequencing, retry eligibility, and safe call completion."""
 
 import asyncio
-import json
 import logging
 import os
 
@@ -16,10 +15,6 @@ from abita_s2s.handoff import AdmissionRejected, HandoffAdmission
 from abita_s2s.state import CallState
 
 logger = logging.getLogger(__name__)
-
-
-def result(outcome: str, answer: str) -> str:
-    return json.dumps({"outcome": outcome, "answer": answer})
 
 
 class CallControl(EndCallTool):
@@ -78,9 +73,9 @@ class CallControl(EndCallTool):
         Retry only if the result explicitly offers one retry. Never claim a human answered.
         """
         if self._closed:
-            return result("blocked", "This call has ended.")
+            return "blocked: This call has ended."
         if self._transfer_task and not self._transfer_task.done():
-            return result("pending", "Transfer is already in progress.")
+            return "pending: Transfer is already in progress."
         self._transfer_task = asyncio.create_task(self._transfer(ctx))
         return await asyncio.shield(self._transfer_task)
 
@@ -92,24 +87,13 @@ class CallControl(EndCallTool):
 
     async def _perform_transfer(self, ctx):
         if os.environ.get("LIVEKIT_AGENT_DEPLOYMENT", "").strip():
-            return result(
-                "blocked",
-                "Human transfers are unavailable in this sandbox call. No transfer was made.",
-            )
+            return "blocked: Human transfers are unavailable in this sandbox call. No transfer was made."
         if self.status in ("pending", "accepted", "ambiguous"):
-            return result(
-                self.status,
-                "Transfer may already be in progress. Do not retry or end the call.",
-            )
+            return f"{self.status}: Transfer may already be in progress. Do not retry or end the call."
         if self.ending or self.status == "failed":
-            return result(
-                "blocked", "Transfer is unavailable. No further retry is allowed."
-            )
+            return "blocked: Transfer is unavailable. No further retry is allowed."
         if not self._active() or self.sip is None:
-            return result(
-                "unavailable",
-                "No active SIP caller is available. No transfer was made.",
-            )
+            return "unavailable: No active SIP caller is available. No transfer was made."
         ctx.disallow_interruptions()
         self.status = "pending"
         self.attempts += 1
@@ -148,18 +132,12 @@ class CallControl(EndCallTool):
             )
             if response.status == api.STS_TRANSFER_SUCCESSFUL:
                 self.status = "accepted"
-                return result(
-                    "accepted",
-                    "Provider accepted the transfer. A human answer is not confirmed. Do not retry or end the call.",
-                )
+                return "accepted: Provider accepted the transfer. A human answer is not confirmed. Do not retry or end the call."
             if response.status == api.STS_TRANSFER_FAILED:
                 self.status = "failed"
                 # A definitive provider rejection is visible, but do not reissue an
                 # admitted Product handoff or broaden the source's REFER retry policy.
-                return result(
-                    "failed",
-                    "Provider reported transfer failure. Do not retry. Continue helping the caller.",
-                )
+                return "failed: Provider reported transfer failure. Do not retry. Continue helping the caller."
             self.status = "ambiguous"
         except asyncio.CancelledError:
             self.status = (
@@ -181,24 +159,20 @@ class CallControl(EndCallTool):
                     if self.status == "retryable"
                     else " Do not retry."
                 )
-                return result("failed", "No SIP transfer was sent." + retry)
+                return "failed: No SIP transfer was sent." + retry
             self.status = "ambiguous"
         finally:
             if self.state.reporter:
                 self.state.reporter.transfer_status = self.status
-        return result(
-            "ambiguous", "Transfer may be in progress. Do not retry or end the call."
-        )
+        return "ambiguous: Transfer may be in progress. Do not retry or end the call."
 
     async def _end_call(self, ctx: RunContext):
         if self.status in ("pending", "accepted", "ambiguous"):
-            return result("blocked", "Transfer may be in progress. Do not hang up.")
+            return "blocked: Transfer may be in progress. Do not hang up."
         if self.ending:
-            return result("pending", "Call completion is already in progress.")
+            return "pending: Call completion is already in progress."
         if not self._active():
-            return result(
-                "unavailable", "No active SIP call to end. The session remains open."
-            )
+            return "unavailable: No active SIP call to end. The session remains open."
         ctx.disallow_interruptions()
         self.ending = True
         return await super()._end_call(ctx)
