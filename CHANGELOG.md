@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.2](https://github.com/chasef07/abita_s2s/compare/v0.5.1...v0.5.2) (2026-09-18)
+
+
+### Bug Fixes
+
+* clarify appointment availability responses ([#39](https://github.com/chasef07/abita_s2s/issues/39)) ([d3a8f93](https://github.com/chasef07/abita_s2s/commit/d3a8f9318b6bd36b49e98a50c67a37c46ef5e1ea))
+* **insurance:** use acceptance as registration permission ([#38](https://github.com/chasef07/abita_s2s/issues/38)) ([460380a](https://github.com/chasef07/abita_s2s/commit/460380a952685cdeecbadeaf4bf472a908414355))
+
 ## [0.5.1](https://github.com/chasef07/abita_s2s/compare/v0.5.0...v0.5.1) (2026-09-18)
 
 
