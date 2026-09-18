@@ -120,7 +120,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             owner, "list_available_appointments", visitType="medical", **args
         )
         self.assertTrue(result.startswith("success: "), result)
-        return re.search(r"^(S[0-9]+):", result, re.MULTILINE)[1]
+        return re.search(r" — (S[0-9]+)$", result, re.MULTILINE)[1]
 
     async def book(self, owner, ref, **extra):
         return await self.tool(
@@ -168,7 +168,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     owner, "list_available_appointments", visitType="medical"
                 )
             ),
-            "needs_input: Ask for Hollywood or Sweetwater on those office calls; omit office for other calls.\nNo upcoming appointments.",
+            "needs_input: Ask for Hollywood or Sweetwater on those office calls; omit office for other calls.",
         )
         ref = await self.slots(owner, office="hollywood")
         self.assertEqual(await self.slots(owner, office="hollywood"), ref)
@@ -209,19 +209,27 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("do not", stopped.lower())
         self.assertEqual(len(requests), 3)
 
-    async def test_plain_text_distinguishes_available_and_existing_appointments(self):
-        owner, _ = self.owner([inventory()])
+    async def test_availability_groups_slots_without_existing_appointments(self):
+        base = inventory()["slots"][0]
+        owner, _ = self.owner([inventory(slots=[
+            {**base, "datetime": "2026-09-15T11:30", "time": "11:30 AM"},
+            {**base, "datetime": "2026-09-15T11:45", "time": "11:45 AM"},
+            {**base, "datetime": "2026-09-16T09:00", "time": "9:00 AM"},
+        ])])
         verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
         output = await self.tool(owner, "list_available_appointments", visitType="medical")
-        self.assertTrue(output.startswith("success: "), output)
-        self.assertIn("Available appointments (Eastern time; references are private):", output)
-        self.assertIn("Existing appointments (Eastern time; references are private):", output)
-        self.assertRegex(output, r"S[0-9]+: 2026-09-15 at 9:00 AM")
-        existing = owner.appointments()[0]
-        self.assertIn(f"{existing['appointmentRef']}: {existing['date']} at {existing['time']}", output)
-        self.assertIn(f"location: {existing['facility']}", output)
+        self.assertEqual(output, (
+            "success: Found eligible openings.\n"
+            "Searched 2026-09-15 through 2026-09-28.\n\n"
+            "Tuesday, September 15, 2026\nDr. Bach\n"
+            "11:30 AM — S1\n11:45 AM — S2\n\n"
+            "Wednesday, September 16, 2026\nDr. Bach\n9:00 AM — S3"
+        ))
         for private in ("private-signed-slot", "private-cancel", "private-reschedule", "chart-jane"):
             self.assertNotIn(private, output)
+        self.assertEqual(owner._slots["S1"].slot.time, "11:30 AM")
+        self.assertEqual(owner._slots["S2"].slot.time, "11:45 AM")
+        self.assertTrue(owner.appointments_text().startswith("\nExisting appointments:"))
 
     async def test_resolution_describes_reconciled_appointments(self):
         owner, _ = self.owner([])
@@ -1113,13 +1121,17 @@ class SchedulingStream(llm.LLMStream):
                     "reschedule_appointment" if user == "move" else "book_appointment"
                 )
                 args = {
-                    "appointmentSlotRef": re.search(r"^(S[0-9]+):", previous, re.MULTILINE)[1],
+                    "appointmentSlotRef": re.search(r" — (S[0-9]+)$", previous, re.MULTILINE)[1],
                     "appointmentReason": "Annual medical follow up",
                     "referringDoctor": "none",
                     "readBack": True,
                 }
                 if user == "move":
-                    args["oldAppointmentRef"] = re.search(r"^(A[0-9]+):", previous, re.MULTILINE)[1]
+                    existing = next(
+                        item.output for item in reversed(outputs)
+                        if "Existing appointments:" in item.output
+                    )
+                    args["oldAppointmentRef"] = re.search(r"^(A[0-9]+):", existing, re.MULTILINE)[1]
             delta = llm.ChoiceDelta(
                 role="assistant",
                 tool_calls=[
