@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/chasef07/abita_s2s/compare/v0.5.0...v0.5.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* simplify new patient intake and silence internal narration ([#36](https://github.com/chasef07/abita_s2s/issues/36)) ([eb6e5e9](https://github.com/chasef07/abita_s2s/commit/eb6e5e9494db78e79c4fee898445274b536578cc))
+
 ## [0.5.0](https://github.com/chasef07/abita_s2s/compare/v0.4.1...v0.5.0) (2026-09-17)
 
 
