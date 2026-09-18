@@ -109,7 +109,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(r.state.patient.active.phone, r.state.call.caller_phone)
         self.assertEqual(r.state.patient.active.insPlanId, "private-plan")
         self.assertEqual(r.state.patient.active.respPartyId, "private-party")
-        self.assertTrue(r.state.patient.active.preauthRequired)
+        self.assertEqual(r.state.patient.active.insuranceDecision.canonicalPlan, "Aetna")
         for private in (
             "chart-jane",
             "private-plan",

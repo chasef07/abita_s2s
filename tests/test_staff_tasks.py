@@ -135,21 +135,23 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             5,
         )
         outputs = [x for x in agent.chat_ctx.items if x.type == "function_call_output"]
-        return outputs[-1].output if tool == "resolve_patient" else json.loads(outputs[-1].output)
+        return outputs[-1].output
 
     async def test_distinct_needs_duplicates_and_changed_details(self):
         async with self.setup_session() as (session, agent, state, owner, requests, _):
             state.patient.active = patient()
             first = await self.invoke(session, agent)
-            self.assertEqual(first["outcome"], "created")
+            self.assertEqual(first.split(":", 1)[0], "created")
             self.assertNotIn("taskId", first)
-            self.assertNotIn(TASK_ID, json.dumps(first))
+            self.assertNotIn(TASK_ID, first)
+            self.assertIn("Request: Refill requested", first)
+            self.assertIn("Patient: Jane (verified).", first)
             self.assertTrue(state.reporter.record.call_args.kwargs["call_id"])
             self.assertEqual(state.reporter.record.call_args.args[0], "staff_task")
             self.assertEqual(state.reporter.record.call_args.args[1]["taskId"], TASK_ID)
             self.assertEqual(next(iter(owner._deliveries.values())).result()["taskId"], TASK_ID)
             self.assertEqual(
-                (await self.invoke(session, agent))["outcome"], "duplicate"
+                (await self.invoke(session, agent)).split(":", 1)[0], "duplicate"
             )
             for changes in (
                 {"message": "Also requests different medication."},
@@ -157,11 +159,11 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
                 {"urgency": "high_priority"},
             ):
                 self.assertEqual(
-                    (await self.invoke(session, agent, NEED | changes))["outcome"],
+                    (await self.invoke(session, agent, NEED | changes)).split(":", 1)[0],
                     "created",
                 )
             state.patient.active = patient("Alex", "synthetic-2")
-            self.assertEqual((await self.invoke(session, agent))["outcome"], "created")
+            self.assertEqual((await self.invoke(session, agent)).split(":", 1)[0], "created")
             self.assertEqual(len(requests), 5)
             self.assertEqual(len({r["idempotencyKey"] for r in requests}), 5)
             self.assertEqual(requests[0]["patient"]["id"], "synthetic-1")
@@ -182,18 +184,39 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             await self.invoke(
                 session, agent, {"firstName": "Alex", "dob": None}, "resolve_patient"
             )
-            self.assertEqual((await self.invoke(session, agent))["outcome"], "created")
+            self.assertEqual((await self.invoke(session, agent)).split(":", 1)[0], "created")
             self.assertEqual(requests[-1]["patient"], {"name": "Alex"})
 
     async def test_missing_identity_is_allowed_missing_contact_is_not(self):
         from dataclasses import replace
 
         async with self.setup_session() as (session, agent, state, _owner, requests, _):
-            self.assertEqual((await self.invoke(session, agent))["outcome"], "created")
+            self.assertEqual((await self.invoke(session, agent)).split(":", 1)[0], "created")
             self.assertNotIn("patient", requests[0])
             state.call = replace(state.call, caller_phone=None)
-            self.assertEqual((await self.invoke(session, agent))["outcome"], "failed")
+            self.assertEqual((await self.invoke(session, agent)).split(":", 1)[0], "failed")
             self.assertEqual(len(requests), 1)
+
+    async def test_insurance_and_surgical_tasks_are_delivered_and_replayed(self):
+        async with self.setup_session() as (session, agent, state, _, requests, _):
+            for category in ("insurance", "pre_op", "post_op"):
+                with self.subTest(category=category):
+                    need = NEED | {
+                        "category": category,
+                        "summary": f"Synthetic {category} follow-up",
+                        "message": f"Caller approved staff follow-up for {category}.",
+                    }
+                    self.assertEqual(
+                        (await self.invoke(session, agent, need)).split(":", 1)[0], "created"
+                    )
+                    self.assertEqual(requests[-1]["category"], category)
+                    self.assertEqual(
+                        state.reporter.record.call_args.args[1]["category"], category
+                    )
+                    self.assertEqual(
+                        (await self.invoke(session, agent, need)).split(":", 1)[0], "duplicate"
+                    )
+            self.assertEqual(len(requests), 3)
 
     async def test_rejection_and_contract_categories(self):
         async def forbidden(request, payload):
@@ -203,24 +226,22 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             session,
             agent,
             _state,
-            _owner,
+            owner,
             requests,
             _,
         ):
-            self.assertEqual((await self.invoke(session, agent))["outcome"], "failed")
+            self.assertEqual((await self.invoke(session, agent)).split(":", 1)[0], "failed")
             self.assertEqual(len(requests), 1)
-            for category in ("insurance", "pre_op", "post_op"):
+            for category in ("unsupported", "billing"):
                 self.assertEqual(
-                    (await self.invoke(session, agent, NEED | {"category": category}))[
+                    (await owner.submit(**(NEED | {"category": category})))[
                         "outcome"
                     ],
                     "failed",
                 )
             self.assertEqual(len(requests), 1)
             self.assertEqual(
-                (await self.invoke(session, agent, NEED | {"message": "x" * 2501}))[
-                    "outcome"
-                ],
+                (await self.invoke(session, agent, NEED | {"message": "x" * 2501})).split(":", 1)[0],
                 "failed",
             )
             self.assertEqual(len(requests), 1)
@@ -244,7 +265,7 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             requests,
             _,
         ):
-            self.assertEqual((await self.invoke(session, agent))["outcome"], "failed")
+            self.assertEqual((await self.invoke(session, agent)).split(":", 1)[0], "failed")
             self.assertEqual(requests, [])
 
     async def test_timeout_recovers_duplicate_with_identical_payload(self):
@@ -266,7 +287,7 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             _,
         ):
             self.assertEqual(
-                (await self.invoke(session, agent))["outcome"], "duplicate"
+                (await self.invoke(session, agent)).split(":", 1)[0], "duplicate"
             )
             self.assertEqual(requests[0], requests[1])
 
@@ -303,7 +324,9 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
                 _,
             ):
                 result = await self.invoke(session, agent)
-                self.assertEqual(result["outcome"], "ambiguous")
+                self.assertEqual(result.split(":", 1)[0], "ambiguous")
+                self.assertIn("may already have reached staff", result)
+                self.assertIn("do not change details just to retry", result)
                 self.assertEqual(requests[0], requests[1])
                 self.assertNotIn("taskId", result)
 
@@ -329,9 +352,11 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             state.patient.active = patient("Alex", "synthetic-2")
             release.set()
             result = await pending
-            self.assertTrue(result["patientChanged"])
-            self.assertEqual(result["patient"], {"name": "Jane", "verified": True})
-            self.assertEqual(result["outcome"], "created")
+            self.assertIn("previous patient context, not the current patient", result)
+            self.assertIn("Patient: Jane (verified).", result)
+            self.assertIn("Request: Refill requested", result)
+            self.assertNotIn("synthetic-1", result)
+            self.assertEqual(result.split(":", 1)[0], "created")
 
     async def test_cancellation_and_concurrent_duplicates_retain_mutation(self):
         started, release = asyncio.Event(), asyncio.Event()
@@ -362,13 +387,13 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
 
         async with self.setup_session(handler) as (session, agent, _, _, requests, _):
             self.assertEqual(
-                (await self.invoke(session, agent))["outcome"], "ambiguous"
+                (await self.invoke(session, agent)).split(":", 1)[0], "ambiguous"
             )
             self.assertEqual(
-                (await self.invoke(session, agent))["outcome"], "ambiguous"
+                (await self.invoke(session, agent)).split(":", 1)[0], "ambiguous"
             )
             self.assertEqual(
-                (await self.invoke(session, agent))["outcome"], "duplicate"
+                (await self.invoke(session, agent)).split(":", 1)[0], "duplicate"
             )
             self.assertTrue(all(p == requests[0] for p in requests))
 
@@ -379,8 +404,8 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(statuses.pop(0), json=receipt(payload))
 
         async with self.setup_session(handler) as (session, agent, _, _, requests, _):
-            self.assertEqual((await self.invoke(session, agent))["outcome"], "failed")
-            self.assertEqual((await self.invoke(session, agent))["outcome"], "created")
+            self.assertEqual((await self.invoke(session, agent)).split(":", 1)[0], "failed")
+            self.assertEqual((await self.invoke(session, agent)).split(":", 1)[0], "created")
             self.assertEqual(requests[0], requests[1])
 
     async def test_registered_schema_preserves_policy_without_consent_input(self):
@@ -397,6 +422,11 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
                 {"category", "urgency", "summary", "message"},
             )
             self.assertIn("caller-approved", schema["description"])
+            self.assertEqual(
+                set(schema["parameters"]["properties"]["category"]["enum"]),
+                {"appointments", "documentation", "medication", "optical", "referrals", "other",
+                 "insurance", "pre_op", "post_op"},
+            )
             self.assertNotIn("characters", json.dumps(schema))
 
     def test_product_configuration(self):

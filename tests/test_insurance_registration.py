@@ -262,7 +262,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_update_uses_verified_backend_refs_and_receipt_and_no_duplicate(self):
         state, _, owner = self.owner([updated()])
-        state.patient.active = Receipt.model_validate(receipt(preauthRequired=False))
+        state.patient.active = Receipt.model_validate(receipt())
         (await owner.check("Aetna", "medical"))
         result = await owner.update("member-example")
         self.assertEqual(result["outcome"], "updated")
@@ -276,7 +276,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_update_without_decision_does_not_reuse_on_file_or_checked_acceptance(self):
         state, _, owner = self.owner([updated(insuranceDecision=None)])
-        state.patient.active = Receipt.model_validate(receipt(preauthRequired=False))
+        state.patient.active = Receipt.model_validate(receipt())
         await owner.check("Aetna", "medical")
         self.assertEqual((await owner.update("member-example"))["outcome"], "updated")
         self.assertIsNone(accepted_insurance(state))
@@ -292,7 +292,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         ]:
             state, _, owner = self.owner([response])
             state.patient.active = Receipt.model_validate(
-                receipt(preauthRequired=False)
+                receipt()
             )
             (await owner.check("Aetna", "medical"))
             self.assertEqual(
@@ -312,7 +312,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, json=updated())
 
         state, resolver, owner = self.owner([delayed])
-        state.patient.active = Receipt.model_validate(receipt(preauthRequired=False))
+        state.patient.active = Receipt.model_validate(receipt())
         (await owner.check("Aetna", "medical"))
         task = asyncio.create_task(owner.update("member-example"))
         await entered.wait()
@@ -333,7 +333,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, json=updated())
 
         state, _, owner = self.owner([delayed])
-        state.patient.active = Receipt.model_validate(receipt(preauthRequired=False))
+        state.patient.active = Receipt.model_validate(receipt())
         (await owner.check("Aetna", "medical"))
         task = asyncio.create_task(owner.update("member-example"))
         await entered.wait()
@@ -362,7 +362,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                 updated(),
             ]
         )
-        state.patient.active = Receipt.model_validate(receipt(preauthRequired=False))
+        state.patient.active = Receipt.model_validate(receipt())
         for plan, coverage in [
             ("Aetna", "medical"),
             ("VSP", "routine_vision"),
@@ -480,11 +480,11 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         async def reload(request):
             entered.set()
             await finish.wait()
-            return httpx.Response(200, json=receipt(preauthRequired=False))
+            return httpx.Response(200, json=receipt())
 
         state, resolver, owner = self.owner([reload, updated()])
         state.patient.active = Receipt.model_validate(
-            receipt(preauthRequired=False, appointmentsStatus="error")
+            receipt(appointmentsStatus="error")
         )
         (await owner.check("Aetna", "medical"))
         reading = asyncio.create_task(resolver.resolve("Jane", "01/02/1980"))

@@ -60,13 +60,8 @@ class Receipt(Record):
     dob: Text
     phone: str | None = None
     insuranceCarrier: str | None = None
-    insuranceCarrierId: str | None = None
-    allowedProviders: list[str] = Field(default_factory=list)
-    routingAmbiguous: bool = False
     insPlanId: str | None = None
     respPartyId: str | None = None
-    routing: str | None = None
-    preauthRequired: bool = False
     appointmentsStatus: Literal["found", "none", "error"]
     appointments: list[Appointment]
 

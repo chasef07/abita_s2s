@@ -24,7 +24,6 @@ flowchart TD
     Scheduling <--> State
     Identity --> Reads[PatientMiddleware]
     Insurance --> Writes[RegistrationMiddleware]
-    Insurance --> Rules[Local insurance rules]
     Scheduling --> Calendar[SchedulingHTTP]
     Reads --> Middleware[Authenticated middleware]
     Writes --> Middleware

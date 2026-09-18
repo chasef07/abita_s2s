@@ -44,7 +44,7 @@ class InsuranceStream(llm.LLMStream):
         outputs = [item for item in items[last:] if item.type == "function_call_output"]
         if outputs:
             delta = llm.ChoiceDelta(
-                role="assistant", content=outputs[-1].output if outputs[-1].name in ("add_patient", "resolve_patient", "check_insurance") else json.loads(outputs[-1].output)["answer"]
+                role="assistant", content=outputs[-1].output
             )
         else:
             name, args = json.loads(items[last].text_content)
@@ -138,10 +138,8 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                     ][-1]
                     if name == "check_insurance":
                         self.assertIn("participates", output.output)
-                    elif name in ("add_patient", "resolve_patient"):
-                        self.assertTrue(output.output.startswith(outcome + ": "), output.output)
                     else:
-                        self.assertEqual(json.loads(output.output)["outcome"], outcome)
+                        self.assertTrue(output.output.startswith(outcome + ": "), output.output)
                     self.assertNotIn("new-chart", output.output)
             self.assertEqual(
                 [r[0] for r in requests],

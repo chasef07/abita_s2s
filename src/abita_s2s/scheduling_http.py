@@ -1,10 +1,11 @@
 """Scheduling HTTP contracts. Writes are sent once and uncertainty stays explicit."""
 
 import asyncio
+from datetime import date, datetime
 from typing import Literal
 
 import httpx
-from pydantic import Field, ValidationError, model_validator
+from pydantic import AwareDatetime, Field, ValidationError, field_validator, model_validator
 
 from abita_s2s.config import Config
 from abita_s2s.middleware import Record, Text
@@ -14,10 +15,20 @@ class Slot(Record):
     provider: Text
     time: Text
     datetime: Text
-    bookingToken: str | None = None
+    bookingToken: Text
     columnId: int | str | None = None
     profileId: int | str | None = None
-    duration: int | None = None
+    duration: int | None = Field(default=None, gt=0)
+
+    @field_validator("datetime")
+    @classmethod
+    def validate_datetime(cls, value):
+        if "T" not in value:
+            raise ValueError("Expected a slot date and time")
+        datetime.fromisoformat(value)
+        # Slots use clinic-local ISO timestamps, including a calendar date.
+        date.fromisoformat(value.split("T", 1)[0])
+        return value
 
     @property
     def date(self) -> str:
@@ -45,8 +56,22 @@ class Inventory(Record):
     slots: list[Slot]
     searchedFrom: str | None = None
     searchedThrough: str | None = None
-    bookingTokenExpiresAt: str | None = None
+    bookingTokenExpiresAt: AwareDatetime | None = None
     shouldRetrySameSearch: bool = False
+
+    @field_validator("bookingTokenExpiresAt", mode="before")
+    @classmethod
+    def parse_expiry(cls, value):
+        return datetime.fromisoformat(value) if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def validate_inventory(self):
+        found = self.outcome == "availability_found"
+        if found != bool(self.slots) or (found and (
+            self.status != "success" or self.bookingTokenExpiresAt is None
+        )):
+            raise ValueError("Inconsistent availability result")
+        return self
 
 
 class WriteReceipt(Record):

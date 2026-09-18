@@ -77,7 +77,7 @@ def rescheduled(status="cancelled", appointment_id=888, old_id=77, note=False):
 
 def verified(state, patient_id="chart-jane", visit="medical", **extra):
     state.patient.active = Receipt.model_validate(
-        receipt(patient_id, routing="bach_only", preauthRequired=False, **extra)
+        receipt(patient_id, **extra)
     )
     state.insurance.accepted = AcceptedInsurance(
         state.call.called_office_key,
@@ -159,6 +159,39 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(payload["routing"], "bach_only")
                     self.assertNotIn("preauthRequired", payload)
 
+    async def test_legacy_insurance_fields_do_not_refetch_or_invalidate_slots(self):
+        owner, requests = self.owner([inventory(), booking()])
+        ref = await self.slots(owner)
+        legacy = {
+            "routing": "unused_old_route", "preauthRequired": True,
+            "routingAmbiguous": True, "allowedProviders": [],
+            "insuranceCarrierId": "unused-old-code",
+        }
+        owner.state.patient.active = Receipt.model_validate(
+            owner.state.patient.active.model_dump() | legacy
+            | {"insuranceCarrier": "Old display label changed"}
+        )
+        self.assertTrue(legacy.keys().isdisjoint(owner.state.patient.active.model_dump()))
+        self.assertEqual(await self.slots(owner), ref)
+        self.assertEqual(len(requests), 1)
+        self.assertTrue((await self.book(owner, ref)).startswith("success:"))
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(requests[-1][1]["insurancePlan"], "Test Insurance")
+
+    async def test_insurance_write_guards_invalidate_offered_slots(self):
+        for guard in ("pending", "uncertain", "partial"):
+            with self.subTest(guard=guard):
+                owner, requests = self.owner([inventory()])
+                ref = await self.slots(owner)
+                if guard == "partial":
+                    owner.state.insurance.registrations["chart-jane"] = "partial"
+                elif guard == "pending":
+                    owner.state.insurance.write_pending = True
+                else:
+                    owner.state.insurance.write_uncertain = True
+                self.assertFalse((await self.book(owner, ref)).startswith("success:"))
+                self.assertEqual(len(requests), 1)
+
     async def test_availability_contract_cache_private_tokens_and_office(self):
         state = call_state(None, get_office_profile("sweetwater"))
         owner, requests = self.owner([inventory()], state=state)
@@ -207,6 +240,59 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("Available appointments", failed)
         stopped = await self.tool(owner, "list_available_appointments", visitType="medical", startDate="2026-09-16")
         self.assertIn("do not", stopped.lower())
+        self.assertEqual(len(requests), 3)
+
+    async def test_malformed_availability_is_blocked_and_retry_is_bounded(self):
+        base = inventory()["slots"][0]
+        malformed = [
+            inventory(bookingTokenExpiresAt="invalid"),
+            inventory(bookingTokenExpiresAt="2026-09-14T18:00:00"),
+            inventory(bookingTokenExpiresAt=None),
+            inventory(slots=[]),
+            inventory(outcome="no_availability"),
+            inventory(status="error"),
+            inventory(searchedFrom="2026-09-15bogus"),
+            inventory(searchedThrough="2026-09-29"),
+            inventory(slots=[{**base, "bookingToken": " "}]),
+            inventory(slots=[{**base, "duration": 0}]),
+        ] + [inventory(slots=[{**base, "datetime": value}]) for value in (
+            "2026-09-16bogus", "2026-09-16", "2026-09-16T99:00",
+            "2026-09-31T09:00", "2026-09-29T09:00",
+        )]
+        for response in malformed:
+            with self.subTest(response=response):
+                owner, requests = self.owner([response, response])
+                for expected in ("Retry this search once.", "Do not retry this search;"):
+                    output = await self.tool(owner, "list_available_appointments", visitType="medical")
+                    self.assertTrue(output.startswith("blocked:"), output)
+                    self.assertIn(expected, output)
+                    self.assertNotRegex(output, r" — S[0-9]+")
+                stopped = await self.tool(owner, "list_available_appointments", visitType="medical")
+                self.assertTrue(stopped.startswith("blocked:"), stopped)
+                self.assertEqual(len(requests), 2)
+                self.assertEqual((await self.book(owner, "S1")).split(":", 1)[0], "needs_input")
+                self.assertEqual(len(requests), 2)
+
+    async def test_expired_and_malformed_reads_share_retry_budget(self):
+        expired = inventory(bookingTokenExpiresAt="2026-09-14T16:00:00Z")
+        malformed = inventory(bookingTokenExpiresAt="invalid")
+        for responses in ([expired, malformed], [malformed, expired]):
+            with self.subTest(responses=responses):
+                owner, requests = self.owner(list(responses))
+                for _ in range(3):
+                    output = await self.tool(owner, "list_available_appointments", visitType="medical")
+                    self.assertTrue(output.startswith("blocked:"), output)
+                self.assertEqual(len(requests), 2)
+
+    async def test_valid_retry_can_offer_and_book_after_malformed_inventory(self):
+        owner, requests = self.owner([
+            inventory(bookingTokenExpiresAt="invalid"), inventory(), booking(),
+        ])
+        failed = await self.tool(owner, "list_available_appointments", visitType="medical")
+        self.assertIn("Retry this search once.", failed)
+        ref = await self.slots(owner)
+        self.assertEqual(await self.slots(owner), ref)
+        self.assertTrue((await self.book(owner, ref)).startswith("success:"))
         self.assertEqual(len(requests), 3)
 
     async def test_availability_groups_slots_without_existing_appointments(self):

@@ -30,7 +30,7 @@ class InsuranceStateTests(unittest.TestCase):
 
     def test_patient_revision_and_partial_write_guard(self):
         state = call_state(None)
-        state.patient.active = Receipt.model_validate(receipt(preauthRequired=False))
+        state.patient.active = Receipt.model_validate(receipt())
         state.insurance.accepted = AcceptedInsurance(
             "spring-hill", 0, "chart-jane", None, InsuranceDecision.model_validate(decision("Self Pay"))
         )
