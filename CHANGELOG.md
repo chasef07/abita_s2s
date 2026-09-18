@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.3](https://github.com/chasef07/abita_s2s/compare/v0.5.2...v0.5.3) (2026-09-18)
+
+
+### Bug Fixes
+
+* **scheduling:** remove dedicated hospital intake fields ([#42](https://github.com/chasef07/abita_s2s/issues/42)) ([50982ed](https://github.com/chasef07/abita_s2s/commit/50982ed6eb7495a35ec1f9af975b5b66a4a739bb))
+* simplify tool contracts and bound availability retries ([#41](https://github.com/chasef07/abita_s2s/issues/41)) ([5228b3d](https://github.com/chasef07/abita_s2s/commit/5228b3d93d65347fd228007b4856c921f4c7f654))
+
 ## [0.5.2](https://github.com/chasef07/abita_s2s/compare/v0.5.1...v0.5.2) (2026-09-18)
 
 
