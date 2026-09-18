@@ -224,6 +224,3 @@ Insurance decisions come from middleware. Relay its clarification and staff-revi
 instructions without promising active coverage. A caller saying they have a referral
 or authorization does not verify it. Do not speak internal carrier codes or portal
 plumbing; explain what the caller or office needs to do.
-For a hospital follow-up, collect which hospital and when the hospital visit occurred.
-Pass hospitalName and hospitalDate when booking or rescheduling. A hospital follow-up
-never bypasses insurance, referral, or authorization requirements.

@@ -905,21 +905,22 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 2)
         self.assertEqual([a.id for a in owner.state.patient.active.appointments], [77])
 
-    async def test_hospital_details_reach_backend_and_missing_details_are_explained(self):
-        owner, requests = self.owner([inventory(), {"status": "booked", "appointmentId": 123}])
-        ref = await self.slots(owner)
-        output = await self.tool(owner, "book_appointment", appointmentSlotRef=ref,
-                                 appointmentReason="Hospital follow-up", referringDoctor="none", readBack=True,
-                                 hospitalName="Example Hospital", hospitalDate="September 10")
-        self.assertTrue(output.startswith("success:"), output)
-        self.assertEqual(requests[-1][1]["hospitalName"], "Example Hospital")
-        self.assertEqual(requests[-1][1]["hospitalDate"], "September 10")
-        owner, _ = self.owner([inventory(), {"status": "error", "outcome": "validation",
-                                             "missing": ["hospitalName", "hospitalDate"]}])
-        ref = await self.slots(owner)
-        output = await self.book(owner, ref)
-        self.assertIn("which hospital and when", output)
-        self.assertTrue(output.startswith("needs_input:"), output)
+    async def test_booking_and_rescheduling_need_no_hospital_fields(self):
+        for move in (False, True):
+            with self.subTest(reschedule=move):
+                owner, requests = self.owner([inventory(), rescheduled() if move else booking()])
+                verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+                ref = await self.slots(owner)
+                args = dict(appointmentSlotRef=ref, appointmentReason="Hospital follow-up",
+                            referringDoctor="none", readBack=True)
+                if move:
+                    args["oldAppointmentRef"] = owner.appointments()[0]["appointmentRef"]
+                name = "reschedule_appointment" if move else "book_appointment"
+                output = await self.tool(owner, name, **args)
+                self.assertTrue(output.startswith("success:"), output)
+                self.assertEqual(requests[-1][1]["appointmentReason"], "Hospital follow-up")
+                self.assertNotIn("hospitalName", requests[-1][1])
+                self.assertNotIn("hospitalDate", requests[-1][1])
 
     async def test_reschedule_retries_only_after_definite_failure_and_fresh_confirmation(self):
         owner, requests = self.owner([
@@ -1066,6 +1067,8 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         for tool in owner.tools:
             schema = build_strict_openai_schema(tool)
             serialized = json.dumps(schema)
+            self.assertNotIn("hospitalName", serialized)
+            self.assertNotIn("hospitalDate", serialized)
             for private in (
                 "patientId",
                 "bookingToken",
