@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 import httpx
 from insurance_fixtures import decision
 from test_patient_resolution import CONFIG, call_state, receipt
-from test_insurance_registration import registration
+from test_insurance_registration import created, registration, updated
 
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
@@ -55,6 +55,8 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
             httpx.Response(503), httpx.Response(200, json={"outcome": "accepted"}),
             httpx.Response(200, json=decision(office="hollywood")),
             httpx.Response(200, json=decision(coverage="routine_vision")),
+            httpx.Response(200, json=decision(canonicalPlan="", canSchedule=False)),
+            httpx.Response(200, json=decision(participation="not_accepted")),
             httpx.Response(200, json=decision(requirements=[dict(kind="prior_authorization", verification="verified")])),
         ):
             with self.subTest(response=response.status_code):
@@ -63,24 +65,37 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["outcome"], "unavailable")
                 self.assertIsNone(accepted_insurance(state))
 
-    async def test_missing_carrier_mapping_never_sends_registration(self):
-        paths = []
-        def handler(request):
-            paths.append(request.url.path)
-            return httpx.Response(200, json=decision("United Golden Rule", carrierCode="GOL05", canRegister=False, canSchedule=False, outcome="accepted"))
-        state, owner = self.owner(handler)
-        await owner.check("United Golden Rule", "medical")
-        result = await owner.add(registration())
-        self.assertEqual(result["outcome"], "needs_staff_task")
-        self.assertIn("billing setup", result["answer"])
-        self.assertEqual(paths, ["/api/insurance/decision"])
-        state.patient.active = Receipt.model_validate(receipt())
-        await owner.check("United Golden Rule", "medical")
-        result = await owner.update("member-example")
-        self.assertEqual(result["outcome"], "needs_staff_task")
-        self.assertIn("billing setup", result["answer"])
-        self.assertEqual(paths, ["/api/insurance/decision", "/api/insurance/decision"])
-        self.assertFalse(insurance_ready(state, "medical"))
+    async def test_accepted_plan_can_register_and_update_while_scheduling_is_blocked(self):
+        for operation in ("registration", "update"):
+            with self.subTest(operation=operation):
+                paths = []
+                d = decision(
+                    "Aetna HMO", outcome="needs_staff_task", canSchedule=False,
+                    requirements=[dict(kind="prior_authorization", verification="unverified")],
+                    answer="blocked: This plan requires prior authorization before scheduling.",
+                )
+
+                def handler(request):
+                    paths.append(request.url.path)
+                    if request.url.path == "/api/insurance/decision":
+                        return httpx.Response(200, json=d)
+                    result = (created(insuranceDecision=d) if operation == "registration"
+                              else updated(newInsurance="Aetna HMO", insuranceDecision=d))
+                    return httpx.Response(200, json=result)
+
+                state, owner = self.owner(handler)
+                if operation == "update":
+                    state.patient.active = Receipt.model_validate(receipt()).model_copy(
+                        update={"insPlanId": "plan-1", "respPartyId": "party-1"}
+                    )
+                await owner.check("Aetna HMO", "medical")
+                self.assertIsNotNone(accepted_insurance(state))
+                result = (await owner.add(registration()) if operation == "registration"
+                          else await owner.update("member-example"))
+                self.assertEqual(result["outcome"], "created" if operation == "registration" else "updated")
+                self.assertFalse(insurance_ready(state, "medical"))
+                self.assertEqual(paths, ["/api/insurance/decision", "/api/add-patient" if operation == "registration"
+                                         else "/api/patient/update-insurance"])
 
     async def test_patient_switch_and_out_of_order_checks_cannot_restore_old_acceptance(self):
         entered, finish = asyncio.Event(), asyncio.Event()

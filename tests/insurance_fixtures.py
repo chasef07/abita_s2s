@@ -4,7 +4,7 @@ def decision(plan="Aetna", coverage="medical", office="spring_hill", **changes):
     return dict(outcome="accepted", participation="accepted", canonicalPlan=plan,
                 carrierCode="", coverageType=coverage, officeId=office, routing="all_three",
                 allowedProviders=["Dr. Example"], requirements=[], eligibility="not_checked",
-                canRegister=True, canSchedule=True, selfPay=plan == "Self Pay",
+                canSchedule=True, selfPay=plan == "Self Pay",
                 answer="success: This office participates; active coverage is not verified.") | changes
 
 
@@ -16,5 +16,5 @@ def check_response(request):
     rejected = plan not in ("Aetna", "VSP", "Self Pay")
     return httpx.Response(200, json=decision(plan, body["coverageType"], **(
         dict(outcome="needs_clarification", participation="unknown", canonicalPlan="",
-             canRegister=False, canSchedule=False, answer="needs_input: Ask for the exact plan.")
+             canSchedule=False, answer="needs_input: Ask for the exact plan.")
         if rejected else {})))

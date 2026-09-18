@@ -149,9 +149,7 @@ class InsuranceRegistration:
                 "needs_insurance",
                 "needs_input: Check accepted coverage for this patient and the intended medical or routine vision visit before registration.",
             )
-        if not checked.decision.canRegister:
-            if checked.decision.outcome == "accepted":
-                return reply("needs_staff_task", "blocked: This plan is accepted, but staff must verify its billing setup before creating or updating the chart.")
+        if checked.decision.participation != "accepted":
             return reply(checked.decision.outcome, checked.decision.answer)
         self_pay = checked.decision.selfPay
         phone = r.phone or (
@@ -299,9 +297,7 @@ class InsuranceRegistration:
                 "needs_insurance",
                 "Check accepted coverage for this patient and visit type before changing insurance.",
             )
-        if not checked.decision.canRegister:
-            if checked.decision.outcome == "accepted":
-                return reply("needs_staff_task", "blocked: This plan is accepted, but staff must verify its billing setup before creating or updating the chart.")
+        if checked.decision.participation != "accepted":
             return reply(checked.decision.outcome, checked.decision.answer)
         member_id = (
             "self pay" if checked.decision.selfPay else member_id.strip()
