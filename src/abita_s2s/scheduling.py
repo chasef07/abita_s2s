@@ -184,7 +184,7 @@ class Scheduling:
             if patient and patient.appointmentsStatus == "none":
                 return "\nNo upcoming appointments."
             return ""
-        lines = ["Existing appointments (Eastern time; references are private):"]
+        lines = ["Existing appointments:"]
         for appointment in appointments:
             lines.append(
                 f"{appointment['appointmentRef']}: {appointment['date']} at {appointment['time']}"
@@ -238,12 +238,21 @@ class Scheduling:
                 else "Do not retry this search; ask staff for help."
             )
         if slots := result.get("slots"):
-            lines.append("Available appointments (Eastern time; references are private):")
-            lines.extend(
-                f"{slot['appointmentSlotRef']}: {slot['date']} at {slot['time']} — {slot['provider']}"
-                for slot in slots
-            )
-        return "\n".join(lines) + self.appointments_text()
+            groups = {}
+            for slot in slots:
+                groups.setdefault((slot['date'], slot['provider']), []).append(slot)
+            for (day, provider), openings in groups.items():
+                calendar_day = date.fromisoformat(day)
+                lines.extend([
+                    "",
+                    f"{calendar_day:%A, %B} {calendar_day.day}, {calendar_day.year}",
+                    provider,
+                ])
+                lines.extend(
+                    f"{slot['time']} — {slot['appointmentSlotRef']}"
+                    for slot in openings
+                )
+        return "\n".join(lines)
 
     async def availability(self, visit, start=None, office=None):
         if self._closed:
