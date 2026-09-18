@@ -64,8 +64,6 @@ class WriteReceipt(Record):
     appointmentTypeName: str | None = None
     missing: list[
         Literal[
-            "hospitalName",
-            "hospitalDate",
             "patientStatus",
             "dob",
             "routing",
