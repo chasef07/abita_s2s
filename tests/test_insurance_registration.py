@@ -281,7 +281,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await owner.update("member-example"))["outcome"], "updated")
         self.assertIsNone(accepted_insurance(state))
         self.assertIsNone(state.patient.active.insuranceDecision)
-        self.assertFalse(insurance_ready(state, "medical"))
+        self.assertTrue(insurance_ready(state, "medical"))
 
     async def test_failed_or_mismatched_update_blocks_further_writes(self):
         for response in [

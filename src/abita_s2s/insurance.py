@@ -86,8 +86,6 @@ class InsuranceRegistration:
         patient = self.state.patient
         revision, active, absence = patient.revision, patient.active, patient.absence
         office = self.state.call.called_office_key
-        if active:
-            self.state.insurance.checked_patients.add((office, active.patientId))
         decision = await self._middleware.check(
             office, plan.strip(), coverage_type, active.dob if active else ""
         )

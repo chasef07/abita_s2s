@@ -132,6 +132,13 @@ configured read-only office knowledge endpoint. [Tests](tests/) exercise domain
 behavior, HTTP contracts, and tool execution through `AgentSession` with offline
 substitutes. They do not establish live model, audio, SIP, or provider behavior.
 
+Existing-patient scheduling uses chart insurance in middleware for the requested
+visit type. The agent does not require a separate `check_insurance` call or send
+an insurance-plan override for these patients. New registration still requires
+accepted insurance; incomplete registration and pending or uncertain insurance
+writes block scheduling. Middleware remains responsible for provider eligibility
+and insurance restrictions on availability and booking.
+
 After Product closeout, calls with caller messages are evaluated through LiveKit
 Inference using `openai/gpt-4o-mini`. The four built-in judges receive full text history,
 including instructions and tool results; no separate judge API key is required

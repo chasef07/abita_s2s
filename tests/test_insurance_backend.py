@@ -45,7 +45,7 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(checked.decision.canonicalPlan, "Backend Product")
         self.assertEqual(checked.decision.carrierCode, "SYNTHETIC")
         self.assertEqual(checked.decision.requirements[0].verification, "unverified")
-        self.assertFalse(insurance_ready(state, "medical"))
+        self.assertFalse(checked.decision.canSchedule)
         self.assertIn("PCP referral", result["answer"])
         self.assertEqual(requests[0]["plan"], "Caller's exact unfamiliar wording")
         self.assertEqual(requests[0]["dob"], state.patient.active.dob)
@@ -65,7 +65,7 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["outcome"], "unavailable")
                 self.assertIsNone(accepted_insurance(state))
 
-    async def test_accepted_plan_can_register_and_update_while_scheduling_is_blocked(self):
+    async def test_accepted_plan_can_register_and_update_without_clearing_requirements(self):
         for operation in ("registration", "update"):
             with self.subTest(operation=operation):
                 paths = []
@@ -93,7 +93,8 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
                 result = (await owner.add(registration()) if operation == "registration"
                           else await owner.update("member-example"))
                 self.assertEqual(result["outcome"], "created" if operation == "registration" else "updated")
-                self.assertFalse(insurance_ready(state, "medical"))
+                self.assertFalse(state.patient.active.insuranceDecision.canSchedule)
+                self.assertEqual(insurance_ready(state, "medical"), operation == "update")
                 self.assertEqual(paths, ["/api/insurance/decision", "/api/add-patient" if operation == "registration"
                                          else "/api/patient/update-insurance"])
 

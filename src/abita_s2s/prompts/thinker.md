@@ -118,6 +118,9 @@ Do not read names from phone lookup records or assume the caller is the patient.
 
 ### Insurance
 
+For existing patients with unchanged insurance, proceed from resolution to
+availability without calling `check_insurance`.
+
 - `check_insurance`: check office acceptance using the caller's plan name and
   visit type, before new registration or answering acceptance questions. Answer
   yes or no only from a successful result. If staff review is required, obtain
