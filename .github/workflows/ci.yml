@@ -13,10 +13,10 @@ permissions:
   contents: read
 jobs:
   agent-contract:
-    uses: Data-Buddies-Solutions/amd_middleware/.github/workflows/agent-contract.yml@5fcb9e910a5cea9695e16d93abc0a61b00f4e2f2
+    uses: Data-Buddies-Solutions/amd_middleware/.github/workflows/agent-contract.yml@59b30b9263703773f67b781c23bbbf54b3290af1
     with:
       agent_ref: ${{ inputs.release_sha || github.sha }}
-      middleware_ref: 5fcb9e910a5cea9695e16d93abc0a61b00f4e2f2
+      middleware_ref: 59b30b9263703773f67b781c23bbbf54b3290af1
 
   verify:
     runs-on: ubuntu-latest
