@@ -133,7 +133,27 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             **extra,
         )
 
-    async def test_search_and_booking_use_one_authoritative_insurance_decision(self):
+    async def test_existing_vision_patient_schedules_without_acceptance_check(self):
+        state = call_state(None, get_office_profile("north-miami-beach-optical"))
+        state.patient.active = Receipt.model_validate(receipt(
+            insuranceDecision=decision("Chart vision plan", "medical", "north_miami_beach_optical", canSchedule=False),
+        ))
+        owner, requests = self.owner([inventory(), booking()], state=state)
+        result = await self.tool(owner, "list_available_appointments", visitType="routine_vision")
+        self.assertTrue(result.startswith("success:"), result)
+        ref = re.search(r" — (S[0-9]+)$", result, re.MULTILINE)[1]
+        self.assertTrue((await self.book(owner, ref)).startswith("success:"))
+        self.assertEqual([path for path, _, _ in requests], [
+            "/api/scheduler/slots", "/api/appointment/book",
+        ])
+        for _, payload, _ in requests:
+            self.assertEqual(payload["patientId"], "chart-jane")
+            self.assertNotIn("insurancePlan", payload)
+            self.assertNotIn("routing", payload)
+        self.assertEqual(requests[0][1]["coverageType"], "routine_vision")
+        self.assertEqual(requests[1][1]["visitCategory"], "routine_vision")
+
+    async def test_existing_patient_uses_backend_chart_despite_local_insurance_checks(self):
         for use_check in (False, True):
             with self.subTest(call_local_check=use_check):
                 state = call_state(None)
@@ -155,8 +175,8 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 await self.book(owner, ref)
                 self.assertEqual(len(requests), 2)
                 for _, payload, _ in requests:
-                    self.assertEqual(payload["insurancePlan"], "Canonical Product")
-                    self.assertEqual(payload["routing"], "bach_only")
+                    self.assertNotIn("insurancePlan", payload)
+                    self.assertNotIn("routing", payload)
                     self.assertNotIn("preauthRequired", payload)
 
     async def test_legacy_insurance_fields_do_not_refetch_or_invalidate_slots(self):
@@ -176,7 +196,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 1)
         self.assertTrue((await self.book(owner, ref)).startswith("success:"))
         self.assertEqual(len(requests), 2)
-        self.assertEqual(requests[-1][1]["insurancePlan"], "Test Insurance")
+        self.assertNotIn("insurancePlan", requests[-1][1])
 
     async def test_insurance_write_guards_invalidate_offered_slots(self):
         for guard in ("pending", "uncertain", "partial"):
@@ -212,12 +232,10 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 "office": "+19542872010",
                 "patientId": "chart-jane",
                 "coverageType": "medical",
-                "insurancePlan": "Test Insurance",
                 "startDate": "2026-09-15",
                 "rangeDays": 14,
                 "visitType": "medical",
                 "dob": "01/02/1980",
-                "routing": "all_three",
             },
         )
         self.assertEqual(requests[0][2]["authorization"], "test-auth")
@@ -352,24 +370,17 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_prerequisites_and_office_care(self):
         owner, requests = self.owner([])
-        for change in ("partial", "uncertain", "preauth", "acceptance", "patient"):
+        for change in ("partial", "uncertain", "pending", "patient"):
             verified(owner.state)
             owner.state.insurance.registrations.clear()
             owner.state.insurance.write_uncertain = False
+            owner.state.insurance.write_pending = False
             if change == "partial":
                 owner.state.insurance.registrations["chart-jane"] = "partial"
             elif change == "uncertain":
                 owner.state.insurance.write_uncertain = True
-            elif change == "preauth":
-                owner.state.insurance.accepted = None
-                owner.state.patient.active = owner.state.patient.active.model_copy(
-                    update={"insuranceDecision": None}
-                )
-            elif change == "acceptance":
-                owner.state.insurance.accepted = None
-                owner.state.patient.active = owner.state.patient.active.model_copy(
-                    update={"insuranceCarrier": None, "insuranceDecision": None}
-                )
+            elif change == "pending":
+                owner.state.insurance.write_pending = True
             else:
                 owner.state.patient.active = None
             self.assertEqual(
@@ -616,16 +627,46 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(result.startswith("blocked:"), result)
                 self.assertEqual(len(requests), 1)
 
-    async def test_same_patient_coverage_correction_invalidates_offered_slots(self):
+    async def test_completed_insurance_update_invalidates_offered_slots(self):
         owner, requests = self.owner([inventory()])
         ref = await self.slots(owner)
-        # Even a new acceptance with identical values represents a fresh check.
-        previous = owner.state.insurance.accepted
-        verified(owner.state)
-        self.assertEqual(previous, owner.state.insurance.accepted)
-        self.assertIsNot(previous, owner.state.insurance.accepted)
+        resolver = PatientResolver(owner.state, AsyncMock())
+        self.addAsyncCleanup(resolver.aclose)
+        active = owner.state.patient.active
+        updated = active.model_copy(update={"insuranceCarrier": "Updated chart plan"})
+        self.assertTrue(resolver.refresh_insurance(active, updated, owner.state.insurance.accepted))
         self.assertTrue((await self.book(owner, ref)).startswith("needs_input:"))
         self.assertEqual(len(requests), 1)
+
+    async def test_new_registration_requires_acceptance_and_sends_accepted_plan(self):
+        owner, requests = self.owner([inventory(), booking()])
+        owner.state.insurance.registrations["chart-jane"] = "created"
+        checked = owner.state.insurance.accepted
+        owner.state.insurance.accepted = None
+        self.assertEqual((await owner.availability("medical"))["outcome"], "needs_input")
+        self.assertEqual(requests, [])
+        owner.state.insurance.accepted = checked
+        ref = await self.slots(owner)
+        self.assertTrue((await self.book(owner, ref)).startswith("success:"))
+        for _, payload, _ in requests:
+            self.assertEqual(payload["insurancePlan"], "Test Insurance")
+        self.assertEqual(requests[-1][1]["patientStatus"], "new")
+
+    async def test_existing_patient_backend_rejection_is_not_bypassed(self):
+        async def rejected(_):
+            return httpx.Response(400, json={"error": "Staff must verify chart insurance"})
+        for phase in ("search", "book"):
+            with self.subTest(phase=phase):
+                owner, requests = self.owner([rejected] if phase == "search" else [inventory(), rejected])
+                owner.state.insurance.accepted = None
+                if phase == "search":
+                    result = await self.tool(owner, "list_available_appointments", visitType="medical")
+                else:
+                    ref = await self.slots(owner)
+                    result = await self.book(owner, ref)
+                self.assertTrue(result.startswith("blocked:"), result)
+                self.assertEqual(len(requests), 1 if phase == "search" else 2)
+                self.assertNotIn("insurancePlan", requests[-1][1])
 
     async def test_chained_moves_preserve_receipts_and_reject_obsolete_booking_replay(self):
         later = inventory()

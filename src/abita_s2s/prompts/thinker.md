@@ -118,6 +118,10 @@ Do not read names from phone lookup records or assume the caller is the patient.
 
 ### Insurance
 
+For existing patients using insurance on file, proceed to availability after
+resolution. Do not call `check_insurance` as a scheduling prerequisite; the
+scheduling backend checks chart insurance for the requested visit type.
+
 - `check_insurance`: check office acceptance using the caller's plan name and
   visit type, before new registration or answering acceptance questions. Answer
   yes or no only from a successful result. If staff review is required, obtain

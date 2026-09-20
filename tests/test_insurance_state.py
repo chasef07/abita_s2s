@@ -34,6 +34,7 @@ class InsuranceStateTests(unittest.TestCase):
         state.insurance.accepted = AcceptedInsurance(
             "spring-hill", 0, "chart-jane", None, InsuranceDecision.model_validate(decision("Self Pay"))
         )
+        state.insurance.registrations["chart-jane"] = "created"
         self.assertTrue(insurance_ready(state, "medical"))
         from dataclasses import replace
         original = state.insurance.accepted

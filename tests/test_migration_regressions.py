@@ -18,7 +18,7 @@ from abita_s2s.config import load_config
 from abita_s2s.handoff import AdmissionRejected
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
-from abita_s2s.insurance_state import AcceptedInsurance, insurance_ready
+from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.middleware import PatientMiddleware
 from abita_s2s.scheduling import Scheduling
 from abita_s2s.scheduling_http import SchedulingHTTP
@@ -154,10 +154,10 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
                     (await owner.availability("medical"))["outcome"], "found"
                 )
                 self.assertEqual(len(requests), 3)
-                # Switching away and back cannot revive Jane's rejected/stale check.
+                # Participation questions do not replace chart insurance for scheduling.
                 await resolver.resolve("Jane", "01/02/1980")
                 self.assertEqual(owner.state.patient.active.patientId, "chart-jane")
-                self.assertFalse(insurance_ready(owner.state, "medical"))
+                self.assertTrue(insurance_ready(owner.state, "medical"))
 
     async def test_absent_patients_check_does_not_block_returning_patient(self):
         state = call_state(None)
@@ -180,58 +180,31 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await owner.availability("medical"))["outcome"], "found")
             self.assertEqual(responses, [])
 
-    async def test_corrected_plan_blocks_cached_slots_but_not_exact_cancellation(self):
+    async def test_participation_question_does_not_invalidate_chart_slots(self):
         owner, resolver, requests = await self.resolved_owner(
-            [
-                inventory(),
-                {"status": "cancelled"},
-            ],
-            appointmentsStatus="found",
-            appointments=[test_scheduling.appointment()],
+            [inventory(), test_scheduling.booking()],
         )
         available = await owner.availability("medical")
         slot = available["slots"][0]["appointmentSlotRef"]
-        old_ref = owner.appointments()[0]["appointmentRef"]
         insurance = InsuranceRegistration(owner.state, resolver, AsyncMock(check=AsyncMock(return_value=None)))
-        await insurance.check("Unknown corrected plan", "medical")
+        await insurance.check("Unrelated plan question", "medical")
         self.assertIsNone(owner.state.insurance.accepted)
-        self.assertFalse(insurance_ready(owner.state, "medical"))
-        self.assertEqual((await self.book(owner, slot)).split(":", 1)[0], "needs_input")
-        result = await self.tool(
-            owner,
-            "reschedule_appointment",
-            oldAppointmentRef=old_ref,
-            appointmentSlotRef=slot,
-            appointmentReason="Annual medical follow up",
-            referringDoctor="none",
-            readBack=True,
-        )
-        self.assertEqual(result.split(":", 1)[0], "needs_input")
-        self.assertEqual(
-            (await owner.availability("medical"))["outcome"], "needs_input"
-        )
-        # Re-resolving the chart cannot silently restore a rejected on-file plan.
-        await resolver.resolve("Jane", "01/02/1980")
-        self.assertFalse(insurance_ready(owner.state, "medical"))
-        self.assertEqual(len(requests), 2)
-        result = await self.tool(owner, "cancel_appointment", appointmentRef=old_ref, readBack=True)
-        self.assertEqual(result.split(":", 1)[0], 'success')
+        self.assertTrue(insurance_ready(owner.state, "medical"))
+        self.assertEqual((await self.book(owner, slot)).split(":", 1)[0], "success")
         self.assertEqual(len(requests), 3)
 
-    async def test_on_file_guard_preserves_scheduling_fences(self):
+    async def test_existing_chart_checks_are_backend_owned_but_writes_still_block(self):
         owner, resolver, requests = await self.resolved_owner([])
         state = owner.state
         active = state.patient.active
-        self.assertTrue(insurance_ready(state, "medical"))
-        self.assertFalse(insurance_ready(state, "routine_vision"))
         for changed in (
             None,
             InsuranceDecision.model_validate(decision(canSchedule=False)),
             InsuranceDecision.model_validate(decision(coverage="routine_vision")),
         ):
             state.patient.active = active.model_copy(update={"insuranceDecision": changed})
-            self.assertFalse(insurance_ready(state, "medical"))
-        state.patient.active = active
+            self.assertTrue(insurance_ready(state, "medical"))
+            self.assertTrue(insurance_ready(state, "routine_vision"))
         for field in ("write_pending", "write_uncertain"):
             setattr(state.insurance, field, True)
             self.assertFalse(insurance_ready(state, "medical"))
@@ -239,28 +212,6 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
         for status in ("created", "partial"):
             state.insurance.registrations[active.patientId] = status
             self.assertFalse(insurance_ready(state, "medical"))
-        state.insurance.registrations.clear()
-        checked = AcceptedInsurance(
-            state.call.called_office_key,
-            state.patient.revision,
-            active.patientId,
-            None,
-            InsuranceDecision.model_validate(decision("Self Pay")),
-        )
-        for change in (
-            {"office_key": "crystal-river"},
-            {"patient_revision": state.patient.revision - 1},
-            {"decision": InsuranceDecision.model_validate(decision(coverage="routine_vision"))},
-        ):
-            state.insurance.accepted = replace(checked, **change)
-            self.assertFalse(insurance_ready(state, "medical"))
-        state.insurance.accepted = None
-        insurance = InsuranceRegistration(state, resolver, AsyncMock(check=AsyncMock(side_effect=[None, InsuranceDecision.model_validate(decision("Self Pay"))])))
-        await insurance.check("Unknown corrected plan", "medical")
-        self.assertFalse(insurance_ready(state, "medical"))
-        await insurance.check("Self Pay", "medical")
-        self.assertTrue(insurance_ready(state, "medical"))
-        self.assertFalse(insurance_ready(state, "routine_vision"))
         self.assertEqual(len(requests), 1)
 
     async def test_optional_practice_does_not_block_staff_tasks_or_direct_office(self):

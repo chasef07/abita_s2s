@@ -80,7 +80,9 @@ class AbitaAgent(Agent):
     ) -> str:
         """Check office participation for the caller's plan and triaged visit type.
 
-        Use before registration or a requested insurance change. Follow clarification
+        Use before registration, a requested insurance change, or an acceptance question.
+        Do not use as a scheduling prerequisite for existing patients using chart insurance.
+        Follow clarification
         or staff-review instructions; acceptance does not establish active benefits.
         """
         if self._insurance is None or self._insurance.state is not context.userdata:

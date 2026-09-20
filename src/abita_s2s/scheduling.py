@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 from livekit.agents import RunContext, function_tool
 
-from abita_s2s.insurance_state import AcceptedInsurance, insurance_ready, scheduling_insurance
+from abita_s2s.insurance_state import AcceptedInsurance, insurance_ready, registration_insurance
 from abita_s2s.middleware import Appointment, Receipt
 from abita_s2s.offices import get_office_profile
 from abita_s2s.scheduling_http import (
@@ -44,7 +44,6 @@ class SchedulingContext:
     patient_revision: int
     patient_id: str | None
     dob: str | None
-    insurance_checked: bool
     accepted_insurance: AcceptedInsurance | None
     acceptance_id: int
     insurance_write_pending: bool
@@ -131,17 +130,17 @@ class Scheduling:
     def _context(self) -> SchedulingContext:
         p = self.state.patient.active
         insurance = self.state.insurance
+        registration = insurance.registrations.get(p.patientId) if p else None
+        accepted = insurance.accepted if registration is not None else None
         return SchedulingContext(
             patient_revision=self.state.patient.revision,
             patient_id=p.patientId if p else None,
             dob=p.dob if p else None,
-            insurance_checked=bool(p and (self.state.call.called_office_key, p.patientId)
-                                   in insurance.checked_patients),
-            accepted_insurance=insurance.accepted,
-            acceptance_id=id(insurance.accepted),
+            accepted_insurance=accepted,
+            acceptance_id=id(accepted),
             insurance_write_pending=insurance.write_pending,
             insurance_write_uncertain=insurance.write_uncertain,
-            registration=insurance.registrations.get(p.patientId) if p else None,
+            registration=registration,
         )
 
     def _reference(self, appointment):
@@ -209,7 +208,7 @@ class Scheduling:
     ) -> str:
         """Find eligible slots for the active patient in a 14-day Eastern-time window.
 
-        Requires completed patient resolution/registration and insurance readiness.
+        Requires patient resolution or completed registration and no unfinished insurance write.
 
         Args:
             visitType: medical or routine_vision; match the existing visit when rescheduling.
@@ -277,7 +276,7 @@ class Scheduling:
             self._invalidate()
             return reply(
                 "needs_input",
-                "needs_input: Verify or finish patient registration and resolve insurance acceptance, routing and authorization requirements before scheduling.",
+                "needs_input: Verify the patient, finish new-patient registration, or resolve the pending or uncertain insurance update before scheduling.",
             )
         if self._write_task and not self._write_task.done():
             return reply(
@@ -285,21 +284,18 @@ class Scheduling:
                 "blocked: An appointment change is in progress. Wait for its result.",
             )
         p = self.state.patient.active
-        decision = scheduling_insurance(self.state, visit)
-        assert decision is not None  # validated above, with no intervening await
-        routing = decision.routing
+        decision = registration_insurance(self.state, visit)
         body = {
             "office": get_office_profile(selected).trunk_numbers[0],
             "startDate": first.isoformat(),
             "rangeDays": 14,
             "patientId": p.patientId,
             "coverageType": visit,
-            "insurancePlan": decision.canonicalPlan,
             "visitType": visit,
             "dob": p.dob,
         }
-        if routing:
-            body["routing"] = routing
+        if decision:
+            body["insurancePlan"] = decision.canonicalPlan
         key = AvailabilitySearch(context, selected, visit, first, today)
         if self._search_key != key:
             self._invalidate()
@@ -610,7 +606,7 @@ class Scheduling:
             self._invalidate()
             return reply(
                 "needs_input",
-                "needs_input: Resolve registration, insurance acceptance and authorization requirements before booking.",
+                "needs_input: Finish new-patient registration or resolve the pending or uncertain insurance update before booking.",
             )
         if old and old.visitType is None:
             return reply(
@@ -646,24 +642,20 @@ class Scheduling:
             if p.patientId in self.state.insurance.registrations
             else "established"
         )
-        decision = scheduling_insurance(self.state, offered.visit)
-        if decision is None:
-            return reply("needs_input", "needs_input: Recheck insurance before booking.")
+        decision = registration_insurance(self.state, offered.visit)
         body = {
             "patientId": p.patientId,
             "patientName": p.name,
             "dob": p.dob,
             "bookingToken": slot.bookingToken,
-            "insurancePlan": decision.canonicalPlan,
             "visitCategory": offered.visit,
             "patientStatus": status,
             "appointmentReason": reason.strip(),
             "visitReason": reason.strip(),
             "referringDoctor": referrer.strip(),
         }
-        routing = decision.routing
-        if routing:
-            body["routing"] = routing
+        if decision:
+            body["insurancePlan"] = decision.canonicalPlan
         if old:
             if not old.rescheduleToken:
                 self.state.patient.active = p.model_copy(update={"appointmentsStatus": "error"})

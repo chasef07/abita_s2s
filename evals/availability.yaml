@@ -26,6 +26,8 @@ scenarios:
       for a transfer or staff message.
     agent_expectations: >
       Resolves Maya using the existing-patient flow without restarting intake.
+      Does not call check_insurance or reconfirm unchanged insurance as a
+      prerequisite to availability; middleware checks the chart.
       Uses the known visit reason and on-file insurance, then calls
       list_available_appointments with medical and tomorrow as the default start.
       Does not require a date preference after the caller asks for soonest.
