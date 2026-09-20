@@ -189,6 +189,7 @@ class Scheduling:
         self._slots.clear()
         self._cache = None
         self._search_key = None
+        self._search = None
 
     def _office(self, requested):
         called = self.state.call.called_office_key
@@ -325,7 +326,6 @@ class Scheduling:
             if pending.waiters == 0 and not pending.task.done():
                 pending.task.cancel()
                 if self._search is pending:
-                    self._search = None
                     self._invalidate()
 
     async def _load(self, body, key, generation):

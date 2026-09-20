@@ -82,8 +82,19 @@ class CallControl(EndCallTool):
     async def _transfer(self, ctx):
         # Includes announcement and admission, so teardown is bounded even if
         # playout never completes. HTTP/SIP deadlines fit within this budget.
-        async with asyncio.timeout(40):
-            return await self._perform_transfer(ctx)
+        deadline = asyncio.timeout(40)
+        try:
+            async with deadline:
+                return await self._perform_transfer(ctx)
+        except TimeoutError:
+            if not deadline.expired():
+                raise
+            # Cancellation already fenced retries according to the active phase.
+            logger.warning("Transfer deadline expired status=%s", self.status)
+            if self.status == "ambiguous":
+                return "ambiguous: Transfer may be in progress. Do not retry or end the call."
+            retry = " You may try once more." if self.status == "retryable" else " Do not retry."
+            return "failed: No SIP transfer was sent." + retry
 
     async def _perform_transfer(self, ctx):
         if os.environ.get("LIVEKIT_AGENT_DEPLOYMENT", "").strip():
