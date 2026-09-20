@@ -10,7 +10,7 @@ class OfficeProfile:
     display_name: str
     # First entry is the canonical middleware office phone; the rest are SIP aliases.
     trunk_numbers: tuple[str, ...]
-    greeting: str
+    greeting_name: str
     staff_tasks_enabled: bool = True
     transfer_phone: str | None = None
 
@@ -19,7 +19,7 @@ SPRING_HILL = OfficeProfile(
     key="spring-hill",
     display_name="Abita Eye Group",
     trunk_numbers=("+17275919997", "+18135484830"),
-    greeting="Thank you for calling Abita Eye Group. This is Sofia. How can I help you today?",
+    greeting_name="Abita Eye Group",
 )
 
 
@@ -31,13 +31,13 @@ OFFICES = (
         staff_tasks_enabled=False,
         display_name="Eye Radiance",
         trunk_numbers=("+13523202007",),
-        greeting="Thank you for calling Eye Radiance, powered by Abita Eye Group. This is Sofia. How can I help you today?",
+        greeting_name="Eye Radiance, powered by Abita Eye Group",
     ),
     OfficeProfile(
         key="hollywood",
         display_name="Abita Eye Group Hollywood",
         trunk_numbers=("+19542872010",),
-        greeting="Thank you for calling Abita Eye Group. This is Sofia. How can I help you today?",
+        greeting_name="Abita Eye Group",
     ),
     OfficeProfile(
         key="sweetwater",
@@ -46,13 +46,13 @@ OFFICES = (
             "+17864657475", "+17864654845", "+17866134310",
             "+17864657479", "+17864654836", "+17864654882",
         ),
-        greeting="Thank you for calling Abita Eye Group. This is Sofia. How can I help you today?",
+        greeting_name="Abita Eye Group",
     ),
     OfficeProfile(
         key="north-miami-beach-optical",
         display_name="North Miami Beach Optical",
         trunk_numbers=("+13055095333",),
-        greeting="Thank you for calling Abita Eye Group. This is Sofia. How can I help you today?",
+        greeting_name="Abita Eye Group",
     ),
 )
 
