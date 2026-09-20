@@ -407,6 +407,52 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertFalse(state.insurance.write_uncertain)
 
+    async def test_queued_write_rechecks_context_before_dispatch(self):
+        for operation in ("create", "update"):
+            for correction in ("patient", "plan"):
+                with self.subTest(operation=operation, correction=correction):
+                    state, resolver, owner = self.owner(
+                        [created() if operation == "create" else updated()]
+                    )
+                    if operation == "update":
+                        state.patient.active = Receipt.model_validate(receipt())
+                    await owner.check("Aetna", "medical")
+
+                    async def correct_context():
+                        self.assertTrue(state.insurance.write_pending)
+                        if correction == "patient":
+                            await resolver.resolve("John", None)
+                        else:
+                            await owner.check("VSP", "routine_vision")
+
+                    # The write owner queues its shielded task after this correction.
+                    writing = asyncio.create_task(
+                        owner.add(registration())
+                        if operation == "create"
+                        else owner.update("member-example")
+                    )
+                    correcting = asyncio.create_task(correct_context())
+                    result, _ = await asyncio.gather(writing, correcting)
+                    self.assertEqual(self.requests, [])
+                    self.assertEqual(result["outcome"], "stale")
+                    self.assertIn("No registration or insurance change was sent", result["answer"])
+                    self.assertFalse(state.insurance.write_pending)
+                    self.assertFalse(state.insurance.write_uncertain)
+
+                    if correction == "plan":
+                        # An undispatched attempt must not consume the write receipt.
+                        await owner.check("Aetna", "medical")
+                        retried = (
+                            await owner.add(registration())
+                            if operation == "create"
+                            else await owner.update("member-example")
+                        )
+                        self.assertEqual(
+                            retried["outcome"],
+                            "created" if operation == "create" else "updated",
+                        )
+                        self.assertEqual(len(self.requests), 1)
+
     async def test_changed_context_during_reference_refresh_never_dispatches_write(
         self,
     ):

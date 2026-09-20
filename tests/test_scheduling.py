@@ -426,6 +426,28 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(owner._slots, {})
         self.assertEqual(len(requests), 1)
 
+    async def test_corrected_search_does_not_reuse_invalidated_pending_read(self):
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def delayed(request):
+            entered.set()
+            await release.wait()
+            return httpx.Response(200, json=inventory())
+
+        owner, requests = self.owner([delayed, inventory()])
+        first = asyncio.create_task(owner.availability("medical"))
+        await entered.wait()
+        self.assertEqual(
+            (await owner.availability("medical", "bad"))["outcome"], "needs_input"
+        )
+        corrected = asyncio.create_task(owner.availability("medical"))
+        await asyncio.sleep(0)
+        release.set()
+        self.assertEqual((await first)["outcome"], "stale")
+        self.assertEqual((await corrected)["outcome"], "found")
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(len(owner._slots), 1)
+
     async def test_last_cancelled_waiter_stops_read_and_allows_fresh_search(self):
         entered, cancelled = asyncio.Event(), asyncio.Event()
 

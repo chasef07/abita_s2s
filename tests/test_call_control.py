@@ -167,6 +167,53 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.run_tool("end_call")).split(":", 1)[0], "blocked")
         self.sip.transfer_sip_participant.assert_awaited_once()
 
+    async def test_preparation_deadline_returns_bounded_retry_and_drains(self):
+        async def hang():
+            await asyncio.Event().wait()
+
+        ctx = SimpleNamespace(disallow_interruptions=Mock(), wait_for_playout=hang)
+        self.state.reporter = SimpleNamespace(transfer_status="idle")
+        timeout = asyncio.timeout
+        with patch(
+            "abita_s2s.call_control.asyncio.timeout",
+            side_effect=lambda seconds: timeout(0.01 if seconds == 40 else seconds),
+        ):
+            first = await self.control.transfer_call(ctx)
+            self.assertEqual(first, "failed: No SIP transfer was sent. You may try once more.")
+            self.assertEqual(self.state.reporter.transfer_status, "retryable")
+            second = await self.control.transfer_call(ctx)
+            self.assertEqual(second, "failed: No SIP transfer was sent. Do not retry.")
+            self.assertEqual(self.state.reporter.transfer_status, "failed")
+            self.assertTrue((await self.control.transfer_call(ctx)).startswith("blocked:"))
+        self.sip.transfer_sip_participant.assert_not_awaited()
+        await self.control.aclose()
+
+    async def test_refer_deadline_returns_uncertainty_and_drains(self):
+        async def hang(*args, **kwargs):
+            await asyncio.Event().wait()
+
+        self.sip.transfer_sip_participant.side_effect = hang
+        speech = SimpleNamespace(
+            wait_for_playout=AsyncMock(), interrupted=False, exception=lambda: None,
+        )
+        ctx = SimpleNamespace(
+            disallow_interruptions=Mock(), wait_for_playout=AsyncMock(),
+            session=SimpleNamespace(generate_reply=Mock(return_value=speech)),
+        )
+        self.state.reporter = SimpleNamespace(transfer_status="idle")
+        timeout = asyncio.timeout
+        with patch(
+            "abita_s2s.call_control.asyncio.timeout",
+            side_effect=lambda seconds: timeout(0.01 if seconds == 40 else seconds),
+        ):
+            result = await self.control.transfer_call(ctx)
+        self.assertEqual(result, "ambiguous: Transfer may be in progress. Do not retry or end the call.")
+        self.assertEqual(self.state.reporter.transfer_status, "ambiguous")
+        self.assertTrue((await self.control.transfer_call(ctx)).startswith("ambiguous:"))
+        self.assertTrue((await self.control._end_call(ctx)).startswith("blocked:"))
+        self.sip.transfer_sip_participant.assert_awaited_once()
+        await self.control.aclose()
+
     async def test_structured_failure_and_ongoing_are_not_success(self):
         self.sip.transfer_sip_participant.side_effect = None
         self.sip.transfer_sip_participant.return_value = (

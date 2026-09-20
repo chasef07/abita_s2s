@@ -103,7 +103,7 @@ class InsuranceRegistration:
             )
         return reply(decision.outcome, decision.answer)
 
-    async def _run_write(self, work):
+    async def _run_write(self, checked: AcceptedInsurance, work):
         if self._closed:
             return staff()
         if self._task and not self._task.done():
@@ -117,6 +117,11 @@ class InsuranceRegistration:
 
         async def run():
             try:
+                if accepted_insurance(self.state) is not checked:
+                    return reply(
+                        "stale",
+                        "blocked: Patient or insurance context changed. No registration or insurance change was sent. Check insurance again.",
+                    )
                 return await work()
             except BaseException:
                 self.state.insurance.write_uncertain = True
@@ -234,7 +239,7 @@ class InsuranceRegistration:
             self._creations.append((key, answer))
             return answer
 
-        return await self._run_write(create)
+        return await self._run_write(checked, create)
 
     def _created(
         self, result: CreationReceipt, r: Registration, checked
@@ -370,4 +375,4 @@ class InsuranceRegistration:
             self._updates.append((key, answer))
             return answer
 
-        return await self._run_write(update)
+        return await self._run_write(checked, update)
