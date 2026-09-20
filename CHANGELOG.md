@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/chasef07/abita_s2s/compare/v0.6.1...v0.6.2) (2026-09-20)
+
+
+### Bug Fixes
+
+* consume middleware-owned insurance and scheduling outcomes ([#52](https://github.com/chasef07/abita_s2s/issues/52)) ([d3a5bf6](https://github.com/chasef07/abita_s2s/commit/d3a5bf6abe67dfc5467c98707d81cb58a9140e76))
+
 ## [0.6.1](https://github.com/chasef07/abita_s2s/compare/v0.6.0...v0.6.1) (2026-09-20)
 
 
