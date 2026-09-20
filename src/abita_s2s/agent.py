@@ -1,7 +1,9 @@
 """Define the voice persona, greeting, and model-facing tools."""
 
 import logging
+from datetime import datetime
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from livekit.agents import Agent, RunContext, function_tool
 
@@ -40,7 +42,7 @@ class AbitaAgent(Agent):
                 + f"\n\nCurrent office: {office.display_name} ({office.key})."
             ),
         )
-        self._greeting = office.greeting
+        self._practice_name = office.greeting_name
         self._knowledge = knowledge
         self._resolver = resolver
         self._insurance = insurance
@@ -224,8 +226,16 @@ class AbitaAgent(Agent):
             await self._resolver.aclose()
 
     async def on_enter(self) -> None:
+        now = datetime.now(ZoneInfo("America/New_York"))
         handle = self.session.generate_reply(
-            instructions=f'Greet the caller: "{self._greeting}" Then listen.'
+            instructions=(
+                'Greet the caller with “Good morning,” “Good afternoon,” or “Good evening,” '
+                "using office-local time. Name the practice, introduce yourself as Sofia, "
+                "and ask how you can help. Be warm, caring, and upbeat; vary wording "
+                "slightly, keep it brief, then listen. "
+                f"Office-local time: {now:%H:%M %Z} (America/New_York). "
+                f'Practice name: "{self._practice_name}"'
+            )
         )
         await handle
         if handle.exception() is not None:

@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -6,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from zoneinfo import ZoneInfo
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, PropertyMock, patch
 
@@ -60,7 +62,7 @@ class OfficeRoutingTests(unittest.TestCase):
 
     def test_crystal_river_identity(self):
         office = get_office_profile("crystal-river")
-        self.assertIn("Eye Radiance", office.greeting)
+        self.assertIn("Eye Radiance", office.greeting_name)
         self.assertIn("Current office: Eye Radiance", AbitaAgent(office, Mock()).instructions)
 
     def test_unknown_trunks_fail(self):
@@ -183,7 +185,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(args["room_options"].participant_identity, "caller")
         self.assertTrue(args["room_options"].close_on_disconnect)
         self.assertTrue(args["room_options"].delete_room_on_close)
-        self.assertEqual(args["agent"]._greeting, SPRING_HILL.greeting)
+        self.assertEqual(args["agent"]._practice_name, SPRING_HILL.greeting_name)
         call = args["userdata"].call
         self.assertEqual(call.call_id, "sip-test")
         self.assertEqual(call.called_number, "+18135484830")
@@ -304,9 +306,16 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                 return None
         session = Mock()
         session.generate_reply.return_value = Speech()
-        with patch.object(AbitaAgent, "session", new_callable=unittest.mock.PropertyMock, return_value=session):
+        with (
+            patch.object(AbitaAgent, "session", new_callable=unittest.mock.PropertyMock, return_value=session),
+            patch("abita_s2s.agent.datetime") as clock,
+        ):
+            clock.now.return_value = datetime(2026, 9, 20, 14, 30, tzinfo=ZoneInfo("America/New_York"))
             await agent.on_enter()
-        self.assertIn(SPRING_HILL.greeting, session.generate_reply.call_args.kwargs["instructions"])
+        clock.now.assert_called_once_with(ZoneInfo("America/New_York"))
+        instructions = session.generate_reply.call_args.kwargs["instructions"]
+        self.assertIn(f'Practice name: "{SPRING_HILL.greeting_name}"', instructions)
+        self.assertIn("Office-local time: 14:30 EDT (America/New_York)", instructions)
 
     async def test_product_closeout_waits_for_accepted_write_and_keeps_native_report(self):
         payloads = []
