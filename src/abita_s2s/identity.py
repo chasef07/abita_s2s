@@ -1,7 +1,9 @@
 """One per-call owner for identity evidence, resolution, and patient changes."""
 
 import asyncio
+from dataclasses import replace
 
+from abita_s2s.insurance_state import AcceptedInsurance, accepted_insurance
 from abita_s2s.middleware import (
     Candidate,
     Multiple,
@@ -319,10 +321,13 @@ class PatientResolver:
             if self._token is token:
                 self._token = None
 
-    def refresh_insurance(self, expected: Receipt, updated: Receipt) -> bool:
-        """Apply validated coverage to the same patient, fencing older patient reads."""
+    def refresh_insurance(
+        self, expected: Receipt, updated: Receipt, checked: AcceptedInsurance
+    ) -> bool:
+        """Commit validated coverage and its acceptance, fencing older patient reads."""
         if (
             self._closed
+            or self.state.patient.revision != checked.patient_revision
             or self.state.patient.active is not expected
             or updated.patientId != expected.patientId
             or updated.name != expected.name
@@ -332,14 +337,20 @@ class PatientResolver:
         self._token = None
         self.state.patient.active = updated
         self.state.patient.revision += 1
+        # A newer plan check must not be rebound to this older write's receipt.
+        if self.state.insurance.accepted is checked:
+            self.state.insurance.accepted = replace(
+                checked, patient_revision=self.state.patient.revision,
+                decision=updated.insuranceDecision,
+            ) if updated.insuranceDecision else None
         return True
 
-    def activate_created(self, patient_revision: int, receipt: Receipt) -> bool:
-        """Promote a validated creation receipt only in its original patient context."""
+    def activate_created(self, checked: AcceptedInsurance, receipt: Receipt) -> bool:
+        """Commit a validated creation only while its original acceptance is current."""
         if (
             self._closed
             or self.state.patient.active is not None
-            or self.state.patient.revision != patient_revision
+            or accepted_insurance(self.state) is not checked
         ):
             return False
         self._token = None
@@ -348,6 +359,13 @@ class PatientResolver:
         self.state.patient.revision += 1
         self._pending = (None, None)
         self._previous_id = None
+        self.state.insurance.accepted = replace(
+            checked,
+            patient_revision=self.state.patient.revision,
+            patient_id=receipt.patientId,
+            absence=None,
+            decision=receipt.insuranceDecision,
+        ) if receipt.insuranceDecision else None
         return True
 
     def _facts(self, receipt: Receipt, outcome: str, *, call_id: str | None = None) -> dict:
