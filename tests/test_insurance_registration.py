@@ -54,6 +54,7 @@ def created(status="created", **changes):
 def updated(**changes):
     return {
         "status": "updated",
+        "effect": "completed",
         "insuranceDecision": decision(
             changes.get("newInsurance", "Aetna"),
             "routine_vision" if changes.get("newInsurance") == "VSP" else "medical",
@@ -119,7 +120,6 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result["outcome"], "created")
         self.assertEqual(state.patient.active.patientId, "new-chart")
-        self.assertIsNone(state.patient.active.insPlanId)
         self.assertTrue(insurance_ready(state, "medical"))
         self.assertEqual(await owner.add(registration()), result)
         self.assertEqual(len(self.requests), 2)
@@ -227,15 +227,36 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(state.patient.active)
             self.assertEqual(len(self.requests), 2)
 
+    async def test_corrected_registration_retries_after_proven_no_write_failure(self):
+        state, _, owner = await self.prepared(
+            [
+                {
+                    "status": "error",
+                    "outcome": "validation_failed",
+                    "message": "Correct the postal code.",
+                },
+                created(),
+            ]
+        )
+        rejected = await owner.add(registration(zip="bad"))
+        self.assertEqual(rejected["outcome"], "failed")
+        self.assertIn("Correct the postal code", rejected["answer"])
+        self.assertNotIn("Do not repeat", rejected["answer"])
+        self.assertFalse(state.insurance.write_uncertain)
+        result = await owner.add(registration(zip="12345"))
+        self.assertEqual(result["outcome"], "created")
+        self.assertEqual(self.requests[-1][1]["zip"], "12345")
+        self.assertEqual(len(self.requests), 3)
+
     async def test_explicit_creation_rejection_preserves_failure(self):
         state, _, owner = await self.prepared(
-            [{"status": "error", "outcome": "rejected"}]
+            [{"status": "error", "outcome": "rejected"}, created()]
         )
         self.assertEqual((await owner.add(registration()))["outcome"], "failed")
         self.assertFalse(state.insurance.write_uncertain)
         self.assertIsNone(state.patient.active)
-        await owner.add(registration())
-        self.assertEqual(len(self.requests), 2)
+        self.assertEqual((await owner.add(registration()))["outcome"], "created")
+        self.assertEqual(len(self.requests), 3)
 
     async def test_cancellation_duplicate_and_stale_creation(self):
         entered, finish = asyncio.Event(), asyncio.Event()
@@ -276,16 +297,24 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(len(self.requests), 1)
 
-    async def test_update_uses_verified_backend_refs_and_receipt_and_no_duplicate(self):
+    async def test_update_sends_intent_without_provider_refs_and_caches_receipt(self):
         state, _, owner = self.owner([updated()])
         state.patient.active = Receipt.model_validate(receipt())
         (await owner.check("Aetna", "medical"))
         result = await owner.update("member-example")
         self.assertEqual(result["outcome"], "updated")
-        self.assertEqual(self.requests[0][1]["insPlanId"], "private-plan")
-        self.assertEqual(self.requests[0][1]["respPartyId"], "private-party")
+        self.assertEqual(
+            set(self.requests[0][1]),
+            {
+                "patientId",
+                "dob",
+                "office",
+                "insurance",
+                "coverageType",
+                "subscriberNum",
+            },
+        )
         self.assertEqual(state.patient.active.insuranceCarrier, "Aetna")
-        self.assertIsNone(state.patient.active.insPlanId)
         self.assertTrue(insurance_ready(state, "medical"))
         await owner.update("member-example")
         self.assertEqual(len(self.requests), 1)
@@ -301,12 +330,87 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(state.patient.active.insuranceDecision)
         self.assertTrue(insurance_ready(state, "medical"))
 
+    async def test_no_effect_update_preserves_context_and_allows_corrected_retry(self):
+        for status_code in (200, 400):
+            with self.subTest(status_code=status_code):
+
+                async def rejected(request):
+                    return httpx.Response(
+                        status_code,
+                        json={
+                            "status": "error",
+                            "effect": "no_effect",
+                            "outcome": "validation_failed",
+                        },
+                    )
+
+                state, _, owner = self.owner([rejected, updated()])
+                state.patient.active = Receipt.model_validate(receipt())
+                await owner.check("Aetna", "medical")
+                result = await owner.update("wrong-member")
+                self.assertEqual(result["outcome"], "failed")
+                self.assertIn("validation_failed", result["answer"])
+                self.assertNotIn("Do not repeat", result["answer"])
+                self.assertEqual(
+                    state.patient.active.insuranceCarrier, "Test Insurance"
+                )
+                self.assertFalse(state.insurance.write_uncertain)
+                self.assertEqual(
+                    (await owner.update("correct-member"))["outcome"], "updated"
+                )
+                self.assertEqual(
+                    self.requests[-1][1]["subscriberNum"], "correct-member"
+                )
+                self.assertEqual(len(self.requests), 2)
+
+    async def test_partial_and_uncertain_updates_block_all_further_mutations(self):
+        for effect in ("partial", "uncertain", "unknown", None):
+            with self.subTest(effect=effect):
+                state, _, owner = self.owner(
+                    [
+                        {
+                            "status": "error",
+                            "effect": effect,
+                            "outcome": "reconciled_failure",
+                        }
+                    ]
+                )
+                state.patient.active = Receipt.model_validate(receipt())
+                await owner.check("Aetna", "medical")
+                result = await owner.update("member-example")
+                self.assertEqual(
+                    result["outcome"], "partial" if effect == "partial" else "uncertain"
+                )
+                if effect == "partial":
+                    self.assertIn("replacement was not attached", result["answer"])
+                self.assertFalse(insurance_ready(state, "medical"))
+                await owner.check("VSP", "routine_vision")
+                self.assertEqual(
+                    (await owner.update("correct-member"))["outcome"],
+                    "partial" if effect == "partial" else "uncertain",
+                )
+                self.assertEqual(len(self.requests), 1)
+
+    async def test_update_does_not_need_provider_references_from_patient_resolution(
+        self,
+    ):
+        state, _, owner = self.owner([updated()])
+        state.patient.active = Receipt.model_validate(
+            receipt(insPlanId=None, respPartyId=None)
+        )
+        await owner.check("Aetna", "medical")
+        self.assertEqual((await owner.update("member-example"))["outcome"], "updated")
+        self.assertEqual(
+            [path for path, _ in self.requests], ["/api/patient/update-insurance"]
+        )
+
     async def test_failed_or_mismatched_update_blocks_further_writes(self):
         for response in [
             updated(patientId="other-chart"),
             updated(newInsurance="other-plan"),
             {"status": "error", "outcome": "reconciled_failure"},
             {"status": "updated"},
+            {k: v for k, v in updated().items() if k != "effect"},
         ]:
             state, _, owner = self.owner([response])
             state.patient.active = Receipt.model_validate(receipt())
@@ -372,9 +476,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         state, _, owner = self.owner(
             [
                 updated(),
-                receipt(insuranceCarrier="Aetna", insPlanId="aetna-plan"),
                 updated(newInsurance="VSP"),
-                receipt(insuranceCarrier="VSP", insPlanId="vsp-plan"),
                 updated(),
             ]
         )
@@ -388,40 +490,15 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 (await owner.update("member-example"))["outcome"], "updated"
             )
-        self.assertEqual(len(self.requests), 5)
-        self.assertEqual(self.requests[-1][1]["oldInsurance"], "VSP")
+        self.assertEqual(len(self.requests), 3)
         writes = [
             body for path, body in self.requests if path.endswith("update-insurance")
         ]
         self.assertEqual(
-            [body["insPlanId"] for body in writes],
-            ["private-plan", "aetna-plan", "vsp-plan"],
+            [body["insurance"] for body in writes],
+            ["Aetna", "VSP", "Aetna"],
         )
         self.assertTrue(insurance_ready(state, "medical"))
-
-    async def test_unverified_references_never_dispatch_an_insurance_write(self):
-        for fresh in [
-            receipt(insuranceCarrier="Aetna", insPlanId=None),
-            receipt(insuranceCarrier="Aetna", respPartyId=None),
-            receipt(insuranceCarrier="Unexpected Plan"),
-            receipt(patient_id="other-chart", insuranceCarrier="Aetna"),
-            receipt(name="Other", insuranceCarrier="Aetna"),
-            receipt(dob="02/03/1981", insuranceCarrier="Aetna"),
-            {"status": "not_found"},
-        ]:
-            state, _, owner = self.owner([fresh])
-            state.patient.active = Receipt.model_validate(
-                receipt(insuranceCarrier="Aetna", insPlanId=None)
-            )
-            (await owner.check("VSP", "routine_vision"))
-            self.assertEqual(
-                (await owner.update("member-example"))["outcome"],
-                "needs_staff_review",
-            )
-            self.assertEqual(
-                [path for path, _ in self.requests], ["/api/patient/resolve"]
-            )
-            self.assertFalse(state.insurance.write_uncertain)
 
     async def test_queued_write_rechecks_context_before_dispatch(self):
         for operation in ("create", "update"):
@@ -470,32 +547,6 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                             "created" if operation == "create" else "updated",
                         )
                         self.assertEqual(len(self.requests), 1)
-
-    async def test_changed_context_during_reference_refresh_never_dispatches_write(
-        self,
-    ):
-        for correction in ("patient", "plan"):
-            entered, finish = asyncio.Event(), asyncio.Event()
-
-            async def reload(request, entered=entered, finish=finish):
-                entered.set()
-                await finish.wait()
-                return httpx.Response(200, json=receipt(insuranceCarrier="Aetna"))
-
-            state, resolver, owner = self.owner([reload])
-            state.patient.active = Receipt.model_validate(
-                receipt(insuranceCarrier="Aetna", insPlanId=None)
-            )
-            (await owner.check("VSP", "routine_vision"))
-            task = asyncio.create_task(owner.update("member-example"))
-            await entered.wait()
-            if correction == "patient":
-                await resolver.resolve("John", None)
-            else:
-                (await owner.check("Aetna", "medical"))
-            finish.set()
-            self.assertEqual((await task)["outcome"], "needs_staff_review")
-            self.assertEqual(len(self.requests), 1)
 
     async def test_http_failure_and_deadline_never_repeat_write(self):
         for delayed in [False, True]:
@@ -557,4 +608,3 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         finish.set()
         self.assertEqual((await reading)["outcome"], "superseded")
         self.assertEqual(state.patient.active.insuranceCarrier, "Aetna")
-        self.assertIsNone(state.patient.active.insPlanId)

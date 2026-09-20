@@ -240,7 +240,14 @@ class InsuranceRegistration:
             if isinstance(result, WriteFailure):
                 if result.status == "uncertain":
                     self.state.insurance.write_uncertain = True
-                answer = staff(result.status)
+                answer = (
+                    reply(
+                        "failed",
+                        f"needs_input: Registration was not created ({result.reason}). Correct the details or resolve the failure before trying again.",
+                    )
+                    if result.status == "failed"
+                    else staff(result.status)
+                )
             else:
                 answer = self._created(result, r, checked)
             if self.state.reporter:
@@ -252,7 +259,8 @@ class InsuranceRegistration:
                         active is None or active.patientId != result.patientId
                     )
                 self.state.reporter.record("patient", evidence, call_id=call_id)
-            self._creations.append((key, answer))
+            if not isinstance(result, WriteFailure) or result.status != "failed":
+                self._creations.append((key, answer))
             return answer
 
         return await self._run_write(checked, create)
@@ -319,6 +327,8 @@ class InsuranceRegistration:
         )
         for prior, result in reversed(self._updates):
             if prior[:2] == key[:2]:
+                if result["outcome"] == "partial":
+                    return result
                 if prior == key and normalize(
                     active.insuranceCarrier or ""
                 ) == normalize(checked.decision.canonicalPlan):
@@ -326,36 +336,31 @@ class InsuranceRegistration:
                 break
 
         async def update():
-            references = active
-            if not references.insPlanId or not references.respPartyId:
-                references = await self._resolver.read_insurance(active)
-                if (
-                    references is None
-                    or not references.insPlanId
-                    or not references.respPartyId
-                    or (
-                        active.insuranceCarrier is not None
-                        and normalize(references.insuranceCarrier or "")
-                        != normalize(active.insuranceCarrier)
-                    )
-                    or accepted_insurance(self.state) is not checked
-                ):
-                    return reply(
-                        "needs_staff_review",
-                        "Current insurance details could not be verified. No insurance change was sent; ask office staff for help.",
-                    )
             payload = {
                 "patientId": active.patientId,
                 "dob": active.dob,
-                "insPlanId": references.insPlanId,
-                "respPartyId": references.respPartyId,
-                "oldInsurance": references.insuranceCarrier or "",
                 "insurance": checked.decision.canonicalPlan,
                 "coverageType": checked.decision.coverageType,
                 "subscriberNum": member_id,
             }
             result = await self._middleware.update(checked.office_key, payload)
-            if (
+            if isinstance(result, WriteFailure):
+                if result.status == "failed":
+                    answer = reply(
+                        "failed",
+                        f"needs_input: Insurance was not changed ({result.reason}). Resolve the failure before trying again.",
+                    )
+                else:
+                    self.state.insurance.write_uncertain = True
+                    answer = (
+                        reply(
+                            "partial",
+                            "blocked: The previous insurance plan was ended, but the replacement was not attached. Office staff must finish the change. Do not repeat this write.",
+                        )
+                        if result.status == "partial"
+                        else staff(result.status)
+                    )
+            elif (
                 not isinstance(result, UpdatedReceipt)
                 or result.patientId != active.patientId
                 or normalize(result.newInsurance)
@@ -369,8 +374,6 @@ class InsuranceRegistration:
                 updated = active.model_copy(
                     update={
                         "insuranceCarrier": result.newInsurance,
-                        "insPlanId": None,
-                        "respPartyId": references.respPartyId,
                         "insuranceDecision": result.insuranceDecision,
                     }
                 )
@@ -392,7 +395,8 @@ class InsuranceRegistration:
                     },
                     call_id=call_id,
                 )
-            self._updates.append((key, answer))
+            if not isinstance(result, WriteFailure) or result.status != "failed":
+                self._updates.append((key, answer))
             return answer
 
         return await self._run_write(checked, update)

@@ -22,12 +22,13 @@ class CreationReceipt(Record):
 class UpdatedReceipt(Record):
     insuranceDecision: InsuranceDecision | None = None
     status: Literal["updated"]
+    effect: Literal["completed"]
     patientId: Text
     newInsurance: Text
 
 
 class WriteFailure(Record):
-    status: Literal["failed", "uncertain"]
+    status: Literal["failed", "partial", "uncertain"]
     reason: str
 
 
@@ -94,9 +95,25 @@ class RegistrationMiddleware:
                     timeout=self._deadline,
                     follow_redirects=False,
                 )
+            body = response.json()
+            if (
+                receipt is UpdatedReceipt
+                and isinstance(body, dict)
+                and body.get("status") == "error"
+            ):
+                effect = body.get("effect")
+                return WriteFailure(
+                    status="failed"
+                    if effect == "no_effect"
+                    else "partial"
+                    if effect == "partial"
+                    else "uncertain",
+                    reason=body.get("message")
+                    or body.get("outcome")
+                    or "backend_failure",
+                )
             if not response.is_success:
                 return WriteFailure(status="uncertain", reason="http_failure")
-            body = response.json()
             if isinstance(body, dict) and body.get("status") == "error":
                 # Only these outcomes prove that chart creation made no chart.
                 # An update can already have ended the old plan before failing.
@@ -108,7 +125,10 @@ class RegistrationMiddleware:
                     "failed",
                 )
                 return WriteFailure(
-                    status="failed" if safe else "uncertain", reason="backend_failure"
+                    status="failed" if safe else "uncertain",
+                    reason=body.get("message")
+                    or body.get("outcome")
+                    or "backend_failure",
                 )
             result = receipt.model_validate(body)
             decision = result.insuranceDecision

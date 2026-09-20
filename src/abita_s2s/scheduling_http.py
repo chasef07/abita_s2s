@@ -54,6 +54,8 @@ class Slot(Record):
 class Inventory(Record):
     status: Literal["success", "error"]
     outcome: Literal[
+        "invalid_input",
+        "policy_blocked",
         "availability_found",
         "no_availability",
         "no_eligible_providers",
@@ -64,6 +66,7 @@ class Inventory(Record):
     searchedThrough: str | None = None
     bookingTokenExpiresAt: AwareDatetime | None = None
     shouldRetrySameSearch: bool = False
+    message: str = ""
 
     @field_validator("bookingTokenExpiresAt", mode="before")
     @classmethod
@@ -72,6 +75,12 @@ class Inventory(Record):
 
     @model_validator(mode="after")
     def validate_inventory(self):
+        if self.outcome in ("invalid_input", "policy_blocked") and (
+            self.status != "error"
+            or self.shouldRetrySameSearch
+            or not self.message.strip()
+        ):
+            raise ValueError("Invalid search failure")
         found = self.outcome == "availability_found"
         if found != bool(self.slots) or (
             found and (self.status != "success" or self.bookingTokenExpiresAt is None)
@@ -176,6 +185,10 @@ class SchedulingHTTP:
                     follow_redirects=False,
                 )
             if not response.is_success:
+                if not write:
+                    result = record.model_validate(response.json())
+                    if result.status == "error":
+                        return result
                 return SchedulingFailure(reason="http_error", uncertain=write)
             return record.model_validate(response.json())
         except (httpx.TransportError, TimeoutError):

@@ -120,9 +120,7 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
 
                 state, owner = self.owner(handler)
                 if operation == "update":
-                    state.patient.active = Receipt.model_validate(receipt()).model_copy(
-                        update={"insPlanId": "plan-1", "respPartyId": "party-1"}
-                    )
+                    state.patient.active = Receipt.model_validate(receipt())
                 await owner.check("Aetna HMO", "medical")
                 self.assertIsNotNone(accepted_insurance(state))
                 result = (

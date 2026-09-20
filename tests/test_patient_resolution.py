@@ -105,8 +105,8 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["phone"], r.state.call.caller_phone)
         self.assertNotEqual(r.state.patient.active.phone, r.state.call.caller_phone)
-        self.assertEqual(r.state.patient.active.insPlanId, "private-plan")
-        self.assertEqual(r.state.patient.active.respPartyId, "private-party")
+        self.assertNotIn("insPlanId", r.state.patient.active.model_dump())
+        self.assertNotIn("respPartyId", r.state.patient.active.model_dump())
         self.assertEqual(
             r.state.patient.active.insuranceDecision.canonicalPlan, "Aetna"
         )
