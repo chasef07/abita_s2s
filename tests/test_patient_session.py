@@ -39,9 +39,7 @@ class PatientStream(llm.LLMStream):
             item for item in items[last_user:] if item.type == "function_call_output"
         ]
         if outputs:
-            delta = llm.ChoiceDelta(
-                role="assistant", content=outputs[-1].output
-            )
+            delta = llm.ChoiceDelta(role="assistant", content=outputs[-1].output)
         else:
             args = {
                 "Jane": {"firstName": "Jane", "dob": None},
@@ -90,7 +88,10 @@ class PatientSessionTests(unittest.IsolatedAsyncioTestCase):
                         for item in model.requests[-1].items
                         if item.type == "function_call_output"
                     ]
-                    self.assertTrue(outputs[-1].output.startswith(outcome + ": "), outputs[-1].output)
+                    self.assertTrue(
+                        outputs[-1].output.startswith(outcome + ": "),
+                        outputs[-1].output,
+                    )
                     self.assertEqual(state.patient.active is not None, active)
                     for output in outputs:
                         for private in (

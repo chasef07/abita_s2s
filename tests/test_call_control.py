@@ -135,16 +135,22 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             ("room", "caller", "tel:+13527941244"),
         )
         self.state.patient.revision += 1
-        self.assertEqual((await self.run_tool("transfer_call")).split(":", 1)[0], "accepted")
+        self.assertEqual(
+            (await self.run_tool("transfer_call")).split(":", 1)[0], "accepted"
+        )
         self.assertEqual((await self.run_tool("end_call")).split(":", 1)[0], "blocked")
         self.sip.transfer_sip_participant.assert_awaited_once()
 
     async def test_session_shutdown_drains_accepted_transfer(self):
         entered, finish = asyncio.Event(), asyncio.Event()
+
         async def transfer(*args, **kwargs):
             entered.set()
             await finish.wait()
-            return api.TransferSIPParticipantResponse(status=api.STS_TRANSFER_SUCCESSFUL)
+            return api.TransferSIPParticipantResponse(
+                status=api.STS_TRANSFER_SUCCESSFUL
+            )
+
         self.sip.transfer_sip_participant.side_effect = transfer
         caller = asyncio.create_task(self.run_tool("transfer_call"))
         await asyncio.wait_for(entered.wait(), 2)
@@ -179,12 +185,16 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             side_effect=lambda seconds: timeout(0.01 if seconds == 40 else seconds),
         ):
             first = await self.control.transfer_call(ctx)
-            self.assertEqual(first, "failed: No SIP transfer was sent. You may try once more.")
+            self.assertEqual(
+                first, "failed: No SIP transfer was sent. You may try once more."
+            )
             self.assertEqual(self.state.reporter.transfer_status, "retryable")
             second = await self.control.transfer_call(ctx)
             self.assertEqual(second, "failed: No SIP transfer was sent. Do not retry.")
             self.assertEqual(self.state.reporter.transfer_status, "failed")
-            self.assertTrue((await self.control.transfer_call(ctx)).startswith("blocked:"))
+            self.assertTrue(
+                (await self.control.transfer_call(ctx)).startswith("blocked:")
+            )
         self.sip.transfer_sip_participant.assert_not_awaited()
         await self.control.aclose()
 
@@ -194,10 +204,13 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
 
         self.sip.transfer_sip_participant.side_effect = hang
         speech = SimpleNamespace(
-            wait_for_playout=AsyncMock(), interrupted=False, exception=lambda: None,
+            wait_for_playout=AsyncMock(),
+            interrupted=False,
+            exception=lambda: None,
         )
         ctx = SimpleNamespace(
-            disallow_interruptions=Mock(), wait_for_playout=AsyncMock(),
+            disallow_interruptions=Mock(),
+            wait_for_playout=AsyncMock(),
             session=SimpleNamespace(generate_reply=Mock(return_value=speech)),
         )
         self.state.reporter = SimpleNamespace(transfer_status="idle")
@@ -207,9 +220,14 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             side_effect=lambda seconds: timeout(0.01 if seconds == 40 else seconds),
         ):
             result = await self.control.transfer_call(ctx)
-        self.assertEqual(result, "ambiguous: Transfer may be in progress. Do not retry or end the call.")
+        self.assertEqual(
+            result,
+            "ambiguous: Transfer may be in progress. Do not retry or end the call.",
+        )
         self.assertEqual(self.state.reporter.transfer_status, "ambiguous")
-        self.assertTrue((await self.control.transfer_call(ctx)).startswith("ambiguous:"))
+        self.assertTrue(
+            (await self.control.transfer_call(ctx)).startswith("ambiguous:")
+        )
         self.assertTrue((await self.control._end_call(ctx)).startswith("blocked:"))
         self.sip.transfer_sip_participant.assert_awaited_once()
         await self.control.aclose()
@@ -219,21 +237,29 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.sip.transfer_sip_participant.return_value = (
             api.TransferSIPParticipantResponse(status=api.STS_TRANSFER_FAILED)
         )
-        self.assertEqual((await self.run_tool("transfer_call")).split(":", 1)[0], "failed")
-        self.assertEqual((await self.run_tool("transfer_call")).split(":", 1)[0], "blocked")
+        self.assertEqual(
+            (await self.run_tool("transfer_call")).split(":", 1)[0], "failed"
+        )
+        self.assertEqual(
+            (await self.run_tool("transfer_call")).split(":", 1)[0], "blocked"
+        )
         self.control.attempts = 0
         self.control.status = "idle"
         self.sip.transfer_sip_participant.return_value = (
             api.TransferSIPParticipantResponse(status=api.STS_TRANSFER_ONGOING)
         )
-        self.assertEqual((await self.run_tool("transfer_call")).split(":", 1)[0], "ambiguous")
+        self.assertEqual(
+            (await self.run_tool("transfer_call")).split(":", 1)[0], "ambiguous"
+        )
 
     async def test_missing_caller_and_console_never_select_other_participant(self):
         del self.room.remote_participants["caller"]
         self.assertEqual(
             (await self.run_tool("transfer_call")).split(":", 1)[0], "unavailable"
         )
-        self.assertEqual((await self.run_tool("end_call")).split(":", 1)[0], "unavailable")
+        self.assertEqual(
+            (await self.run_tool("end_call")).split(":", 1)[0], "unavailable"
+        )
         self.control.room = None
         self.assertEqual(
             (await self.run_tool("transfer_call")).split(":", 1)[0], "unavailable"
@@ -426,7 +452,9 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_pending_duplicate_does_not_send_second_refer(self):
         self.control.status = "pending"
-        self.assertEqual((await self.run_tool("transfer_call")).split(":", 1)[0], "pending")
+        self.assertEqual(
+            (await self.run_tool("transfer_call")).split(":", 1)[0], "pending"
+        )
         self.assertEqual((await self.run_tool("end_call")).split(":", 1)[0], "blocked")
         self.sip.transfer_sip_participant.assert_not_awaited()
 
@@ -577,6 +605,8 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 (await self.run_tool("transfer_call")).split(":", 1)[0], "ambiguous"
             )
-            self.assertEqual((await self.run_tool("end_call")).split(":", 1)[0], "blocked")
+            self.assertEqual(
+                (await self.run_tool("end_call")).split(":", 1)[0], "blocked"
+            )
         self.control.admission.client.post.assert_awaited_once()
         self.sip.transfer_sip_participant.assert_not_awaited()

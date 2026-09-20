@@ -5,7 +5,13 @@ from datetime import date, datetime
 from typing import Literal
 
 import httpx
-from pydantic import AwareDatetime, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    AwareDatetime,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from abita_s2s.config import Config
 from abita_s2s.middleware import Record, Text
@@ -67,9 +73,9 @@ class Inventory(Record):
     @model_validator(mode="after")
     def validate_inventory(self):
         found = self.outcome == "availability_found"
-        if found != bool(self.slots) or (found and (
-            self.status != "success" or self.bookingTokenExpiresAt is None
-        )):
+        if found != bool(self.slots) or (
+            found and (self.status != "success" or self.bookingTokenExpiresAt is None)
+        ):
             raise ValueError("Inconsistent availability result")
         return self
 
@@ -108,14 +114,23 @@ class RescheduleReceipt(Record):
     @model_validator(mode="after")
     def validate_effects(self):
         if self.status in ("completed", "partial"):
-            if not self.booking or self.booking.status not in ("booked", "partial") or not self.booking.appointmentId:
+            if (
+                not self.booking
+                or self.booking.status not in ("booked", "partial")
+                or not self.booking.appointmentId
+            ):
                 raise ValueError("Missing replacement receipt")
         if self.status == "completed":
-            if (not self.cancellation or self.cancellation.status != "cancelled"
-                    or not self.cancellation.appointmentId
-                    or self.cancellation.appointmentId == self.booking.appointmentId):
+            if (
+                not self.cancellation
+                or self.cancellation.status != "cancelled"
+                or not self.cancellation.appointmentId
+                or self.cancellation.appointmentId == self.booking.appointmentId
+            ):
                 raise ValueError("Missing original cancellation receipt")
-        if self.status in ("failed", "uncertain") and (self.booking or self.cancellation):
+        if self.status in ("failed", "uncertain") and (
+            self.booking or self.cancellation
+        ):
             raise ValueError("Unconfirmed reschedule cannot contain confirmed writes")
         return self
 

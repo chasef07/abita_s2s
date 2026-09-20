@@ -21,7 +21,9 @@ def publish(tag, commit, files):
     release = next((r for page in listing for r in page if r["tag_name"] == tag), None)
     if not refs:
         if release is not None:
-            raise ValueError("Existing release has no tag; restore its original tag before publishing")
+            raise ValueError(
+                "Existing release has no tag; restore its original tag before publishing"
+            )
         run("git", "push", "origin", f"{commit}:refs/tags/{tag}")
     if release is None:
         run(
@@ -69,13 +71,20 @@ def publish(tag, commit, files):
 
 def verify_reused_component(component, version, manifest):
     tag = f"{component}-v{version}"
-    if run("gh", "release", "view", tag, "--json", "isDraft", "--jq", ".isDraft") != "false":
+    if (
+        run("gh", "release", "view", tag, "--json", "isDraft", "--jq", ".isDraft")
+        != "false"
+    ):
         raise ValueError("Reused component release must already be published")
     with tempfile.TemporaryDirectory() as temp:
-        run("gh", "release", "download", tag, "--pattern", "release.json", "--dir", temp)
+        run(
+            "gh", "release", "download", tag, "--pattern", "release.json", "--dir", temp
+        )
         prior = json.loads((Path(temp) / "release.json").read_text())
-        if (prior[f"{component}_version"] != version or
-                prior[f"{component}_sha256"] != manifest[f"{component}_sha256"]):
+        if (
+            prior[f"{component}_version"] != version
+            or prior[f"{component}_sha256"] != manifest[f"{component}_sha256"]
+        ):
             raise ValueError("Reused component release content mismatch")
 
 

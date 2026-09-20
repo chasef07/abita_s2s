@@ -27,6 +27,7 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - run: uv run --no-sync ruff check .
+      - run: uv run --no-sync ruff format --check .
       - run: uv run --no-sync python -m unittest discover -s tests -q
       - run: uv run --no-sync python scripts/release.py "$(git rev-parse HEAD)"
       - name: Installed wheel and source smoke (no network)

@@ -9,7 +9,9 @@ from livekit.agents import AgentServer, JobContext, cli
 from abita_s2s.config import load_config
 from abita_s2s.release import identity
 from abita_s2s.runtime.session_startup import (
-    SHUTDOWN_PROCESS_SECONDS, finish_voice_call, start_voice_call,
+    SHUTDOWN_PROCESS_SECONDS,
+    finish_voice_call,
+    start_voice_call,
 )
 
 load_dotenv(".env.local", override=False)

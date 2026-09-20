@@ -93,7 +93,11 @@ class CallControl(EndCallTool):
             logger.warning("Transfer deadline expired status=%s", self.status)
             if self.status == "ambiguous":
                 return "ambiguous: Transfer may be in progress. Do not retry or end the call."
-            retry = " You may try once more." if self.status == "retryable" else " Do not retry."
+            retry = (
+                " You may try once more."
+                if self.status == "retryable"
+                else " Do not retry."
+            )
             return "failed: No SIP transfer was sent." + retry
 
     async def _perform_transfer(self, ctx):
@@ -104,7 +108,9 @@ class CallControl(EndCallTool):
         if self.ending or self.status == "failed":
             return "blocked: Transfer is unavailable. No further retry is allowed."
         if not self._active() or self.sip is None:
-            return "unavailable: No active SIP caller is available. No transfer was made."
+            return (
+                "unavailable: No active SIP caller is available. No transfer was made."
+            )
         ctx.disallow_interruptions()
         self.status = "pending"
         self.attempts += 1

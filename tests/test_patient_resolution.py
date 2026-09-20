@@ -41,8 +41,6 @@ def candidate(patient_id="chart-jane", name="Jane", dob="01/02/1980"):
     }
 
 
-
-
 def receipt(patient_id="chart-jane", name="Jane", dob="01/02/1980", **extra):
     return {
         "status": "verified",
@@ -109,7 +107,9 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(r.state.patient.active.phone, r.state.call.caller_phone)
         self.assertEqual(r.state.patient.active.insPlanId, "private-plan")
         self.assertEqual(r.state.patient.active.respPartyId, "private-party")
-        self.assertEqual(r.state.patient.active.insuranceDecision.canonicalPlan, "Aetna")
+        self.assertEqual(
+            r.state.patient.active.insuranceDecision.canonicalPlan, "Aetna"
+        )
         for private in (
             "chart-jane",
             "private-plan",
@@ -152,8 +152,14 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         r, calls = self.resolver([receipt()], call_state(None))
         r.start_phone_lookup()
         self.assertIsNone(r._precall)
-        self.assertEqual((await r.resolve(None, None))["answer"], "needs_input: What is the patient's first name?")
-        self.assertEqual((await r.resolve("Jane", None))["answer"], "needs_input: What is the patient's date of birth?")
+        self.assertEqual(
+            (await r.resolve(None, None))["answer"],
+            "needs_input: What is the patient's first name?",
+        )
+        self.assertEqual(
+            (await r.resolve("Jane", None))["answer"],
+            "needs_input: What is the patient's date of birth?",
+        )
         self.assertEqual(calls, [])
         self.assertEqual((await r.resolve(None, "01/02/1980"))["outcome"], "verified")
         self.assertEqual(
@@ -178,11 +184,12 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls[1]["patientId"], "child")
 
     async def test_patient_not_on_callers_phone_uses_name_dob(self):
-        r, calls = self.resolver(
-            [receipt(), receipt("child", "John")]
-        )
+        r, calls = self.resolver([receipt(), receipt("child", "John")])
         await self.preload(r)
-        self.assertEqual((await r.resolve("John", None))["answer"], "needs_input: What is the patient's date of birth?")
+        self.assertEqual(
+            (await r.resolve("John", None))["answer"],
+            "needs_input: What is the patient's date of birth?",
+        )
         self.assertEqual((await r.resolve(None, "01/02/1980"))["outcome"], "verified")
         self.assertNotIn("phone", calls[1])
         self.assertEqual(r.state.patient.active.patientId, "child")
@@ -199,7 +206,10 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
                 ]
             )
             await self.preload(r)
-            self.assertEqual((await r.resolve("Jane", None))["answer"], "needs_input: What is the patient's date of birth?")
+            self.assertEqual(
+                (await r.resolve("Jane", None))["answer"],
+                "needs_input: What is the patient's date of birth?",
+            )
             self.assertIsNone(r.state.patient.active)
             result = await r.resolve(None, "01/02/1980")
             self.assertEqual(
@@ -229,12 +239,13 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
     async def test_changed_name_clears_active_immediately_and_does_not_inherit_dob(
         self,
     ):
-        r, calls = self.resolver(
-            [receipt(), receipt("john", "John")]
-        )
+        r, calls = self.resolver([receipt(), receipt("john", "John")])
         await self.preload(r)
         await r.resolve("Jane", "01/02/1980")
-        self.assertEqual((await r.resolve("John", None))["answer"], "needs_input: What is the patient's date of birth?")
+        self.assertEqual(
+            (await r.resolve("John", None))["answer"],
+            "needs_input: What is the patient's date of birth?",
+        )
         self.assertIsNone(r.state.patient.active)
         self.assertEqual(len(calls), 1)
         self.assertEqual((await r.resolve(None, "01/02/1980"))["outcome"], "switched")
@@ -255,7 +266,10 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
     async def test_name_spelling_correction(self):
         r, _ = self.resolver([receipt()])
         await self.preload(r)
-        self.assertEqual((await r.resolve("Jame", None))["answer"], "needs_input: What is the patient's date of birth?")
+        self.assertEqual(
+            (await r.resolve("Jame", None))["answer"],
+            "needs_input: What is the patient's date of birth?",
+        )
         self.assertEqual((await r.resolve("J-A-N-E", None))["outcome"], "verified")
 
     async def test_complete_absence_is_distinct_from_failed_partial_or_unexpected_search(
@@ -266,7 +280,15 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
             (search(complete=False), "lookup_failed"),
             (search(candidate(), complete=False), "lookup_failed"),
             ({"status": "error"}, "lookup_failed"),
-            ({"status": "candidates", "source": "first_name", "complete": True, "matches": [candidate()]}, "lookup_failed"),
+            (
+                {
+                    "status": "candidates",
+                    "source": "first_name",
+                    "complete": True,
+                    "matches": [candidate()],
+                },
+                "lookup_failed",
+            ),
         ]:
             with self.subTest(body=body):
                 r, _ = self.resolver([body, body])
@@ -300,7 +322,9 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
             {"appointmentsStatus": "unknown"},
         ):
             with self.subTest(override=override):
-                r, _ = self.resolver([{**receipt(), **override}, {**receipt(), **override}])
+                r, _ = self.resolver(
+                    [{**receipt(), **override}, {**receipt(), **override}]
+                )
                 self.assertEqual(
                     (await r.resolve("Jane", "01/02/1980"))["outcome"], "lookup_failed"
                 )
@@ -310,13 +334,14 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
     async def test_invalid_dob_is_rejected_before_read(self):
         for dob in ("02/30/1980", "13/01/1980", "01/01/2999", "1980-01-01", ""):
             r, calls = self.resolver([])
-            self.assertEqual((await r.resolve("Jane", dob))["answer"], "needs_input: Ask for a corrected date of birth in MM/DD/YYYY.")
+            self.assertEqual(
+                (await r.resolve("Jane", dob))["answer"],
+                "needs_input: Ask for a corrected date of birth in MM/DD/YYYY.",
+            )
             self.assertEqual(calls, [])
 
     async def test_appointment_load_error_is_retained_and_reloaded(self):
-        r, calls = self.resolver(
-            [receipt(appointmentsStatus="error"), receipt()]
-        )
+        r, calls = self.resolver([receipt(appointmentsStatus="error"), receipt()])
         self.assertEqual((await r.resolve("Jane", "01/02/1980"))["outcome"], "verified")
         self.assertEqual(r.state.patient.active.appointmentsStatus, "error")
         await r.resolve("Jane", None)
@@ -480,7 +505,10 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
             await self.preload(r)
             self.assertEqual(r.state.patient.lookup.status, status)
             self.assertIsNone(r.state.patient.absence)
-            self.assertEqual((await r.resolve("Jane", None))["answer"], "needs_input: What is the patient's date of birth?")
+            self.assertEqual(
+                (await r.resolve("Jane", None))["answer"],
+                "needs_input: What is the patient's date of birth?",
+            )
 
     async def test_correction_while_phone_lookup_is_pending_uses_latest_identity(self):
         started, release = asyncio.Event(), asyncio.Event()
@@ -488,10 +516,13 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         async def delayed(request):
             started.set()
             await release.wait()
-            return httpx.Response(200, json={
-                "status": "multiple_matches",
-                "matches": [candidate(), candidate("john", "John")],
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "status": "multiple_matches",
+                    "matches": [candidate(), candidate("john", "John")],
+                },
+            )
 
         r, calls = self.resolver([delayed, receipt("john", "John")])
         r.start_phone_lookup()
@@ -550,7 +581,9 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         result = await agent.resolve_patient(
             SimpleNamespace(userdata=call_state()), "Jane", None
         )
-        self.assertEqual(result, "blocked: Patient lookup is unavailable. Ask office staff for help.")
+        self.assertEqual(
+            result, "blocked: Patient lookup is unavailable. Ask office staff for help."
+        )
         self.assertEqual(calls, [])
 
     def test_phone_fuzzy_thresholds_match_agent_examples(self):

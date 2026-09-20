@@ -28,8 +28,15 @@ def digest(path):
 
 def component_version(component: str, version: str, commit: str, files: dict) -> str:
     """Reuse the previous published bundle when its complete content matches."""
-    tags = run("git", "tag", "--merged", commit, "--list", f"{component}-v*",
-               "--sort=-version:refname").splitlines()
+    tags = run(
+        "git",
+        "tag",
+        "--merged",
+        commit,
+        "--list",
+        f"{component}-v*",
+        "--sort=-version:refname",
+    ).splitlines()
     current = tuple(map(int, version.split(".")))
     for tag in tags:
         prior = tag.removeprefix(f"{component}-v")
@@ -39,14 +46,18 @@ def component_version(component: str, version: str, commit: str, files: dict) ->
         if tuple(map(int, prior.split("."))) >= current:
             continue
         directory = "src/abita_s2s/prompts" if component == "prompts" else "evals"
-        paths = run("git", "ls-tree", "-r", "--name-only", tag, "--", directory).splitlines()
+        paths = run(
+            "git", "ls-tree", "-r", "--name-only", tag, "--", directory
+        ).splitlines()
         prior_files = {}
         for path in paths:
             name = path.removeprefix(directory + "/")
             if (component == "prompts" and name in ("speaker.md", "thinker.md")) or (
                 component == "evals" and Path(name).suffix in (".yaml", ".yml")
             ):
-                data = subprocess.check_output(["git", "show", f"{tag}:{path}"], cwd=ROOT)
+                data = subprocess.check_output(
+                    ["git", "show", f"{tag}:{path}"], cwd=ROOT
+                )
                 prior_files[name] = hashlib.sha256(data).hexdigest()
         return prior if prior_files == files else version
     return version

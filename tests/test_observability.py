@@ -17,29 +17,47 @@ class ObservabilityTests(unittest.IsolatedAsyncioTestCase):
         history = ChatContext()
         history.add_message(role="user", content="Please cancel my visit.")
         return SimpleNamespace(
-            make_session_report=Mock(return_value=SimpleNamespace(chat_history=history)),
+            make_session_report=Mock(
+                return_value=SimpleNamespace(chat_history=history)
+            ),
             tagger=Mock(),
         )
 
     async def test_full_history_and_failed_verdict_are_complete(self):
         ctx = self.context()
         group = Mock(judges=[SimpleNamespace(name="accuracy")], llm=AsyncMock())
-        group.evaluate = AsyncMock(return_value=EvaluationResult(judgments={
-            "accuracy": JudgmentResult(verdict="fail", reasoning="Unsupported claim"),
-        }))
+        group.evaluate = AsyncMock(
+            return_value=EvaluationResult(
+                judgments={
+                    "accuracy": JudgmentResult(
+                        verdict="fail", reasoning="Unsupported claim"
+                    ),
+                }
+            )
+        )
         with patch("abita_s2s.observability.JudgeGroup", return_value=group):
             await evaluate_call(ctx)
-        group.evaluate.assert_awaited_once_with(ctx.make_session_report.return_value.chat_history)
+        group.evaluate.assert_awaited_once_with(
+            ctx.make_session_report.return_value.chat_history
+        )
         ctx.tagger.add.assert_called_once_with("abita.evaluation:complete")
 
     async def test_missing_or_empty_verdicts_never_pass(self):
-        for judgments in ({}, {"accuracy": JudgmentResult(verdict="pass", reasoning="Grounded")}):
+        for judgments in (
+            {},
+            {"accuracy": JudgmentResult(verdict="pass", reasoning="Grounded")},
+        ):
             ctx = self.context()
             group = Mock(
-                judges=[SimpleNamespace(name="accuracy"), SimpleNamespace(name="tool_use")],
+                judges=[
+                    SimpleNamespace(name="accuracy"),
+                    SimpleNamespace(name="tool_use"),
+                ],
                 llm=AsyncMock(),
             )
-            group.evaluate = AsyncMock(return_value=EvaluationResult(judgments=judgments))
+            group.evaluate = AsyncMock(
+                return_value=EvaluationResult(judgments=judgments)
+            )
             with patch("abita_s2s.observability.JudgeGroup", return_value=group):
                 await evaluate_call(ctx)
             ctx.tagger.add.assert_called_once_with("abita.evaluation:incomplete")
@@ -84,10 +102,14 @@ class ObservabilityTests(unittest.IsolatedAsyncioTestCase):
             async def evaluate(*_):
                 events.append("evaluation")
 
-            ctx = SimpleNamespace(primary_session=SimpleNamespace(
-                userdata=SimpleNamespace(reporter=SimpleNamespace(finish=finish)),
-            ))
-            with patch("abita_s2s.runtime.session_startup.evaluate_call", side_effect=evaluate):
+            ctx = SimpleNamespace(
+                primary_session=SimpleNamespace(
+                    userdata=SimpleNamespace(reporter=SimpleNamespace(finish=finish)),
+                )
+            )
+            with patch(
+                "abita_s2s.runtime.session_startup.evaluate_call", side_effect=evaluate
+            ):
                 if error:
                     with self.assertRaises(RuntimeError):
                         await finish_voice_call(ctx)

@@ -36,7 +36,8 @@ class AbitaAgent(Agent):
             tools.append(function_tool(self.create_staff_task))
         if call_control:
             tools.append(call_control)
-        super().__init__(tools=tools,
+        super().__init__(
+            tools=tools,
             instructions=(
                 load_prompt("speaker")
                 + f"\n\nCurrent office: {office.display_name} ({office.key})."
@@ -69,13 +70,17 @@ class AbitaAgent(Agent):
         """
         if self._resolver is None or self._resolver.state is not context.userdata:
             return "blocked: Patient lookup is unavailable. Ask office staff for help."
-        result = await self._resolver.resolve(firstName, dob, call_id=context.function_call.call_id)
+        result = await self._resolver.resolve(
+            firstName, dob, call_id=context.function_call.call_id
+        )
         appointments = self._scheduling.appointments_text() if self._scheduling else ""
         return result["answer"] + appointments
 
     @function_tool
     async def check_insurance(
-        self, context: RunContext[CallState], plan: str,
+        self,
+        context: RunContext[CallState],
+        plan: str,
         coverageType: Literal["medical", "routine_vision"],
     ) -> str:
         """Check office participation for the caller's plan and triaged visit type.
@@ -89,11 +94,23 @@ class AbitaAgent(Agent):
 
     @function_tool
     async def add_patient(
-        self, context: RunContext[CallState], firstName: str, lastName: str, dob: str,
-        phone: str | None, inboundPhoneConfirmed: Literal[True] | None,
-        email: str | None, street: str, aptSuite: str | None, city: str, state: str,
-        zip: str, sex: Literal["male", "female"], subscriberName: str,
-        insuranceMemberId: str, readBack: Literal[True] | None,
+        self,
+        context: RunContext[CallState],
+        firstName: str,
+        lastName: str,
+        dob: str,
+        phone: str | None,
+        inboundPhoneConfirmed: Literal[True] | None,
+        email: str | None,
+        street: str,
+        aptSuite: str | None,
+        city: str,
+        state: str,
+        zip: str,
+        sex: Literal["male", "female"],
+        subscriberName: str,
+        insuranceMemberId: str,
+        readBack: Literal[True] | None,
     ) -> str:
         """Create a new patient chart and attach insurance from completed intake.
 
@@ -139,12 +156,16 @@ class AbitaAgent(Agent):
             insuranceMemberId=insuranceMemberId,
             readBack=readBack,
         )
-        result = await self._insurance.add(registration, call_id=context.function_call.call_id)
+        result = await self._insurance.add(
+            registration, call_id=context.function_call.call_id
+        )
         return result["answer"]
 
     @function_tool
     async def update_insurance(
-        self, context: RunContext[CallState], insuranceMemberId: str,
+        self,
+        context: RunContext[CallState],
+        insuranceMemberId: str,
     ) -> str:
         """Change the active verified patient's coverage only when the caller requests it.
 
@@ -155,7 +176,9 @@ class AbitaAgent(Agent):
         """
         if self._insurance is None or self._insurance.state is not context.userdata:
             return staff()["answer"]
-        result = await self._insurance.update(insuranceMemberId, call_id=context.function_call.call_id)
+        result = await self._insurance.update(
+            insuranceMemberId, call_id=context.function_call.call_id
+        )
         return f"{result['outcome']}: {result['answer']}"
 
     @function_tool
@@ -217,7 +240,8 @@ class AbitaAgent(Agent):
             patient = result["patient"]
             answer += (
                 f"\nPatient: {patient['name']} ({'verified' if patient['verified'] else 'unverified'})."
-                if patient else "\nPatient: not identified."
+                if patient
+                else "\nPatient: not identified."
             )
         return answer
 
@@ -229,7 +253,7 @@ class AbitaAgent(Agent):
         now = datetime.now(ZoneInfo("America/New_York"))
         handle = self.session.generate_reply(
             instructions=(
-                'Greet the caller with “Good morning,” “Good afternoon,” or “Good evening,” '
+                "Greet the caller with “Good morning,” “Good afternoon,” or “Good evening,” "
                 "using office-local time. Name the practice, introduce yourself as Sofia, "
                 "and ask how you can help. Be warm, caring, and upbeat; vary wording "
                 "slightly, keep it brief, then listen. "

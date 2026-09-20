@@ -89,14 +89,26 @@ class InsuranceRegistration:
         decision = await self._middleware.check(
             office, plan.strip(), coverage_type, active.dob if active else ""
         )
-        if (patient.revision != revision or self.state.call.called_office_key != office
-                or self.state.insurance.check_revision != check_revision):
-            return reply("stale", "blocked: Patient or insurance context changed. Check insurance again.")
+        if (
+            patient.revision != revision
+            or self.state.call.called_office_key != office
+            or self.state.insurance.check_revision != check_revision
+        ):
+            return reply(
+                "stale",
+                "blocked: Patient or insurance context changed. Check insurance again.",
+            )
         if decision is None:
-            return reply("unavailable", "blocked: Insurance participation could not be checked. Ask office staff for help.")
+            return reply(
+                "unavailable",
+                "blocked: Insurance participation could not be checked. Ask office staff for help.",
+            )
         if decision.participation == "accepted" and decision.canonicalPlan:
             self.state.insurance.accepted = AcceptedInsurance(
-                office, revision, active.patientId if active else None, absence,
+                office,
+                revision,
+                active.patientId if active else None,
+                absence,
                 decision,
             )
         return reply(decision.outcome, decision.answer)
@@ -130,7 +142,9 @@ class InsuranceRegistration:
         self._task = asyncio.create_task(run())
         return await asyncio.shield(self._task)
 
-    async def add(self, registration: Registration, *, call_id: str | None = None) -> dict:
+    async def add(
+        self, registration: Registration, *, call_id: str | None = None
+    ) -> dict:
         r = registration
         key = (
             self.state.call.called_office_key,
@@ -166,7 +180,9 @@ class InsuranceRegistration:
         if len(digits) == 11 and digits.startswith("1"):
             digits = digits[1:]
         if len(digits) != 10:
-            return reply("needs_callback", "needs_input: Ask for a valid callback phone number.")
+            return reply(
+                "needs_callback", "needs_input: Ask for a valid callback phone number."
+            )
         if (
             not all((r.firstName, r.lastName, r.street, r.city, r.state, r.zip))
             or not parse_dob(r.dob)
@@ -232,16 +248,16 @@ class InsuranceRegistration:
                 if answer["outcome"] in ("created", "partial"):
                     evidence["externalPatientId"] = str(result.patientId)
                     active = self.state.patient.active
-                    evidence["superseded"] = active is None or active.patientId != result.patientId
+                    evidence["superseded"] = (
+                        active is None or active.patientId != result.patientId
+                    )
                 self.state.reporter.record("patient", evidence, call_id=call_id)
             self._creations.append((key, answer))
             return answer
 
         return await self._run_write(checked, create)
 
-    def _created(
-        self, result: CreationReceipt, r: Registration, checked
-    ) -> dict:
+    def _created(self, result: CreationReceipt, r: Registration, checked) -> dict:
         # Validate both complete names without inventing backend identifier formats.
         expected = {
             exact_name(f"{r.firstName} {r.lastName}"),
@@ -258,7 +274,9 @@ class InsuranceRegistration:
             name=result.name,
             dob=result.dob,
             phone=r.phone or self.state.call.caller_phone,
-            insuranceCarrier=checked.decision.canonicalPlan if result.status == "created" else None,
+            insuranceCarrier=checked.decision.canonicalPlan
+            if result.status == "created"
+            else None,
             insuranceDecision=result.insuranceDecision,
             appointmentsStatus="none",
             appointments=[],
@@ -287,9 +305,7 @@ class InsuranceRegistration:
             )
         if checked.decision.participation != "accepted":
             return reply(checked.decision.outcome, checked.decision.answer)
-        member_id = (
-            "self pay" if checked.decision.selfPay else member_id.strip()
-        )
+        member_id = "self pay" if checked.decision.selfPay else member_id.strip()
         if not member_id:
             return reply(
                 "needs_member_id", "What is the member ID on the insurance card?"
@@ -342,7 +358,8 @@ class InsuranceRegistration:
             if (
                 not isinstance(result, UpdatedReceipt)
                 or result.patientId != active.patientId
-                or normalize(result.newInsurance) != normalize(checked.decision.canonicalPlan)
+                or normalize(result.newInsurance)
+                != normalize(checked.decision.canonicalPlan)
             ):
                 self.state.insurance.write_uncertain = True
                 answer = staff("uncertain")
@@ -367,9 +384,14 @@ class InsuranceRegistration:
                         f"Updated insurance for {active.name}. Patient context changed; the receipt was not applied to the current patient.",
                     )
             if self.state.reporter:
-                self.state.reporter.record("insurance", {
-                    "outcome": answer["outcome"], "externalPatientId": str(active.patientId),
-                }, call_id=call_id)
+                self.state.reporter.record(
+                    "insurance",
+                    {
+                        "outcome": answer["outcome"],
+                        "externalPatientId": str(active.patientId),
+                    },
+                    call_id=call_id,
+                )
             self._updates.append((key, answer))
             return answer
 

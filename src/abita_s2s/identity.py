@@ -128,7 +128,9 @@ class PatientResolver:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def resolve(self, first_name: str | None, dob: str | None, *, call_id: str | None = None) -> dict:
+    async def resolve(
+        self, first_name: str | None, dob: str | None, *, call_id: str | None = None
+    ) -> dict:
         if self._closed:
             return reply("superseded", "blocked: This call has ended.")
         first_name = first_name.strip() if first_name is not None else None
@@ -176,7 +178,10 @@ class PatientResolver:
                 if self._precall is not None:
                     candidates = await asyncio.shield(self._precall)
                     if not self._current(token):
-                        return reply("superseded", "blocked: Patient details changed; use the latest resolution.")
+                        return reply(
+                            "superseded",
+                            "blocked: Patient details changed; use the latest resolution.",
+                        )
                     self.state.patient.lookup = candidates
                 return await self._resolve(first_name, dob, token, call_id=call_id)
             except asyncio.CancelledError:
@@ -195,7 +200,14 @@ class PatientResolver:
     def _current(self, token: object) -> bool:
         return not self._closed and self._token is not None and self._token is token
 
-    async def _resolve(self, name: str | None, dob: str | None, token: object, *, call_id: str | None = None) -> dict:
+    async def _resolve(
+        self,
+        name: str | None,
+        dob: str | None,
+        token: object,
+        *,
+        call_id: str | None = None,
+    ) -> dict:
         if not name or not exact_name(name):
             return reply(
                 "needs_identity", "needs_input: What is the patient's first name?"
@@ -214,7 +226,9 @@ class PatientResolver:
         if len(selected) > 1:
             return ambiguous(dob)
         if selected:
-            return await self._load_patient(selected[0], name, dob, token, phone=True, call_id=call_id)
+            return await self._load_patient(
+                selected[0], name, dob, token, phone=True, call_id=call_id
+            )
         active = self.state.patient.active
         if (
             active
@@ -224,7 +238,9 @@ class PatientResolver:
             if active.appointmentsStatus != "error":
                 self._pending = (None, None)
                 return self._facts(active, "verified", call_id=call_id)
-            return await self._load_patient(active, name, dob, token, phone=True, call_id=call_id)
+            return await self._load_patient(
+                active, name, dob, token, phone=True, call_id=call_id
+            )
         if not dob:
             return reply(
                 "needs_identity", "needs_input: What is the patient's date of birth?"
@@ -234,7 +250,8 @@ class PatientResolver:
         )
         if not self._current(token):
             return reply(
-                "superseded", "blocked: Patient details changed; use the latest resolution."
+                "superseded",
+                "blocked: Patient details changed; use the latest resolution.",
             )
         if isinstance(result, NotFound):
             self.state.patient.absence = PatientAbsence(
@@ -248,7 +265,9 @@ class PatientResolver:
             return ambiguous(dob)
         if not isinstance(result, Receipt):
             return failed()
-        return await self._load_patient(result, name, dob, token, phone=False, call_id=call_id)
+        return await self._load_patient(
+            result, name, dob, token, phone=False, call_id=call_id
+        )
 
     async def _load_patient(
         self,
@@ -262,19 +281,25 @@ class PatientResolver:
     ) -> dict:
         if not self._current(token):
             return reply(
-                "superseded", "blocked: Patient details changed; use the latest resolution."
+                "superseded",
+                "blocked: Patient details changed; use the latest resolution.",
             )
         active = self.state.patient.active
         receipt = (
-            active if phone and active and active.patientId == candidate.patientId else candidate
+            active
+            if phone and active and active.patientId == candidate.patientId
+            else candidate
         )
-        if not isinstance(receipt, Receipt) or (phone and receipt.appointmentsStatus == "error"):
+        if not isinstance(receipt, Receipt) or (
+            phone and receipt.appointmentsStatus == "error"
+        ):
             receipt = await self._middleware.resolve(
                 self.state.call.called_office_key, {"patientId": candidate.patientId}
             )
         if not self._current(token):
             return reply(
-                "superseded", "blocked: Patient details changed; use the latest resolution."
+                "superseded",
+                "blocked: Patient details changed; use the latest resolution.",
             )
         matcher = (
             phone_name_matches if phone else lambda a, b: exact_name(a) == exact_name(b)
@@ -296,7 +321,9 @@ class PatientResolver:
         self.state.patient.absence = None
         self._pending = (None, None)
         self._previous_id = None
-        return self._facts(receipt, "switched" if switched else "verified", call_id=call_id)
+        return self._facts(
+            receipt, "switched" if switched else "verified", call_id=call_id
+        )
 
     async def read_insurance(self, expected: Receipt) -> Receipt | None:
         """Reload private backend references without replacing current appointment state."""
@@ -339,10 +366,15 @@ class PatientResolver:
         self.state.patient.revision += 1
         # A newer plan check must not be rebound to this older write's receipt.
         if self.state.insurance.accepted is checked:
-            self.state.insurance.accepted = replace(
-                checked, patient_revision=self.state.patient.revision,
-                decision=updated.insuranceDecision,
-            ) if updated.insuranceDecision else None
+            self.state.insurance.accepted = (
+                replace(
+                    checked,
+                    patient_revision=self.state.patient.revision,
+                    decision=updated.insuranceDecision,
+                )
+                if updated.insuranceDecision
+                else None
+            )
         return True
 
     def activate_created(self, checked: AcceptedInsurance, receipt: Receipt) -> bool:
@@ -359,25 +391,41 @@ class PatientResolver:
         self.state.patient.revision += 1
         self._pending = (None, None)
         self._previous_id = None
-        self.state.insurance.accepted = replace(
-            checked,
-            patient_revision=self.state.patient.revision,
-            patient_id=receipt.patientId,
-            absence=None,
-            decision=receipt.insuranceDecision,
-        ) if receipt.insuranceDecision else None
+        self.state.insurance.accepted = (
+            replace(
+                checked,
+                patient_revision=self.state.patient.revision,
+                patient_id=receipt.patientId,
+                absence=None,
+                decision=receipt.insuranceDecision,
+            )
+            if receipt.insuranceDecision
+            else None
+        )
         return True
 
-    def _facts(self, receipt: Receipt, outcome: str, *, call_id: str | None = None) -> dict:
+    def _facts(
+        self, receipt: Receipt, outcome: str, *, call_id: str | None = None
+    ) -> dict:
         if self.state.reporter:
-            self.state.reporter.record("patient", {
-                "outcome": outcome, "externalPatientId": receipt.patientId,
-            }, call_id=call_id)
+            self.state.reporter.record(
+                "patient",
+                {
+                    "outcome": outcome,
+                    "externalPatientId": receipt.patientId,
+                },
+                call_id=call_id,
+            )
             # Resolving a chart created in this call must not label it existing.
             if receipt.patientId in self.state.insurance.registrations:
-                self.state.reporter.record("patient", {
-                    "outcome": "created", "externalPatientId": receipt.patientId,
-                }, call_id=call_id)
+                self.state.reporter.record(
+                    "patient",
+                    {
+                        "outcome": "created",
+                        "externalPatientId": receipt.patientId,
+                    },
+                    call_id=call_id,
+                )
         result = reply(
             outcome,
             f"success: I found the patient record for {receipt.name}. DOB is on file; do not ask for DOB."
