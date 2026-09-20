@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/chasef07/abita_s2s/compare/v0.5.3...v0.6.0) (2026-09-20)
+
+
+### Features
+
+* add warm time-aware office greetings ([#46](https://github.com/chasef07/abita_s2s/issues/46)) ([1dd7467](https://github.com/chasef07/abita_s2s/commit/1dd7467f8b4fe1121cd04ac171853c9cb296141d))
+
 ## [0.5.3](https://github.com/chasef07/abita_s2s/compare/v0.5.2...v0.5.3) (2026-09-18)
 
 
