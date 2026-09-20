@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.1](https://github.com/chasef07/abita_s2s/compare/v0.6.0...v0.6.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* fence stale call operations and recover transfer deadlines ([#49](https://github.com/chasef07/abita_s2s/issues/49)) ([08f838a](https://github.com/chasef07/abita_s2s/commit/08f838ab2484213e1e937e86e9694e1b5f5c401c))
+* **scheduling:** use chart insurance for existing patients ([#48](https://github.com/chasef07/abita_s2s/issues/48)) ([c7c4ef1](https://github.com/chasef07/abita_s2s/commit/c7c4ef149f99927b8edf30952087df468b718351))
+
 ## [0.6.0](https://github.com/chasef07/abita_s2s/compare/v0.5.3...v0.6.0) (2026-09-20)
 
 
