@@ -60,8 +60,6 @@ class Receipt(Record):
     dob: Text
     phone: str | None = None
     insuranceCarrier: str | None = None
-    insPlanId: str | None = None
-    respPartyId: str | None = None
     appointmentsStatus: Literal["found", "none", "error"]
     appointments: list[Appointment]
 

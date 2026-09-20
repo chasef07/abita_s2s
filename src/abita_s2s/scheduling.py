@@ -230,7 +230,7 @@ class Scheduling:
             lines.append(
                 f"Searched {result['searchedFrom']} through {result['searchedThrough']}."
             )
-        if "retry_same_search" in result:
+        if "retry_same_search" in result and result["outcome"] == "availability_failed":
             lines.append(
                 "Retry this search once."
                 if result["retry_same_search"]
@@ -365,6 +365,18 @@ class Scheduling:
                 expired = result.bookingTokenExpiresAt <= self.now()
                 if expired:
                     result = SchedulingFailure(reason="expired_inventory")
+        if not isinstance(result, SchedulingFailure) and result.outcome in (
+            "invalid_input",
+            "policy_blocked",
+        ):
+            answer = reply(
+                "needs_input" if result.outcome == "invalid_input" else "unsupported",
+                f"{'needs_input' if result.outcome == 'invalid_input' else 'blocked'}: {result.message}",
+                retry_same_search=False,
+            )
+            self._failures[key] = (1, False)
+            self._cache = (key, self.now() + timedelta(seconds=60), answer)
+            return answer
         if (
             isinstance(result, SchedulingFailure)
             or result.outcome == "availability_search_incomplete"
@@ -628,18 +640,26 @@ class Scheduling:
             )
         )
         result = await self.http.cancel(self._cancel_body(p, old))
-        outcome = self._cancel_result(result)
+        outcome = self._cancel_result(result, old.id)
         self._report(
             p, cancellation_outcome=outcome["outcome"], old=old, call_id=call_id
         )
         if (
             outcome["outcome"] != "cancelled"
             and isinstance(result, WriteReceipt)
-            and result.outcome == "invalid_cancellation_token"
+            and result.status == "error"
+            and result.outcome
+            in (
+                "invalid_cancellation_token",
+                "provider_conflict",
+                "provider_rejected",
+                "ownership_mismatch",
+                "write_failed",
+            )
             and self._context() == captured
         ):
             self.state.patient.active = p.model_copy(
-                update={"appointments": [], "appointmentsStatus": "error"}
+                update={"appointmentsStatus": "error"}
             )
         if outcome["outcome"] in ("cancelled", "uncertain"):
             self._receipts[receipt_key] = MutationReceipt(
@@ -1021,18 +1041,33 @@ class Scheduling:
         }
 
     @staticmethod
-    def _cancel_result(result):
-        if isinstance(result, WriteReceipt) and result.status == "cancelled":
+    def _cancel_result(result, appointment_id):
+        if (
+            isinstance(result, WriteReceipt)
+            and result.status == "cancelled"
+            and result.appointmentId == appointment_id
+        ):
             return reply(
                 "cancelled", "success: The selected appointment was cancelled."
             )
         if (
             isinstance(result, WriteReceipt)
+            and result.status == "error"
             and result.outcome == "invalid_cancellation_token"
         ):
             return reply(
                 "rejected",
                 "needs_input: The appointment details expired. Reload appointments and reconfirm the exact cancellation.",
+            )
+        if (
+            isinstance(result, WriteReceipt)
+            and result.status == "error"
+            and result.outcome
+            in ("provider_conflict", "provider_rejected", "ownership_mismatch")
+        ):
+            return reply(
+                "rejected",
+                "needs_input: Cancellation was not completed. Reload appointments and reconfirm the exact appointment, or ask office staff for help.",
             )
         return Scheduling._write_failure(result, "cancellation")
 
