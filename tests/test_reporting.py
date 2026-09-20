@@ -150,7 +150,9 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                 return_value=SimpleNamespace(to_dict=lambda: REPORT)
             ),
         )
-        with patch("abita_s2s.runtime.session_startup.evaluate_call", new_callable=AsyncMock) as evaluate:
+        with patch(
+            "abita_s2s.runtime.session_startup.evaluate_call", new_callable=AsyncMock
+        ) as evaluate:
             await finish_voice_call(ctx)
             evaluate.assert_awaited_once_with(ctx)
         ctx.make_session_report.assert_called_once()
@@ -178,13 +180,18 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                 reporter.started = True
                 await reporter.finish(lambda: REPORT)
                 self.assertEqual(self.requests[-1]["status"], "FAILED")
-                self.assertTrue(self.requests[-1]["closeoutPayload"]["mutationDrainFailed"])
+                self.assertTrue(
+                    self.requests[-1]["closeoutPayload"]["mutationDrainFailed"]
+                )
 
     async def test_appointment_domain_outcomes_use_product_names(self):
         reporter = self.reporter()
         reporter.appointment(OUTCOME)
         await reporter.finish(lambda: REPORT)
-        self.assertEqual(self.requests[-1]["closeoutPayload"]["domainOutcomes"][0]["outcome"], "booked")
+        self.assertEqual(
+            self.requests[-1]["closeoutPayload"]["domainOutcomes"][0]["outcome"],
+            "booked",
+        )
 
     async def test_verified_and_switched_patients_reach_product_classification(self):
         reporter = self.reporter()
@@ -194,32 +201,45 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             receipt(),
             receipt("chart-john", "John", "03/04/1981"),
         ]
-        async with httpx.AsyncClient(transport=httpx.MockTransport(
-            lambda request: httpx.Response(200, json=responses.pop(0))
-        )) as client:
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json=responses.pop(0))
+            )
+        ) as client:
             resolver = PatientResolver(state, PatientMiddleware(client, CONFIG))
             self.addAsyncCleanup(resolver.aclose)
             await resolver.resolve("Jane", "01/02/1980")
             await resolver.resolve("John", "03/04/1981")
         await reporter.finish(lambda: REPORT)
         facts = self.requests[-1]["closeoutPayload"]["domainOutcomes"]
-        self.assertEqual([f["outcome"] for f in facts], ["patient_verified", "patient_switched"])
+        self.assertEqual(
+            [f["outcome"] for f in facts], ["patient_verified", "patient_switched"]
+        )
         self.assertTrue(all(f["status"] == "success" for f in facts))
         self.assertEqual(facts[-1]["evidence"]["externalPatientId"], "chart-john")
 
-    async def test_resolving_late_created_chart_preserves_new_patient_classification(self):
+    async def test_resolving_late_created_chart_preserves_new_patient_classification(
+        self,
+    ):
         reporter = self.reporter()
         state = call_state(None)
         state.reporter = reporter
         # Creation finished after identity moved on without activating another chart.
         state.insurance.registrations["chart-jane"] = "created"
-        reporter.record("patient", {
-            "outcome": "created", "externalPatientId": "chart-jane", "superseded": True,
-        })
+        reporter.record(
+            "patient",
+            {
+                "outcome": "created",
+                "externalPatientId": "chart-jane",
+                "superseded": True,
+            },
+        )
         responses = [receipt()]
-        async with httpx.AsyncClient(transport=httpx.MockTransport(
-            lambda request: httpx.Response(200, json=responses.pop(0))
-        )) as client:
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json=responses.pop(0))
+            )
+        ) as client:
             resolver = PatientResolver(state, PatientMiddleware(client, CONFIG))
             self.addAsyncCleanup(resolver.aclose)
             await resolver.resolve("Jane", "01/02/1980", call_id="identity-call")

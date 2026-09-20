@@ -8,7 +8,11 @@ from zoneinfo import ZoneInfo
 
 from livekit.agents import RunContext, function_tool
 
-from abita_s2s.insurance_state import AcceptedInsurance, insurance_ready, registration_insurance
+from abita_s2s.insurance_state import (
+    AcceptedInsurance,
+    insurance_ready,
+    registration_insurance,
+)
 from abita_s2s.middleware import Appointment, Receipt
 from abita_s2s.offices import get_office_profile
 from abita_s2s.scheduling_http import (
@@ -223,23 +227,28 @@ class Scheduling:
         result = await self.availability(visitType, startDate, office)
         lines = [result["answer"]]
         if "searchedFrom" in result:
-            lines.append(f"Searched {result['searchedFrom']} through {result['searchedThrough']}.")
+            lines.append(
+                f"Searched {result['searchedFrom']} through {result['searchedThrough']}."
+            )
         if "retry_same_search" in result:
             lines.append(
-                "Retry this search once." if result["retry_same_search"]
+                "Retry this search once."
+                if result["retry_same_search"]
                 else "Do not retry this search; ask staff for help."
             )
         if slots := result.get("slots"):
             groups = {}
             for slot in slots:
-                groups.setdefault((slot['date'], slot['provider']), []).append(slot)
+                groups.setdefault((slot["date"], slot["provider"]), []).append(slot)
             for (day, provider), openings in groups.items():
                 calendar_day = date.fromisoformat(day)
-                lines.extend([
-                    "",
-                    f"{calendar_day:%A, %B} {calendar_day.day}, {calendar_day.year}",
-                    provider,
-                ])
+                lines.extend(
+                    [
+                        "",
+                        f"{calendar_day:%A, %B} {calendar_day.day}, {calendar_day.year}",
+                        provider,
+                    ]
+                )
                 lines.extend(
                     f"{slot['time']} — {slot['appointmentSlotRef']}"
                     for slot in openings
@@ -258,7 +267,9 @@ class Scheduling:
                 raise ValueError()
         except ValueError:
             self._invalidate()
-            return reply("needs_input", "needs_input: Provide the requested date as YYYY-MM-DD.")
+            return reply(
+                "needs_input", "needs_input: Provide the requested date as YYYY-MM-DD."
+            )
         if first <= today:
             self._invalidate()
             return reply(
@@ -343,7 +354,10 @@ class Scheduling:
         if not isinstance(result, SchedulingFailure):
             if (
                 (result.searchedFrom is not None and result.searchedFrom != first)
-                or (result.searchedThrough is not None and result.searchedThrough != through)
+                or (
+                    result.searchedThrough is not None
+                    and result.searchedThrough != through
+                )
                 or any(not first <= slot.date <= through for slot in result.slots)
             ):
                 result = SchedulingFailure(reason="invalid_search_window")
@@ -356,7 +370,9 @@ class Scheduling:
             or result.outcome == "availability_search_incomplete"
             or result.status == "error"
         ):
-            retry = isinstance(result, SchedulingFailure) or result.shouldRetrySameSearch
+            retry = (
+                isinstance(result, SchedulingFailure) or result.shouldRetrySameSearch
+            )
             count = self._failures.get(key, (0, False))[0] + 1
             self._failures[key] = (count, retry)
             if expired and count < 2:
@@ -397,7 +413,9 @@ class Scheduling:
             else:
                 self._next_ref += 1
                 ref = f"S{self._next_ref}"
-            self._slots[ref] = OfferedSlot(slot, key.context, key.office, key.visit, expiry)
+            self._slots[ref] = OfferedSlot(
+                slot, key.context, key.office, key.visit, expiry
+            )
         answer = reply(
             "found",
             "success: Found eligible openings.",
@@ -440,14 +458,20 @@ class Scheduling:
                 narrate the internal value.
         """
         return await self._execute(
-            context, self._book,
-            slot_ref=appointmentSlotRef, reason=appointmentReason,
-            referrer=referringDoctor, confirmed=readBack,
+            context,
+            self._book,
+            slot_ref=appointmentSlotRef,
+            reason=appointmentReason,
+            referrer=referringDoctor,
+            confirmed=readBack,
         )
 
     @function_tool
     async def cancel_appointment(
-        self, context: RunContext[CallState], appointmentRef: str, readBack: Literal[True] | None
+        self,
+        context: RunContext[CallState],
+        appointmentRef: str,
+        readBack: Literal[True] | None,
     ) -> str:
         """Cancel only after verification and the caller confirms cancellation of the exact loaded appointment.
 
@@ -455,7 +479,9 @@ class Scheduling:
         the exact date, time, provider and intent to cancel.
         Claim success only from the result; never retry uncertain cancellation.
         """
-        return await self._execute(context, self._cancel, confirmed=readBack, old_ref=appointmentRef)
+        return await self._execute(
+            context, self._cancel, confirmed=readBack, old_ref=appointmentRef
+        )
 
     @function_tool
     async def reschedule_appointment(
@@ -481,12 +507,18 @@ class Scheduling:
                 narrate the internal value.
         """
         return await self._execute(
-            context, self._reschedule,
-            slot_ref=appointmentSlotRef, reason=appointmentReason,
-            referrer=referringDoctor, confirmed=readBack, old_ref=oldAppointmentRef,
+            context,
+            self._reschedule,
+            slot_ref=appointmentSlotRef,
+            reason=appointmentReason,
+            referrer=referringDoctor,
+            confirmed=readBack,
+            old_ref=oldAppointmentRef,
         )
 
-    async def _execute(self, context: RunContext[CallState], operation, **arguments) -> str:
+    async def _execute(
+        self, context: RunContext[CallState], operation, **arguments
+    ) -> str:
         if context.userdata is not self.state or self._closed:
             return "blocked: Scheduling is unavailable."
         if self._write_task and not self._write_task.done():
@@ -496,15 +528,21 @@ class Scheduling:
             return "needs_input: Verify the patient before changing appointments."
         for (patient_id, _, _), receipt in self._receipts.items():
             if patient_id == patient.patientId and receipt.result["outcome"] in (
-                "uncertain", "partial_reschedule",
+                "uncertain",
+                "partial_reschedule",
             ):
                 return receipt.result["answer"] + self.appointments_text()
         captured = self._context()
 
         async def change():
             if self._closed or self._context() != captured:
-                return reply("stale", "blocked: The call or patient changed before the appointment operation started.")
-            result = await operation(patient, captured, call_id=context.function_call.call_id, **arguments)
+                return reply(
+                    "stale",
+                    "blocked: The call or patient changed before the appointment operation started.",
+                )
+            result = await operation(
+                patient, captured, call_id=context.function_call.call_id, **arguments
+            )
             return self._finish_change(result, captured)
 
         # Retain both the write and reconciliation even if the tool caller leaves.
@@ -514,11 +552,27 @@ class Scheduling:
 
     def _target(self, patient: Receipt, action: str, ref: str):
         matches = [a for a in patient.appointments if self._reference(a) == ref.strip()]
-        old = matches[0] if patient.appointmentsStatus == "found" and len(matches) == 1 else None
-        appointment_id = old.id if old else next((
-            appointment_id for (_, patient_id, appointment_id), known_ref in self._references.items()
-            if patient_id == patient.patientId and known_ref == ref.strip()
-        ), None)
+        old = (
+            matches[0]
+            if patient.appointmentsStatus == "found" and len(matches) == 1
+            else None
+        )
+        appointment_id = (
+            old.id
+            if old
+            else next(
+                (
+                    appointment_id
+                    for (
+                        _,
+                        patient_id,
+                        appointment_id,
+                    ), known_ref in self._references.items()
+                    if patient_id == patient.patientId and known_ref == ref.strip()
+                ),
+                None,
+            )
+        )
         return old, (patient.patientId, action, appointment_id)
 
     def _cancelled(self, patient_id: str, appointment_id: int) -> bool:
@@ -537,17 +591,30 @@ class Scheduling:
         return saved.result
 
     async def _cancel(
-        self, p: Receipt, captured: SchedulingContext, *, old_ref: str,
-        confirmed: bool | None, call_id: str,
+        self,
+        p: Receipt,
+        captured: SchedulingContext,
+        *,
+        old_ref: str,
+        confirmed: bool | None,
+        call_id: str,
     ) -> dict:
         old, receipt_key = self._target(p, "cancel", old_ref)
         if saved := self._receipts.get(receipt_key):
             return saved.result
         if old is None:
-            return reply("needs_input", "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed.")
+            return reply(
+                "needs_input",
+                "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed.",
+            )
         if not old.cancellationToken:
-            self.state.patient.active = p.model_copy(update={"appointmentsStatus": "error"})
-            return reply("needs_input", "needs_input: Reload appointments to obtain cancellation authorization, then reconfirm the exact appointment.")
+            self.state.patient.active = p.model_copy(
+                update={"appointmentsStatus": "error"}
+            )
+            return reply(
+                "needs_input",
+                "needs_input: Reload appointments to obtain cancellation authorization, then reconfirm the exact appointment.",
+            )
         if confirmed is not True:
             return reply(
                 "needs_confirmation",
@@ -562,7 +629,9 @@ class Scheduling:
         )
         result = await self.http.cancel(self._cancel_body(p, old))
         outcome = self._cancel_result(result)
-        self._report(p, cancellation_outcome=outcome["outcome"], old=old, call_id=call_id)
+        self._report(
+            p, cancellation_outcome=outcome["outcome"], old=old, call_id=call_id
+        )
         if (
             outcome["outcome"] != "cancelled"
             and isinstance(result, WriteReceipt)
@@ -582,11 +651,23 @@ class Scheduling:
         return outcome
 
     async def _book(
-        self, p: Receipt, captured: SchedulingContext, *, slot_ref: str, reason: str,
-        referrer: str, confirmed: bool | None, call_id: str, old: Appointment | None = None,
+        self,
+        p: Receipt,
+        captured: SchedulingContext,
+        *,
+        slot_ref: str,
+        reason: str,
+        referrer: str,
+        confirmed: bool | None,
+        call_id: str,
+        old: Appointment | None = None,
     ) -> dict:
         slot_ref = slot_ref.strip().upper()
-        receipt_key = (p.patientId, "reschedule", old.id) if old else (p.patientId, "book", slot_ref)
+        receipt_key = (
+            (p.patientId, "reschedule", old.id)
+            if old
+            else (p.patientId, "book", slot_ref)
+        )
         if not old and (saved := self._receipts.get(receipt_key)):
             return self._replay(p, saved)
         offered = self._slots.get(slot_ref)
@@ -598,9 +679,13 @@ class Scheduling:
             )
         if not old:
             for (patient_id, _, _), saved in self._receipts.items():
-                if (patient_id == p.patientId and saved.offered and saved.booked
-                        and saved.offered.selection == offered.selection
-                        and not self._cancelled(p.patientId, saved.booked.id)):
+                if (
+                    patient_id == p.patientId
+                    and saved.offered
+                    and saved.booked
+                    and saved.offered.selection == offered.selection
+                    and not self._cancelled(p.patientId, saved.booked.id)
+                ):
                     return saved.result
         if not insurance_ready(self.state, offered.visit):
             self._invalidate()
@@ -658,8 +743,13 @@ class Scheduling:
             body["insurancePlan"] = decision.canonicalPlan
         if old:
             if not old.rescheduleToken:
-                self.state.patient.active = p.model_copy(update={"appointmentsStatus": "error"})
-                return reply("needs_input", "needs_input: Reload appointments to obtain reschedule authorization, then reconfirm the move.")
+                self.state.patient.active = p.model_copy(
+                    update={"appointmentsStatus": "error"}
+                )
+                return reply(
+                    "needs_input",
+                    "needs_input: Reload appointments to obtain reschedule authorization, then reconfirm the move.",
+                )
             body["rescheduleToken"] = old.rescheduleToken
         self._invalidate()
         self._receipts[receipt_key] = MutationReceipt(
@@ -670,24 +760,47 @@ class Scheduling:
         reschedule = None
         if old:
             reschedule = await self.http.reschedule(body)
-            if not isinstance(reschedule, RescheduleReceipt) or reschedule.booking is None:
+            if (
+                not isinstance(reschedule, RescheduleReceipt)
+                or reschedule.booking is None
+            ):
                 outcome = (
-                    reply("failed", "blocked: The reschedule failed. Reload appointments or ask staff to reconcile before another change.")
-                    if isinstance(reschedule, RescheduleReceipt) and reschedule.status == "failed"
-                    else self._write_failure(SchedulingFailure(reason="reschedule", uncertain=True), "reschedule")
+                    reply(
+                        "failed",
+                        "blocked: The reschedule failed. Reload appointments or ask staff to reconcile before another change.",
+                    )
+                    if isinstance(reschedule, RescheduleReceipt)
+                    and reschedule.status == "failed"
+                    else self._write_failure(
+                        SchedulingFailure(reason="reschedule", uncertain=True),
+                        "reschedule",
+                    )
                 )
                 if outcome["outcome"] == "uncertain":
                     self._receipts[receipt_key] = MutationReceipt(outcome)
                 else:
                     self._receipts.pop(receipt_key, None)
-                self._report(p, booking=reschedule, booking_outcome=outcome["outcome"], old=old, slot=slot, call_id=call_id)
+                self._report(
+                    p,
+                    booking=reschedule,
+                    booking_outcome=outcome["outcome"],
+                    old=old,
+                    slot=slot,
+                    call_id=call_id,
+                )
                 return outcome
             result = reschedule.booking
         else:
             result = await self.http.book(body)
         outcome = self._book_result(result, description)
         if not old:
-            self._report(p, booking=result, booking_outcome=outcome["outcome"], slot=slot, call_id=call_id)
+            self._report(
+                p,
+                booking=result,
+                booking_outcome=outcome["outcome"],
+                slot=slot,
+                call_id=call_id,
+            )
         if outcome["outcome"] not in ("booked", "partial_booking"):
             if old:
                 outcome = {
@@ -726,17 +839,34 @@ class Scheduling:
                 and appointment.id != old.id
             )
             cancelled_id = old.id if cancelled else None
-            note = " The patient note did not save; ask staff to complete it." if outcome["outcome"] == "partial_booking" else ""
+            note = (
+                " The patient note did not save; ask staff to complete it."
+                if outcome["outcome"] == "partial_booking"
+                else ""
+            )
             outcome = reply(
                 "rescheduled" if cancelled else "partial_reschedule",
-                (f"{'blocked' if note else 'success'}: Your new appointment is booked for {description}. Your old appointment on {old.date} at {old.time} is cancelled. Tell the caller both outcomes."
-                 if cancelled else f"blocked: The new appointment is booked for {description}, but cancellation of the old appointment requires staff reconciliation. Do not book again.") + note,
+                (
+                    f"{'blocked' if note else 'success'}: Your new appointment is booked for {description}. Your old appointment on {old.date} at {old.time} is cancelled. Tell the caller both outcomes."
+                    if cancelled
+                    else f"blocked: The new appointment is booked for {description}, but cancellation of the old appointment requires staff reconciliation. Do not book again."
+                )
+                + note,
             )
-            self._report(p, booking=result, booking_outcome="partial_booking" if note else "booked",
-                         cancellation_outcome="cancelled" if cancelled else "uncertain",
-                         old=old, slot=slot, call_id=call_id)
+            self._report(
+                p,
+                booking=result,
+                booking_outcome="partial_booking" if note else "booked",
+                cancellation_outcome="cancelled" if cancelled else "uncertain",
+                old=old,
+                slot=slot,
+                call_id=call_id,
+            )
         saved = MutationReceipt(
-            outcome, booked=appointment, cancelled_id=cancelled_id, offered=offered,
+            outcome,
+            booked=appointment,
+            cancelled_id=cancelled_id,
+            offered=offered,
         )
         self._receipts[receipt_key] = saved
         if old and cancelled_id:
@@ -744,42 +874,81 @@ class Scheduling:
         return outcome
 
     async def _reschedule(
-        self, p: Receipt, captured: SchedulingContext, *, old_ref: str, slot_ref: str,
-        reason: str, referrer: str, confirmed: bool | None, call_id: str,
+        self,
+        p: Receipt,
+        captured: SchedulingContext,
+        *,
+        old_ref: str,
+        slot_ref: str,
+        reason: str,
+        referrer: str,
+        confirmed: bool | None,
+        call_id: str,
     ) -> dict:
         old, receipt_key = self._target(p, "reschedule", old_ref)
         saved = self._receipts.get(receipt_key)
         offered = self._slots.get(slot_ref.strip().upper())
         if saved:
-            different = offered and saved.offered and offered.selection != saved.offered.selection
-            replacement_move = old and saved.booked and old.id == saved.booked.id and saved.cancelled_id is not None
+            different = (
+                offered
+                and saved.offered
+                and offered.selection != saved.offered.selection
+            )
+            replacement_move = (
+                old
+                and saved.booked
+                and old.id == saved.booked.id
+                and saved.cancelled_id is not None
+            )
             if not (different and replacement_move):
                 if different and saved.cancelled_id is not None:
-                    return reply("needs_input", "needs_input: Choose the current appointment reference for a different move.")
+                    return reply(
+                        "needs_input",
+                        "needs_input: Choose the current appointment reference for a different move.",
+                    )
                 return self._replay(p, saved)
         if old is None:
-            return reply("needs_input", "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed.")
+            return reply(
+                "needs_input",
+                "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed.",
+            )
         return await self._book(
-            p, captured, slot_ref=slot_ref, reason=reason, referrer=referrer,
-            confirmed=confirmed, call_id=call_id, old=old,
+            p,
+            captured,
+            slot_ref=slot_ref,
+            reason=reason,
+            referrer=referrer,
+            confirmed=confirmed,
+            call_id=call_id,
+            old=old,
         )
 
     def _report(
-        self, patient, *, call_id, booking=None, booking_outcome=None,
-        cancellation_outcome="not_attempted", old=None, slot=None,
+        self,
+        patient,
+        *,
+        call_id,
+        booking=None,
+        booking_outcome=None,
+        cancellation_outcome="not_attempted",
+        old=None,
+        slot=None,
     ):
         reporter = self.state.reporter
         if not reporter:
             return
         evidence = {"externalPatientId": str(patient.patientId)}
         if booking is not None:
-            status = "partial" if booking_outcome == "partial_booking" else booking_outcome
+            status = (
+                "partial" if booking_outcome == "partial_booking" else booking_outcome
+            )
             evidence["bookingResult"] = {"status": status}
             if booking_outcome in ("booked", "partial_booking"):
                 evidence["newAppointmentId"] = str(booking.appointmentId)
                 evidence["bookingResult"].update(
                     appointmentId=booking.appointmentId,
-                    appointmentDate=slot.date, appointmentTime=slot.time,
+                    appointmentDate=slot.date,
+                    appointmentTime=slot.time,
                     providerName=provider_name(booking.providerName or slot.provider),
                     appointmentTypeName=booking.appointmentTypeName,
                     locationName=booking.locationName,
@@ -787,17 +956,20 @@ class Scheduling:
                 )
         if old:
             evidence["oldAppointmentId"] = str(old.id)
-            evidence["cancellationResult"] = {
-                "status": cancellation_outcome
-            }
+            evidence["cancellationResult"] = {"status": cancellation_outcome}
             evidence["cancellationResult"].update(
-                appointmentId=old.id, appointmentDate=old.date,
-                appointmentTime=old.time, providerName=old.provider,
-                appointmentTypeName=old.type, locationName=old.facility,
+                appointmentId=old.id,
+                appointmentDate=old.date,
+                appointmentTime=old.time,
+                providerName=old.provider,
+                appointmentTypeName=old.type,
+                locationName=old.facility,
                 patientName=patient.name,
             )
-        evidence["action"] = "RESCHEDULED" if booking is not None and old else (
-            "BOOKED" if booking is not None else "CANCELLED"
+        evidence["action"] = (
+            "RESCHEDULED"
+            if booking is not None and old
+            else ("BOOKED" if booking is not None else "CANCELLED")
         )
         reporter.appointment(evidence, call_id=call_id)
 
@@ -843,12 +1015,17 @@ class Scheduling:
         return result
 
     def _cancel_body(self, patient, appointment):
-        return {"patientId": patient.patientId, "cancellationToken": appointment.cancellationToken}
+        return {
+            "patientId": patient.patientId,
+            "cancellationToken": appointment.cancellationToken,
+        }
 
     @staticmethod
     def _cancel_result(result):
         if isinstance(result, WriteReceipt) and result.status == "cancelled":
-            return reply("cancelled", "success: The selected appointment was cancelled.")
+            return reply(
+                "cancelled", "success: The selected appointment was cancelled."
+            )
         if (
             isinstance(result, WriteReceipt)
             and result.outcome == "invalid_cancellation_token"

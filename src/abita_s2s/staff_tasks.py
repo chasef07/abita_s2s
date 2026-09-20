@@ -61,7 +61,9 @@ class StaffTasks:
     async def aclose(self) -> None:
         self._closed = True
         # A mutation already dispatched must finish and retain its receipt.
-        results = await asyncio.gather(*self._deliveries.values(), return_exceptions=True)
+        results = await asyncio.gather(
+            *self._deliveries.values(), return_exceptions=True
+        )
         for result in results:
             if isinstance(result, asyncio.CancelledError):
                 raise RuntimeError("An accepted staff delivery was cancelled")
@@ -69,7 +71,13 @@ class StaffTasks:
                 raise result
 
     async def submit(
-        self, category: Category, urgency: Urgency, summary: str, message: str, *, call_id: str | None = None
+        self,
+        category: Category,
+        urgency: Urgency,
+        summary: str,
+        message: str,
+        *,
+        call_id: str | None = None,
     ) -> dict:
         if self._closed:
             return _result("failed", "This call has ended. No request was sent.")
@@ -190,11 +198,16 @@ class StaffTasks:
             payload["inboundOfficePhone"] = inbound
         return payload
 
-    async def _deliver(self, payload: dict, *, uncertain: bool = False, call_id: str | None = None) -> dict:
+    async def _deliver(
+        self, payload: dict, *, uncertain: bool = False, call_id: str | None = None
+    ) -> dict:
         result = await self._send(payload, uncertain=uncertain)
         if self.state.reporter:
-            evidence = {"outcome": result["outcome"], "category": payload["category"],
-                        "urgency": payload["urgency"]}
+            evidence = {
+                "outcome": result["outcome"],
+                "category": payload["category"],
+                "urgency": payload["urgency"],
+            }
             if "taskId" in result:
                 evidence["taskId"] = result["taskId"]
             self.state.reporter.record("staff_task", evidence, call_id=call_id)

@@ -14,7 +14,9 @@ class InsuranceRequirement(BaseModel):
 
 class InsuranceDecision(BaseModel):
     model_config = ConfigDict(strict=True, frozen=True)
-    outcome: Literal["accepted", "not_accepted", "needs_clarification", "needs_staff_task"]
+    outcome: Literal[
+        "accepted", "not_accepted", "needs_clarification", "needs_staff_task"
+    ]
     participation: Literal["accepted", "not_accepted", "unknown"]
     canonicalPlan: str = ""
     carrierCode: str = ""

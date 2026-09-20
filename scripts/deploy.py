@@ -19,8 +19,12 @@ from release import component_version
 from abita_s2s.release import checksums, eval_checksums, content_digest
 
 KEYS = (
-    "agent_version", "prompts_version", "evals_version", "git_commit",
-    "prompts_sha256", "evals_sha256",
+    "agent_version",
+    "prompts_version",
+    "evals_version",
+    "git_commit",
+    "prompts_sha256",
+    "evals_sha256",
 )
 
 
@@ -78,8 +82,12 @@ def validate_release(directory: Path, commit: str):
     sha = content_digest(files)
     eval_files = eval_checksums(Path("evals"))
     for component, content in (("prompts", files), ("evals", eval_files)):
-        if manifest[f"{component}_version"] != component_version(component, version, commit, content):
-            raise ValueError("Component version does not match release history and content")
+        if manifest[f"{component}_version"] != component_version(
+            component, version, commit, content
+        ):
+            raise ValueError(
+                "Component version does not match release history and content"
+            )
     if (
         manifest["agent_version"] != version
         or manifest["eval_files"] != eval_files

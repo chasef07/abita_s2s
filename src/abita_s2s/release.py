@@ -24,7 +24,9 @@ def content_digest(files: dict[str, str]) -> str:
 
 def eval_checksums(directory: Path) -> dict[str, str]:
     files = {
-        path.relative_to(directory).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        path.relative_to(directory).as_posix(): hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
         for path in sorted(directory.rglob("*"))
         if path.is_file() and path.suffix in (".yaml", ".yml")
     }

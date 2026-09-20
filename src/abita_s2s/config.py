@@ -2,7 +2,7 @@
 
 import os
 from dataclasses import dataclass, field
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, urlsplit
 from uuid import UUID
 
 
@@ -24,6 +24,22 @@ class Config:
     staff_tasks_url: str | None = None
     interaction_url: str | None = None
     handoff: HandoffConfig | None = None
+
+
+def _is_service_url(url: SplitResult) -> bool:
+    """Shared transport policy; callers retain their endpoint-specific restrictions."""
+    return bool(
+        url.hostname
+        and not url.username
+        and not url.password
+        and (
+            url.scheme == "https"
+            or (
+                url.scheme == "http"
+                and url.hostname in ("localhost", "127.0.0.1", "::1")
+            )
+        )
+    )
 
 
 def load_config() -> Config:
@@ -73,20 +89,7 @@ def load_config() -> Config:
             raise ValueError("ACUITY_PRODUCT_HANDOFF_URL must end in /v1/handoffs")
         staff_tasks_url = handoff_url.removesuffix("/v1/handoffs") + "/v1/tasks"
         target = urlsplit(staff_tasks_url)
-        if (
-            not target.hostname
-            or target.username
-            or target.password
-            or target.query
-            or target.fragment
-            or not (
-                target.scheme == "https"
-                or (
-                    target.scheme == "http"
-                    and target.hostname in ("localhost", "127.0.0.1", "::1")
-                )
-            )
-        ):
+        if not _is_service_url(target) or target.query or target.fragment:
             raise ValueError(
                 "ACUITY_PRODUCT_HANDOFF_URL must use HTTPS (HTTP only on loopback)"
             )
@@ -97,16 +100,9 @@ def load_config() -> Config:
     if knowledge_url:
         url = urlsplit(knowledge_url)
         if (
-            not url.hostname
+            not _is_service_url(url)
             or url.username is not None
             or url.password is not None
-            or not (
-                url.scheme == "https"
-                or (
-                    url.scheme == "http"
-                    and url.hostname in ("localhost", "127.0.0.1", "::1")
-                )
-            )
         ):
             raise ValueError(
                 "ACUITY_PRODUCT_KNOWLEDGE_URL must use HTTPS (HTTP only on loopback)"
@@ -117,20 +113,7 @@ def load_config() -> Config:
         raise ValueError("Set both AMD_API_URL and AMD_API_TOKEN")
     if middleware_url:
         url = urlsplit(middleware_url)
-        if (
-            not url.hostname
-            or url.username
-            or url.password
-            or url.query
-            or url.fragment
-            or not (
-                url.scheme == "https"
-                or (
-                    url.scheme == "http"
-                    and url.hostname in ("localhost", "127.0.0.1", "::1")
-                )
-            )
-        ):
+        if not _is_service_url(url) or url.query or url.fragment:
             raise ValueError("AMD_API_URL must use HTTPS (HTTP only on loopback)")
     # Match the existing agent: named deployments never write simulated calls to Product.
     interaction_url = None
@@ -141,19 +124,10 @@ def load_config() -> Config:
     if interaction_url:
         target = urlsplit(interaction_url)
         if (
-            not target.hostname
-            or target.username
-            or target.password
+            not _is_service_url(target)
             or target.query
             or target.fragment
             or target.path != "/v1/ai/interactions"
-            or not (
-                target.scheme == "https"
-                or (
-                    target.scheme == "http"
-                    and target.hostname in ("localhost", "127.0.0.1", "::1")
-                )
-            )
         ):
             raise ValueError(
                 "ACUITY_PRODUCT_INTERACTION_URL must be an HTTPS /v1/ai/interactions endpoint (HTTP only on loopback)"

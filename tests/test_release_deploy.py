@@ -27,8 +27,12 @@ class ComponentVersionTests(unittest.TestCase):
     def test_versions_follow_content_independently_using_real_git_history(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+
             def git(*args):
-                return subprocess.check_output(["git", *args], cwd=root, text=True).strip()
+                return subprocess.check_output(
+                    ["git", *args], cwd=root, text=True
+                ).strip()
+
             git("init", "-q")
             git("config", "user.name", "Release test")
             git("config", "user.email", "release@example.test")
@@ -44,12 +48,18 @@ class ComponentVersionTests(unittest.TestCase):
             git("tag", "prompts-v0.3.2")
             git("tag", "evals-v0.3.2")
             with patch.object(builder, "ROOT", root):
+
                 def versions():
                     commit = git("rev-parse", "HEAD")
                     return (
-                        builder.component_version("prompts", "0.3.3", commit, package.checksums(prompts)),
-                        builder.component_version("evals", "0.3.3", commit, package.eval_checksums(evals)),
+                        builder.component_version(
+                            "prompts", "0.3.3", commit, package.checksums(prompts)
+                        ),
+                        builder.component_version(
+                            "evals", "0.3.3", commit, package.eval_checksums(evals)
+                        ),
                     )
+
                 self.assertEqual(versions(), ("0.3.2", "0.3.2"))
                 (prompts / "speaker.md").write_text("changed\n")
                 self.assertEqual(versions(), ("0.3.3", "0.3.2"))
@@ -71,16 +81,20 @@ class ComponentVersionTests(unittest.TestCase):
 
     def test_reused_release_must_be_published_with_matching_content(self):
         manifest = {"prompts_version": "0.3.2", "prompts_sha256": "a" * 64}
+
         def command(*args):
             if args[1:3] == ("release", "view"):
                 return "false"
             self.assertEqual(args[1:3], ("release", "download"))
             (Path(args[-1]) / "release.json").write_text(json.dumps(manifest))
             return ""
+
         with patch.object(publish_release, "run", side_effect=command):
             publish_release.verify_reused_component("prompts", "0.3.2", manifest)
             with self.assertRaisesRegex(ValueError, "content mismatch"):
-                publish_release.verify_reused_component("prompts", "0.3.2", {**manifest, "prompts_sha256": "wrong"})
+                publish_release.verify_reused_component(
+                    "prompts", "0.3.2", {**manifest, "prompts_sha256": "wrong"}
+                )
         with patch.object(publish_release, "run", return_value="true"):
             with self.assertRaisesRegex(ValueError, "already be published"):
                 publish_release.verify_reused_component("prompts", "0.3.2", manifest)
@@ -161,9 +175,16 @@ class ReleaseTests(unittest.TestCase):
                 eval_archive = root / "out/evals-v1.0.0.tar.gz"
                 first_evals = eval_archive.read_bytes()
                 with tarfile.open(eval_archive) as archive:
-                    self.assertEqual(set(archive.getnames()), {"scenarios.yaml", "manifest.json"})
-                    self.assertEqual(archive.extractfile("scenarios.yaml").read(), (root / "evals/scenarios.yaml").read_bytes())
-                    self.assertEqual(json.load(archive.extractfile("manifest.json")), manifest)
+                    self.assertEqual(
+                        set(archive.getnames()), {"scenarios.yaml", "manifest.json"}
+                    )
+                    self.assertEqual(
+                        archive.extractfile("scenarios.yaml").read(),
+                        (root / "evals/scenarios.yaml").read_bytes(),
+                    )
+                    self.assertEqual(
+                        json.load(archive.extractfile("manifest.json")), manifest
+                    )
                 builder.prepare("a" * 40, root / "out")
                 self.assertEqual(first_evals, eval_archive.read_bytes())
                 self.assertEqual(
@@ -171,7 +192,9 @@ class ReleaseTests(unittest.TestCase):
                 )
                 with self.assertRaises(ValueError):
                     builder.prepare("b" * 40, root / "out")
-                (root / "evals/scenarios.yaml").write_text("name: changed\nscenarios: []\n")
+                (root / "evals/scenarios.yaml").write_text(
+                    "name: changed\nscenarios: []\n"
+                )
                 with self.assertRaisesRegex(ValueError, "different release"):
                     builder.prepare("a" * 40, root / "out")
                 changed, _ = builder.prepare("a" * 40, root / "changed")
@@ -241,9 +264,17 @@ class ReleaseTests(unittest.TestCase):
                 def command(*args):
                     calls.append(args)
                     if args[:2] == ("gh", "api"):
-                        return json.dumps([[{
-                            "tag_name": "v1.0.0", "draft": draft, "assets": [],
-                        }]])
+                        return json.dumps(
+                            [
+                                [
+                                    {
+                                        "tag_name": "v1.0.0",
+                                        "draft": draft,
+                                        "assets": [],
+                                    }
+                                ]
+                            ]
+                        )
                     return ""
 
                 with patch.object(publish_release, "run", side_effect=command):
@@ -260,9 +291,17 @@ class ReleaseTests(unittest.TestCase):
             if args[:2] == ("git", "rev-parse"):
                 return "a" * 40
             if args[:2] == ("gh", "api"):
-                return json.dumps([[{
-                    "tag_name": "v1.0.0", "draft": True, "assets": [],
-                }]])
+                return json.dumps(
+                    [
+                        [
+                            {
+                                "tag_name": "v1.0.0",
+                                "draft": True,
+                                "assets": [],
+                            }
+                        ]
+                    ]
+                )
             return "existing"
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -279,8 +318,12 @@ class ReleaseTests(unittest.TestCase):
 class DeployTests(unittest.TestCase):
     def setUp(self):
         self.manifest = dict(
-            agent_version="1.0.0", prompts_version="1.0.0", evals_version="1.0.0",
-            git_commit="a" * 40, prompts_sha256="b" * 64, evals_sha256="c" * 64,
+            agent_version="1.0.0",
+            prompts_version="1.0.0",
+            evals_version="1.0.0",
+            git_commit="a" * 40,
+            prompts_sha256="b" * 64,
+            evals_sha256="c" * 64,
         )
         self.status = {
             "agents": [

@@ -102,7 +102,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
         available = await owner.availability("medical")
         self.assertEqual(available["outcome"], "found", available)
         result = await self.book(owner, available["slots"][0]["appointmentSlotRef"])
-        self.assertEqual(result.split(":", 1)[0], 'success')
+        self.assertEqual(result.split(":", 1)[0], "success")
         self.assertEqual(len(requests), 3)
 
     async def test_resolve_returning_patient_then_reschedule(self):
@@ -126,7 +126,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
             referringDoctor="none",
             readBack=True,
         )
-        self.assertEqual(result.split(":", 1)[0], 'success')
+        self.assertEqual(result.split(":", 1)[0], "success")
         self.assertEqual(
             [r.url.path for r in requests[-1:]],
             ["/api/appointment/reschedule"],
@@ -137,7 +137,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(plan=plan):
                 owner, resolver, requests = await self.resolved_owner(
                     [
-                                    receipt(
+                        receipt(
                             "chart-john",
                             "John",
                             "03/04/1981",
@@ -146,7 +146,9 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
                         receipt(),
                     ]
                 )
-                insurance = InsuranceRegistration(owner.state, resolver, AsyncMock(check=AsyncMock(return_value=None)))
+                insurance = InsuranceRegistration(
+                    owner.state, resolver, AsyncMock(check=AsyncMock(return_value=None))
+                )
                 await insurance.check(plan, "medical")
                 await resolver.resolve("John", "03/04/1981")
                 self.assertEqual(owner.state.patient.active.patientId, "chart-john")
@@ -163,20 +165,37 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
         state = call_state(None)
         responses = [
             search(),
-            receipt(), inventory(),
+            receipt(),
+            inventory(),
         ]
-        async with httpx.AsyncClient(transport=httpx.MockTransport(
-            lambda request: httpx.Response(200, json=responses.pop(0))
-        )) as client:
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json=responses.pop(0))
+            )
+        ) as client:
             resolver = PatientResolver(state, PatientMiddleware(client, CONFIG))
             owner = Scheduling(state, SchedulingHTTP(client, CONFIG), now=lambda: NOW)
             self.addAsyncCleanup(resolver.aclose)
             self.addAsyncCleanup(owner.aclose)
-            self.assertEqual((await resolver.resolve("John", "03/04/1981"))["outcome"], "not_found")
-            insurance = InsuranceRegistration(state, resolver, AsyncMock(check=AsyncMock(return_value=InsuranceDecision.model_validate(decision("Self Pay")))))
+            self.assertEqual(
+                (await resolver.resolve("John", "03/04/1981"))["outcome"], "not_found"
+            )
+            insurance = InsuranceRegistration(
+                state,
+                resolver,
+                AsyncMock(
+                    check=AsyncMock(
+                        return_value=InsuranceDecision.model_validate(
+                            decision("Self Pay")
+                        )
+                    )
+                ),
+            )
             await insurance.check("Self Pay", "medical")
             self.assertIsNone(state.insurance.accepted.patient_id)
-            self.assertEqual((await resolver.resolve("Jane", "01/02/1980"))["outcome"], "verified")
+            self.assertEqual(
+                (await resolver.resolve("Jane", "01/02/1980"))["outcome"], "verified"
+            )
             self.assertEqual((await owner.availability("medical"))["outcome"], "found")
             self.assertEqual(responses, [])
 
@@ -186,7 +205,9 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
         )
         available = await owner.availability("medical")
         slot = available["slots"][0]["appointmentSlotRef"]
-        insurance = InsuranceRegistration(owner.state, resolver, AsyncMock(check=AsyncMock(return_value=None)))
+        insurance = InsuranceRegistration(
+            owner.state, resolver, AsyncMock(check=AsyncMock(return_value=None))
+        )
         await insurance.check("Unrelated plan question", "medical")
         self.assertIsNone(owner.state.insurance.accepted)
         self.assertTrue(insurance_ready(owner.state, "medical"))
@@ -202,7 +223,9 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
             InsuranceDecision.model_validate(decision(canSchedule=False)),
             InsuranceDecision.model_validate(decision(coverage="routine_vision")),
         ):
-            state.patient.active = active.model_copy(update={"insuranceDecision": changed})
+            state.patient.active = active.model_copy(
+                update={"insuranceDecision": changed}
+            )
             self.assertTrue(insurance_ready(state, "medical"))
             self.assertTrue(insurance_ready(state, "routine_vision"))
         for field in ("write_pending", "write_uncertain"):

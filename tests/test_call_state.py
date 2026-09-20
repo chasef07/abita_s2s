@@ -73,9 +73,13 @@ class CallStateTests(unittest.IsolatedAsyncioTestCase):
         patient = Receipt.model_validate(receipt())
         token = resolver._begin_lookup()
         other._middleware.resolve = AsyncMock(return_value=patient)
-        resolver._middleware.resolve = AsyncMock(side_effect=[
-            patient, NotFound(status="not_found"), NotFound(status="not_found"),
-        ])
+        resolver._middleware.resolve = AsyncMock(
+            side_effect=[
+                patient,
+                NotFound(status="not_found"),
+                NotFound(status="not_found"),
+            ]
+        )
         await other._lookup_phone(token)
         self.assertEqual(other.state.patient.lookup.status, "not_attempted")
         await resolver._lookup_phone(token)

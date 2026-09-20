@@ -114,8 +114,15 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
     if simulation is not None:
         sandbox_url = os.environ.get("SANDBOX_AMD_API_URL", "").strip()
         sandbox_token = os.environ.get("SANDBOX_AMD_API_TOKEN", "").strip()
-        if not re.fullmatch(r"https://abita-middleware-sandbox-[a-z0-9.-]+\.run\.app/?", sandbox_url) or not sandbox_token:
-            raise ValueError("Simulations require SANDBOX_AMD_API_URL and SANDBOX_AMD_API_TOKEN")
+        if (
+            not re.fullmatch(
+                r"https://abita-middleware-sandbox-[a-z0-9.-]+\.run\.app/?", sandbox_url
+            )
+            or not sandbox_token
+        ):
+            raise ValueError(
+                "Simulations require SANDBOX_AMD_API_URL and SANDBOX_AMD_API_TOKEN"
+            )
         config = Config(
             openai_api_key=config.openai_api_key,
             voice=config.voice,
@@ -166,7 +173,6 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             called_number=attrs["sip.trunkPhoneNumber"],
             room_name=ctx.room.name,
             sip_participant_identity=participant.identity,
-            sip_call_id=sip_call_id,
         )
 
     client = httpx.AsyncClient()
@@ -195,7 +201,9 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             )
             for result in results:
                 if isinstance(result, asyncio.CancelledError):
-                    raise RuntimeError("An accepted mutation was cancelled during shutdown")
+                    raise RuntimeError(
+                        "An accepted mutation was cancelled during shutdown"
+                    )
                 if isinstance(result, BaseException):
                     raise result
 
@@ -210,7 +218,8 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             if state.reporter:
                 make_report = (
                     (lambda: ctx.make_session_report().to_dict())
-                    if state.reporter.started else None
+                    if state.reporter.started
+                    else None
                 )
                 await state.reporter.finish(make_report)
             else:
@@ -258,11 +267,14 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             "close", lambda event: logger.info("session_closed reason=%s", event.reason)
         )
         resolver = PatientResolver(state, PatientMiddleware(client, config))
-        sip_api = None
         if not ctx.is_fake_job() and simulation is None:
             sip_api = api.LiveKitAPI(failover=False)
         control = CallControl(
-            state, client, ctx.room, sip_api.sip if sip_api else None, handoff=config.handoff
+            state,
+            client,
+            ctx.room,
+            sip_api.sip if sip_api else None,
+            handoff=config.handoff,
         )
 
         resolver.start_phone_lookup()

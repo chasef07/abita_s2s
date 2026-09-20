@@ -58,15 +58,20 @@ def accepted_insurance(
     )
 
 
-def registration_insurance(state: "CallState", coverage_type: CoverageType) -> InsuranceDecision | None:
+def registration_insurance(
+    state: "CallState", coverage_type: CoverageType
+) -> InsuranceDecision | None:
     """Current acceptance for a patient registered during this call."""
     active = state.patient.active
     if not active or active.patientId not in state.insurance.registrations:
         return None
     checked = accepted_insurance(state, coverage_type)
     decision = checked.decision if checked else None
-    if (decision and decision.canSchedule
-        and decision.officeId.replace("_", "-") == state.call.called_office_key):
+    if (
+        decision
+        and decision.canSchedule
+        and decision.officeId.replace("_", "-") == state.call.called_office_key
+    ):
         return decision
     return None
 
@@ -81,4 +86,7 @@ def insurance_ready(state: "CallState", coverage_type: CoverageType) -> bool:
     registration = state.insurance.registrations.get(active.patientId)
     if registration is None:
         return True
-    return registration == "created" and registration_insurance(state, coverage_type) is not None
+    return (
+        registration == "created"
+        and registration_insurance(state, coverage_type) is not None
+    )

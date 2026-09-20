@@ -43,9 +43,7 @@ class InsuranceStream(llm.LLMStream):
         )
         outputs = [item for item in items[last:] if item.type == "function_call_output"]
         if outputs:
-            delta = llm.ChoiceDelta(
-                role="assistant", content=outputs[-1].output
-            )
+            delta = llm.ChoiceDelta(role="assistant", content=outputs[-1].output)
         else:
             name, args = json.loads(items[last].text_content)
             delta = llm.ChoiceDelta(
@@ -139,7 +137,9 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                     if name == "check_insurance":
                         self.assertIn("participates", output.output)
                     else:
-                        self.assertTrue(output.output.startswith(outcome + ": "), output.output)
+                        self.assertTrue(
+                            output.output.startswith(outcome + ": "), output.output
+                        )
                     self.assertNotIn("new-chart", output.output)
             self.assertEqual(
                 [r[0] for r in requests],
@@ -199,7 +199,9 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                         for item in model.requests[-1].items
                         if item.type == "function_call_output"
                     ][-1]
-                    self.assertTrue(output.output.startswith("blocked: "), output.output)
+                    self.assertTrue(
+                        output.output.startswith("blocked: "), output.output
+                    )
                     if outcome == "partial":
                         self.assertIn("Created the patient chart", output.output)
                         self.assertIn("do not create another chart", output.output)
@@ -236,7 +238,9 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
             writes.append(request.url.path)
             entered.set()
             await finish.wait()
-            return httpx.Response(200, json=created(insuranceDecision=decision("Self Pay")))
+            return httpx.Response(
+                200, json=created(insuranceDecision=decision("Self Pay"))
+            )
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             state = call_state()

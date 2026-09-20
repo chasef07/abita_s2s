@@ -21,7 +21,6 @@ class CallContext:
     called_number: str | None = None
     room_name: str | None = None
     sip_participant_identity: str | None = None
-    sip_call_id: str | None = None
 
 
 @dataclass(frozen=True, repr=False)
