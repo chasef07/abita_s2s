@@ -2,7 +2,6 @@
 
 import asyncio
 import re
-from dataclasses import replace
 from typing import Literal
 
 from pydantic import ConfigDict
@@ -262,18 +261,7 @@ class InsuranceRegistration:
             appointments=[],
         )
         self.state.insurance.registrations[result.patientId] = result.status
-        activated = (
-            accepted_insurance(self.state) is checked
-            and self._resolver.activate_created(checked.patient_revision, patient)
-        )
-        if activated and self.state.insurance.accepted is checked:
-            self.state.insurance.accepted = replace(
-                checked,
-                patient_revision=self.state.patient.revision,
-                patient_id=result.patientId,
-                absence=None,
-                decision=result.insuranceDecision,
-            ) if result.insuranceDecision else None
+        activated = self._resolver.activate_created(checked, patient)
         status = "success" if result.status == "created" and activated else "blocked"
         answer = f"{status}: Created the patient chart for {result.name}."
         if result.status == "partial":
@@ -366,15 +354,7 @@ class InsuranceRegistration:
                         "insuranceDecision": result.insuranceDecision,
                     }
                 )
-                if (
-                    self.state.patient.revision == checked.patient_revision
-                    and self._resolver.refresh_insurance(active, updated)
-                ):
-                    if self.state.insurance.accepted is checked:
-                        self.state.insurance.accepted = replace(
-                            checked, patient_revision=self.state.patient.revision,
-                            decision=result.insuranceDecision
-                        ) if result.insuranceDecision else None
+                if self._resolver.refresh_insurance(active, updated, checked):
                     answer = reply(
                         "updated", f"Updated insurance to {result.newInsurance}."
                     )
