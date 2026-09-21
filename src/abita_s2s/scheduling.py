@@ -283,7 +283,7 @@ class Scheduling:
                 "needs_input: Ask for Hollywood or Sweetwater on those office calls; omit office for other calls.",
             )
         if visit not in ("medical", "routine_vision") or not insurance_ready(
-            self.state, visit
+            self.state
         ):
             self._invalidate()
             return reply(
@@ -374,7 +374,9 @@ class Scheduling:
                 f"{'needs_input' if result.outcome == 'invalid_input' else 'blocked'}: {result.message}",
                 retry_same_search=False,
             )
-            self._failures[key] = (1, False)
+            # Policy errors are not exhausted transport retries. Recheck after
+            # the normal TTL so chart corrections can restore scheduling.
+            self._failures.pop(key, None)
             self._cache = (key, self.now() + timedelta(seconds=60), answer)
             return answer
         if (
@@ -707,7 +709,7 @@ class Scheduling:
                     and not self._cancelled(p.patientId, saved.booked.id)
                 ):
                     return saved.result
-        if not insurance_ready(self.state, offered.visit):
+        if not insurance_ready(self.state):
             self._invalidate()
             return reply(
                 "needs_input",

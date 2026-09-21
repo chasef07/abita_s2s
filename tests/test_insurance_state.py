@@ -9,6 +9,7 @@ from abita_s2s.insurance_state import (
     AcceptedInsurance,
     accepted_insurance,
     insurance_ready,
+    registration_insurance,
 )
 from abita_s2s.middleware import Receipt
 from abita_s2s.state import PatientAbsence
@@ -43,7 +44,7 @@ class InsuranceStateTests(unittest.TestCase):
             InsuranceDecision.model_validate(decision("Self Pay")),
         )
         state.insurance.registrations["chart-jane"] = "created"
-        self.assertTrue(insurance_ready(state, "medical"))
+        self.assertTrue(insurance_ready(state))
         from dataclasses import replace
 
         original = state.insurance.accepted
@@ -51,9 +52,20 @@ class InsuranceStateTests(unittest.TestCase):
             original,
             decision=InsuranceDecision.model_validate(decision(office="hollywood")),
         )
-        self.assertFalse(insurance_ready(state, "medical"))
+        self.assertIsNone(registration_insurance(state, "medical"))
+        self.assertTrue(insurance_ready(state))
         state.insurance.accepted = original
         state.insurance.registrations["chart-jane"] = "partial"
-        self.assertFalse(insurance_ready(state, "medical"))
+        self.assertFalse(insurance_ready(state))
         state.patient.revision += 1
         self.assertIsNone(accepted_insurance(state))
+
+    def test_completed_chart_policy_is_backend_owned_after_context_changes(self):
+        state = call_state(None)
+        state.patient.active = Receipt.model_validate(receipt())
+        state.insurance.registrations["chart-jane"] = "created"
+        # A completed chart remains usable after acceptance was invalidated or
+        # the visit changed; middleware verifies chart coverage for the visit.
+        self.assertTrue(insurance_ready(state))
+        self.assertIsNone(registration_insurance(state, "medical"))
+        self.assertIsNone(registration_insurance(state, "routine_vision"))

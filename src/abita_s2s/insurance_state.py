@@ -23,7 +23,7 @@ class AcceptedInsurance:
 @dataclass(repr=False)
 class InsuranceState:
     accepted: AcceptedInsurance | None = None
-    # Full/partial creation and uncertain updates must block scheduling until resolved.
+    # Complete creation can schedule; partial creation must be resolved first.
     registrations: dict[str, Literal["created", "partial"]] = field(
         default_factory=dict
     )
@@ -67,26 +67,16 @@ def registration_insurance(
         return None
     checked = accepted_insurance(state, coverage_type)
     decision = checked.decision if checked else None
-    if (
-        decision
-        and decision.canSchedule
-        and decision.officeId.replace("_", "-") == state.call.called_office_key
-    ):
+    if decision and decision.officeId.replace("_", "-") == state.call.called_office_key:
         return decision
     return None
 
 
-def insurance_ready(state: "CallState", coverage_type: CoverageType) -> bool:
-    """Guard unfinished writes; middleware evaluates existing chart insurance."""
+def insurance_ready(state: "CallState") -> bool:
+    """Guard unfinished writes; middleware evaluates every completed chart."""
     if state.insurance.write_pending or state.insurance.write_uncertain:
         return False
     active = state.patient.active
     if not active:
         return False
-    registration = state.insurance.registrations.get(active.patientId)
-    if registration is None:
-        return True
-    return (
-        registration == "created"
-        and registration_insurance(state, coverage_type) is not None
-    )
+    return state.insurance.registrations.get(active.patientId) != "partial"

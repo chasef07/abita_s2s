@@ -101,14 +101,14 @@ async def main(url):
                 if expected == "updated":
                     assert state.patient.active.insuranceCarrier == "Meritain Health"
                     assert accepted_insurance(state) is not None
-                    assert insurance_ready(state, "medical")
+                    assert insurance_ready(state)
                     assert await insurance.update("H123") == result
                 elif expected == "failed":
                     assert state.patient.active is original
                     assert not state.insurance.write_uncertain
                     assert "Do not repeat" not in result["answer"]
                 else:
-                    assert not insurance_ready(state, "medical")
+                    assert not insurance_ready(state)
                     assert state.insurance.write_uncertain
                     if expected == "partial":
                         assert "replacement was not attached" in result["answer"]

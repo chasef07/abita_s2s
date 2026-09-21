@@ -285,18 +285,30 @@ class InsuranceRegistration:
             insuranceCarrier=checked.decision.canonicalPlan
             if result.status == "created"
             else None,
-            insuranceDecision=result.insuranceDecision,
+            # A complete creation confirms attachment of the accepted plan sent
+            # with this write; the receipt need not repeat its decision.
+            insuranceDecision=(result.insuranceDecision or checked.decision)
+            if result.status == "created"
+            else None,
             appointmentsStatus="none",
             appointments=[],
         )
         self.state.insurance.registrations[result.patientId] = result.status
         activated = self._resolver.activate_created(checked, patient)
         status = "success" if result.status == "created" and activated else "blocked"
-        answer = f"{status}: Created the patient chart for {result.name}."
+        if result.status == "created":
+            coverage = (
+                "self-pay recorded"
+                if checked.decision.selfPay
+                else "insurance attached"
+            )
+            answer = f"{status}: New patient chart created with {coverage}."
+        else:
+            answer = f"{status}: Created the patient chart for {result.name}."
         if result.status == "partial":
             answer += " Insurance attachment is not confirmed. Office staff must finish registration; do not create another chart."
         if not activated:
-            answer += " The patient context changed while this was running; this receipt was not applied to the current patient. Do not repeat chart creation."
+            answer += f" The chart is for {result.name}. The patient context changed while this was running; this receipt was not applied to the current patient. Do not repeat chart creation."
         return reply(result.status, answer)
 
     async def update(self, member_id: str, *, call_id: str | None = None) -> dict:
@@ -374,7 +386,8 @@ class InsuranceRegistration:
                 updated = active.model_copy(
                     update={
                         "insuranceCarrier": result.newInsurance,
-                        "insuranceDecision": result.insuranceDecision,
+                        "insuranceDecision": result.insuranceDecision
+                        or checked.decision,
                     }
                 )
                 if self._resolver.refresh_insurance(active, updated, checked):
