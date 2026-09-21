@@ -186,7 +186,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(requests[0][1]["coverageType"], "routine_vision")
         self.assertEqual(requests[1][1]["visitCategory"], "routine_vision")
 
-    async def test_existing_patient_forwards_confirmed_product_for_backend_verification(
+    async def test_existing_patient_uses_backend_chart_despite_local_insurance_checks(
         self,
     ):
         for use_check in (False, True):
@@ -228,26 +228,9 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 await self.book(owner, ref)
                 self.assertEqual(len(requests), 2)
                 for _, payload, _ in requests:
-                    if use_check:
-                        self.assertEqual(payload["insurancePlan"], "Canonical Product")
-                    else:
-                        self.assertNotIn("insurancePlan", payload)
+                    self.assertNotIn("insurancePlan", payload)
                     self.assertNotIn("routing", payload)
                     self.assertNotIn("preauthRequired", payload)
-
-    async def test_product_correction_invalidates_existing_patient_slots(self):
-        from dataclasses import replace
-
-        owner, requests = self.owner([inventory(), inventory()])
-        ref = await self.slots(owner)
-        checked = owner.state.insurance.accepted
-        owner.state.insurance.accepted = replace(
-            checked,
-            decision=InsuranceDecision.model_validate(decision("Corrected Product")),
-        )
-        self.assertTrue((await self.book(owner, ref)).startswith("needs_input:"))
-        await self.slots(owner)
-        self.assertEqual(requests[-1][1]["insurancePlan"], "Corrected Product")
 
     async def test_legacy_insurance_fields_do_not_refetch_or_invalidate_slots(self):
         owner, requests = self.owner([inventory(), booking()])
@@ -271,7 +254,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 1)
         self.assertTrue((await self.book(owner, ref)).startswith("success:"))
         self.assertEqual(len(requests), 2)
-        self.assertEqual(requests[-1][1]["insurancePlan"], "Test Insurance")
+        self.assertNotIn("insurancePlan", requests[-1][1])
 
     async def test_insurance_write_guards_invalidate_offered_slots(self):
         for guard in ("pending", "uncertain", "partial"):
@@ -305,7 +288,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             requests[0][1],
             {
                 "office": "+19542872010",
-                "insurancePlan": "Test Insurance",
                 "patientId": "chart-jane",
                 "coverageType": "medical",
                 "startDate": "2026-09-15",

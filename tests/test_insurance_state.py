@@ -9,7 +9,7 @@ from abita_s2s.insurance_state import (
     AcceptedInsurance,
     accepted_insurance,
     insurance_ready,
-    scheduling_insurance,
+    registration_insurance,
 )
 from abita_s2s.middleware import Receipt
 from abita_s2s.state import PatientAbsence
@@ -52,7 +52,7 @@ class InsuranceStateTests(unittest.TestCase):
             original,
             decision=InsuranceDecision.model_validate(decision(office="hollywood")),
         )
-        self.assertIsNone(scheduling_insurance(state, "medical"))
+        self.assertIsNone(registration_insurance(state, "medical"))
         self.assertTrue(insurance_ready(state))
         state.insurance.accepted = original
         state.insurance.registrations["chart-jane"] = "partial"
@@ -67,5 +67,5 @@ class InsuranceStateTests(unittest.TestCase):
         # A completed chart remains usable after acceptance was invalidated or
         # the visit changed; middleware verifies chart coverage for the visit.
         self.assertTrue(insurance_ready(state))
-        self.assertIsNone(scheduling_insurance(state, "medical"))
-        self.assertIsNone(scheduling_insurance(state, "routine_vision"))
+        self.assertIsNone(registration_insurance(state, "medical"))
+        self.assertIsNone(registration_insurance(state, "routine_vision"))

@@ -11,7 +11,7 @@ from livekit.agents import RunContext, function_tool
 from abita_s2s.insurance_state import (
     AcceptedInsurance,
     insurance_ready,
-    scheduling_insurance,
+    registration_insurance,
 )
 from abita_s2s.middleware import Appointment, Receipt
 from abita_s2s.offices import get_office_profile
@@ -135,7 +135,7 @@ class Scheduling:
         p = self.state.patient.active
         insurance = self.state.insurance
         registration = insurance.registrations.get(p.patientId) if p else None
-        accepted = insurance.accepted
+        accepted = insurance.accepted if registration is not None else None
         return SchedulingContext(
             patient_revision=self.state.patient.revision,
             patient_id=p.patientId if p else None,
@@ -296,7 +296,7 @@ class Scheduling:
                 "blocked: An appointment change is in progress. Wait for its result.",
             )
         p = self.state.patient.active
-        decision = scheduling_insurance(self.state, visit)
+        decision = registration_insurance(self.state, visit)
         body = {
             "office": get_office_profile(selected).trunk_numbers[0],
             "startDate": first.isoformat(),
@@ -749,7 +749,7 @@ class Scheduling:
             if p.patientId in self.state.insurance.registrations
             else "established"
         )
-        decision = scheduling_insurance(self.state, offered.visit)
+        decision = registration_insurance(self.state, offered.visit)
         body = {
             "patientId": p.patientId,
             "patientName": p.name,

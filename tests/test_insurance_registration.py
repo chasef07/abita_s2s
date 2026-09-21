@@ -14,7 +14,7 @@ from abita_s2s.insurance import InsuranceRegistration, Registration, normalize
 from abita_s2s.insurance_state import (
     accepted_insurance,
     insurance_ready,
-    scheduling_insurance,
+    registration_insurance,
 )
 from abita_s2s.middleware import PatientMiddleware, Receipt
 from abita_s2s.registration_middleware import RegistrationMiddleware
@@ -234,7 +234,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(requests), 1)
                 self.assertEqual(requests[0][1]["insurancePlan"], "VSP")
                 self.assertEqual(requests[0][1]["patientId"], "new-chart")
-                self.assertIsNone(scheduling_insurance(state, "medical"))
+                self.assertIsNone(registration_insurance(state, "medical"))
 
     async def test_completed_chart_visit_change_uses_backend_policy(self):
         from datetime import datetime, UTC
@@ -423,7 +423,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await owner.update("member-example"))["outcome"], "updated")
         self.assertEqual(accepted_insurance(state).decision.canonicalPlan, "Aetna")
         self.assertEqual(state.patient.active.insuranceDecision.canonicalPlan, "Aetna")
-        self.assertEqual(scheduling_insurance(state, "medical").canonicalPlan, "Aetna")
+        self.assertEqual(accepted_insurance(state).decision.canonicalPlan, "Aetna")
         self.assertTrue(insurance_ready(state))
 
     async def test_no_effect_update_preserves_context_and_allows_corrected_retry(self):

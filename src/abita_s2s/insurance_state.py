@@ -58,12 +58,12 @@ def accepted_insurance(
     )
 
 
-def scheduling_insurance(
+def registration_insurance(
     state: "CallState", coverage_type: CoverageType
 ) -> InsuranceDecision | None:
-    """Carry the confirmed product to middleware for chart and policy verification."""
+    """Current acceptance for a patient registered during this call."""
     active = state.patient.active
-    if not active:
+    if not active or active.patientId not in state.insurance.registrations:
         return None
     checked = accepted_insurance(state, coverage_type)
     decision = checked.decision if checked else None
