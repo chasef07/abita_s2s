@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.3](https://github.com/chasef07/abita_s2s/compare/v0.6.2...v0.6.3) (2026-09-21)
+
+
+### Bug Fixes
+
+* preserve completed registration state for scheduling ([#54](https://github.com/chasef07/abita_s2s/issues/54)) ([7bacbff](https://github.com/chasef07/abita_s2s/commit/7bacbff08eb75fa1d1752bc3a932a171e458258f))
+
 ## [0.6.2](https://github.com/chasef07/abita_s2s/compare/v0.6.1...v0.6.2) (2026-09-20)
 
 
