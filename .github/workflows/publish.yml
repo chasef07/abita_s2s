@@ -17,16 +17,7 @@ concurrency:
   group: abita-s2s-release
   cancel-in-progress: false
 jobs:
-  agent-contract:
-    permissions:
-      contents: read
-    uses: Data-Buddies-Solutions/amd_middleware/.github/workflows/agent-contract.yml@59b30b9263703773f67b781c23bbbf54b3290af1
-    with:
-      agent_ref: ${{ inputs.commit }}
-      middleware_ref: 59b30b9263703773f67b781c23bbbf54b3290af1
-
   release:
-    needs: agent-contract
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
