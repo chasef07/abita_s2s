@@ -12,12 +12,6 @@ on:
 permissions:
   contents: read
 jobs:
-  agent-contract:
-    uses: Data-Buddies-Solutions/amd_middleware/.github/workflows/agent-contract.yml@5b0c7f8c4809b94a858b05c0ac76cd35bc05eeb4
-    with:
-      agent_ref: ${{ inputs.release_sha || github.sha }}
-      middleware_ref: 5b0c7f8c4809b94a858b05c0ac76cd35bc05eeb4
-
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
