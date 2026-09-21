@@ -49,7 +49,29 @@ async def main(url):
             assert state.patient.active.patientId == "12345"
             assert "insPlanId" not in state.patient.active.model_dump()
             assert "respPartyId" not in state.patient.active.model_dump()
-            if scenario == "availability_invalid_input":
+            if scenario == "medical_product":
+                first = await scheduler.availability("medical", "2026-06-03")
+                assert first["outcome"] == "unsupported", first
+                family = await insurance.check("Aetna", "medical")
+                assert family["outcome"] == "accepted", family
+                still_ambiguous = await scheduler.availability("medical", "2026-06-03")
+                assert still_ambiguous["outcome"] == "unsupported", still_ambiguous
+                assert "Aetna plan" in still_ambiguous["answer"], still_ambiguous
+                checked = await insurance.check("Aetna Commercial", "medical")
+                assert checked["outcome"] == "accepted", checked
+                available = await scheduler.availability("medical", "2026-06-03")
+                assert available["outcome"] == "found", available
+                booked = await scheduler.book_appointment(
+                    context,
+                    appointmentSlotRef=available["slots"][0]["appointmentSlotRef"],
+                    appointmentReason="Medical follow up",
+                    referringDoctor="none",
+                    readBack=True,
+                )
+                assert booked.startswith("success:"), booked
+                assert requests.count("/api/scheduler/slots") == 3, requests
+                assert requests.count("/api/patient/update-insurance") == 0, requests
+            elif scenario == "availability_invalid_input":
                 result = await scheduler.http.availability(
                     {
                         "office": "Spring Hill",
@@ -101,14 +123,14 @@ async def main(url):
                 if expected == "updated":
                     assert state.patient.active.insuranceCarrier == "Meritain Health"
                     assert accepted_insurance(state) is not None
-                    assert insurance_ready(state, "medical")
+                    assert insurance_ready(state)
                     assert await insurance.update("H123") == result
                 elif expected == "failed":
                     assert state.patient.active is original
                     assert not state.insurance.write_uncertain
                     assert "Do not repeat" not in result["answer"]
                 else:
-                    assert not insurance_ready(state, "medical")
+                    assert not insurance_ready(state)
                     assert state.insurance.write_uncertain
                     if expected == "partial":
                         assert "replacement was not attached" in result["answer"]

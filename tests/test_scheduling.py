@@ -186,7 +186,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(requests[0][1]["coverageType"], "routine_vision")
         self.assertEqual(requests[1][1]["visitCategory"], "routine_vision")
 
-    async def test_existing_patient_uses_backend_chart_despite_local_insurance_checks(
+    async def test_existing_patient_forwards_confirmed_product_for_backend_verification(
         self,
     ):
         for use_check in (False, True):
@@ -228,9 +228,26 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 await self.book(owner, ref)
                 self.assertEqual(len(requests), 2)
                 for _, payload, _ in requests:
-                    self.assertNotIn("insurancePlan", payload)
+                    if use_check:
+                        self.assertEqual(payload["insurancePlan"], "Canonical Product")
+                    else:
+                        self.assertNotIn("insurancePlan", payload)
                     self.assertNotIn("routing", payload)
                     self.assertNotIn("preauthRequired", payload)
+
+    async def test_product_correction_invalidates_existing_patient_slots(self):
+        from dataclasses import replace
+
+        owner, requests = self.owner([inventory(), inventory()])
+        ref = await self.slots(owner)
+        checked = owner.state.insurance.accepted
+        owner.state.insurance.accepted = replace(
+            checked,
+            decision=InsuranceDecision.model_validate(decision("Corrected Product")),
+        )
+        self.assertTrue((await self.book(owner, ref)).startswith("needs_input:"))
+        await self.slots(owner)
+        self.assertEqual(requests[-1][1]["insurancePlan"], "Corrected Product")
 
     async def test_legacy_insurance_fields_do_not_refetch_or_invalidate_slots(self):
         owner, requests = self.owner([inventory(), booking()])
@@ -254,7 +271,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 1)
         self.assertTrue((await self.book(owner, ref)).startswith("success:"))
         self.assertEqual(len(requests), 2)
-        self.assertNotIn("insurancePlan", requests[-1][1])
+        self.assertEqual(requests[-1][1]["insurancePlan"], "Test Insurance")
 
     async def test_insurance_write_guards_invalidate_offered_slots(self):
         for guard in ("pending", "uncertain", "partial"):
@@ -288,6 +305,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             requests[0][1],
             {
                 "office": "+19542872010",
+                "insurancePlan": "Test Insurance",
                 "patientId": "chart-jane",
                 "coverageType": "medical",
                 "startDate": "2026-09-15",
@@ -853,19 +871,20 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue((await self.book(owner, ref)).startswith("needs_input:"))
         self.assertEqual(len(requests), 1)
 
-    async def test_new_registration_requires_acceptance_and_sends_accepted_plan(self):
-        owner, requests = self.owner([inventory(), booking()])
+    async def test_completed_registration_uses_backend_policy_and_sends_known_product(
+        self,
+    ):
+        owner, requests = self.owner([inventory(), inventory(), booking()])
         owner.state.insurance.registrations["chart-jane"] = "created"
         checked = owner.state.insurance.accepted
         owner.state.insurance.accepted = None
-        self.assertEqual(
-            (await owner.availability("medical"))["outcome"], "needs_input"
-        )
-        self.assertEqual(requests, [])
+        self.assertEqual((await owner.availability("medical"))["outcome"], "found")
+        self.assertEqual(len(requests), 1)
+        self.assertNotIn("insurancePlan", requests[0][1])
         owner.state.insurance.accepted = checked
         ref = await self.slots(owner)
         self.assertTrue((await self.book(owner, ref)).startswith("success:"))
-        for _, payload, _ in requests:
+        for _, payload, _ in requests[1:]:
             self.assertEqual(payload["insurancePlan"], "Test Insurance")
         self.assertEqual(requests[-1][1]["patientStatus"], "new")
 
@@ -1128,7 +1147,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                             },
                         )
 
-                    owner, requests = self.owner([rejected, inventory()])
+                    owner, requests = self.owner([rejected, rejected, inventory()])
                     result = await owner.availability("medical")
                     self.assertEqual(
                         result["outcome"],
@@ -1139,11 +1158,34 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     )
                     self.assertFalse(result["retry_same_search"])
                     self.assertEqual(await owner.availability("medical"), result)
-                    self.assertEqual(len(requests), 1)
+                    owner.now = lambda: NOW + timedelta(seconds=61)
+                    self.assertEqual(await owner.availability("medical"), result)
+                    self.assertEqual(len(requests), 2)
                     self.assertEqual(
                         (await owner.availability("routine_vision"))["outcome"], "found"
                     )
-                    self.assertEqual(len(requests), 2)
+                    self.assertEqual(len(requests), 3)
+
+    async def test_external_chart_correction_can_recover_after_policy_cache_expires(
+        self,
+    ):
+        owner, requests = self.owner(
+            [
+                inventory(
+                    status="error",
+                    outcome="policy_blocked",
+                    slots=[],
+                    message="Staff must verify chart insurance.",
+                ),
+                inventory(),
+            ]
+        )
+        self.assertEqual(
+            (await owner.availability("medical"))["outcome"], "unsupported"
+        )
+        owner.now = lambda: NOW + timedelta(seconds=61)
+        self.assertEqual((await owner.availability("medical"))["outcome"], "found")
+        self.assertEqual(len(requests), 2)
 
     async def test_known_cancellation_rejections_are_recoverable(self):
         for outcome in (

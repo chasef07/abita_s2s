@@ -148,7 +148,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                 ],
             )
             self.assertEqual(requests[-1][1]["patientId"], "new-chart")
-            self.assertFalse(insurance_ready(state, "routine_vision"))
+            self.assertFalse(insurance_ready(state))
 
     async def test_partial_and_uncertain_creation_through_session(self):
         for backend, outcome in [
@@ -205,7 +205,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                         self.assertIn("do not create another chart", output.output)
                     else:
                         self.assertIn("Do not repeat this write", output.output)
-                    self.assertFalse(insurance_ready(state, "medical"))
+                    self.assertFalse(insurance_ready(state))
                 self.assertEqual(len(requests), 2)
 
     def test_schema_preserves_top_level_inputs_and_nullable_identity(self):

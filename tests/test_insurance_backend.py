@@ -133,9 +133,7 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
                     "created" if operation == "registration" else "updated",
                 )
                 self.assertFalse(state.patient.active.insuranceDecision.canSchedule)
-                self.assertEqual(
-                    insurance_ready(state, "medical"), operation == "update"
-                )
+                self.assertTrue(insurance_ready(state))
                 self.assertEqual(
                     paths,
                     [

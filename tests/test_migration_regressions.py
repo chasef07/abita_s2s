@@ -159,7 +159,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
                 # Participation questions do not replace chart insurance for scheduling.
                 await resolver.resolve("Jane", "01/02/1980")
                 self.assertEqual(owner.state.patient.active.patientId, "chart-jane")
-                self.assertTrue(insurance_ready(owner.state, "medical"))
+                self.assertTrue(insurance_ready(owner.state))
 
     async def test_absent_patients_check_does_not_block_returning_patient(self):
         state = call_state(None)
@@ -210,7 +210,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
         )
         await insurance.check("Unrelated plan question", "medical")
         self.assertIsNone(owner.state.insurance.accepted)
-        self.assertTrue(insurance_ready(owner.state, "medical"))
+        self.assertTrue(insurance_ready(owner.state))
         self.assertEqual((await self.book(owner, slot)).split(":", 1)[0], "success")
         self.assertEqual(len(requests), 3)
 
@@ -226,15 +226,14 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
             state.patient.active = active.model_copy(
                 update={"insuranceDecision": changed}
             )
-            self.assertTrue(insurance_ready(state, "medical"))
-            self.assertTrue(insurance_ready(state, "routine_vision"))
+            self.assertTrue(insurance_ready(state))
         for field in ("write_pending", "write_uncertain"):
             setattr(state.insurance, field, True)
-            self.assertFalse(insurance_ready(state, "medical"))
+            self.assertFalse(insurance_ready(state))
             setattr(state.insurance, field, False)
         for status in ("created", "partial"):
             state.insurance.registrations[active.patientId] = status
-            self.assertFalse(insurance_ready(state, "medical"))
+            self.assertEqual(insurance_ready(state), status == "created")
         self.assertEqual(len(requests), 1)
 
     async def test_optional_practice_does_not_block_staff_tasks_or_direct_office(self):
