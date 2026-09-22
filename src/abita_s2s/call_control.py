@@ -124,18 +124,7 @@ class CallControl(EndCallTool):
                 tool_choice="none",
             )
             await speech.wait_for_playout()
-            if speech.interrupted:
-                self.status = "retryable" if self.attempts < 2 else "failed"
-                retry = (
-                    " You may try once more, only if the caller still wants the transfer."
-                    if self.status == "retryable"
-                    else " Do not retry. Continue helping the caller."
-                )
-                return (
-                    "interrupted: Transfer announcement was interrupted. No SIP transfer was sent."
-                    " Listen to the caller before taking further action." + retry
-                )
-            if speech.exception() is not None:
+            if speech.interrupted or speech.exception() is not None:
                 raise RuntimeError("Announcement did not complete")
             if not self._active():
                 raise RuntimeError("Caller disconnected")
