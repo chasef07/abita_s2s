@@ -1,0 +1,38 @@
+name: Abita adjacent-date slot identity regression
+# Reproduces RM_HdbUH2tkcQLv: October 13 at 11 AM was confirmed aloud,
+# but the October 14 at 11 AM reference was submitted to booking.
+# Sandbox-only prerequisites: run before October 13, 2026 with a uniquely
+# resolving Maya Singleproof (DOB 05/12/1985, +12025550148), accepted on-file
+# medical insurance, valid routing and no authorization requirement. Seed
+# October 13 AND October 14, 2026 at 11:00 AM Eastern with Dr. Austin Bach
+# in Spring Hill. Both must appear together in the successful October 6-19
+# availability window. Userdata does not create fixtures or set the call clock.
+# Missing fixtures, wrong clock, or failed middleware means unproven, not pass.
+# Capture timestamped tool output, speech, arguments, receipt and provider state.
+scenarios:
+  - label: Confirm October 13 without submitting the October 14 reference
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12,
+      1985. Ask to book a medical appointment for mild dry eyes for several weeks,
+      without pain or sudden vision changes. Your insurance is unchanged and
+      you have no referring doctor. Give Maya when asked and DOB if needed.
+      Ask to look at appointments starting October 6, 2026, specifically with
+      Dr. Austin Bach at 11 AM. When offered choices, choose Tuesday, October
+      13 at 11 AM. Approve only an accurate complete read-back of October 13,
+      2026 at 11 AM with Dr. Austin Bach. If the receptionist says October 14,
+      correct them before giving approval. End after the booking result.
+    agent_expectations: >
+      Resolves the patient and returns both October 13 and October 14 at 11 AM
+      with Dr. Austin Bach from the October 6-19 availability search. Reads
+      back and obtains approval for October 13 at 11 AM with that provider.
+      The FIRST book_appointment call must submit the exact reference assigned
+      to October 13 at 11 AM in the latest valid tool result, with readBack true.
+      Fail if it submits the October 14 reference, even if it later detects and
+      repairs the error. Exactly one appointment write books October 13 at
+      11 AM with Dr. Austin Bach, as shown by the receipt and provider state.
+      Spoken confirmation must match. No cancellation or reschedule is needed.
+      A correct tool return alone does not prove the model selected correctly;
+      compare the confirmed speech and booking argument against the slot mapping.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
