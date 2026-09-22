@@ -14,7 +14,7 @@ from livekit.agents import AgentSession, JobContext, room_io
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.call_control import CallControl
 from abita_s2s.config import Config, load_config
-from abita_s2s.observability import evaluate_call
+from abita_s2s.observability import evaluate_call, log_openai_session
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.knowledge import OfficeKnowledge
@@ -299,6 +299,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         )
         if state.reporter:
             state.reporter.started = True
+        log_openai_session(session.current_agent.duplex_session, call.call_id)
     except BaseException as error:
         logger.error("session_start_failed cause=%s", type(error).__name__)
         try:
