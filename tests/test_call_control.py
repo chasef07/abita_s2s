@@ -104,18 +104,21 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
                 agent=AbitaAgent(SPRING_HILL, None, call_control=self.control)
             )
 
-    async def run_tool(self, name):
+    async def run_tool(self, name, *, interrupted=False):
         async def playout():
             self.events.append("announcement_done")
 
         speech = SimpleNamespace(
-            wait_for_playout=playout, interrupted=False, exception=lambda: None
+            wait_for_playout=playout, interrupted=interrupted, exception=lambda: None
         )
         # Replace speech only; tool selection, RunContext and execution are LiveKit's.
         original = self.session.generate_reply
 
         def generate(**kwargs):
-            return speech if "instructions" in kwargs else original(**kwargs)
+            if "instructions" in kwargs:
+                self.assertNotIn("allow_interruptions", kwargs)
+                return speech
+            return original(**kwargs)
 
         with patch.object(self.session, "generate_reply", side_effect=generate):
             await asyncio.wait_for(self.session.run(user_input=name), 4)
@@ -140,6 +143,37 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual((await self.run_tool("end_call")).split(":", 1)[0], "blocked")
         self.sip.transfer_sip_participant.assert_awaited_once()
+
+    async def test_interrupted_announcement_waits_for_caller_before_bounded_retry(self):
+        self.state.reporter = SimpleNamespace(transfer_status="idle")
+        with patch.object(
+            self.control.admission, "resolve", new=AsyncMock()
+        ) as resolve:
+            result = await self.run_tool("transfer_call", interrupted=True)
+            self.assertIn("Transfer announcement was interrupted", result)
+            self.assertIn("Listen to the caller", result)
+            self.assertIn("only if the caller still wants the transfer", result)
+            self.assertEqual(self.control.status, "retryable")
+            self.assertEqual(self.state.reporter.transfer_status, "retryable")
+            resolve.assert_not_awaited()
+            self.sip.transfer_sip_participant.assert_not_awaited()
+        self.assertTrue((await self.run_tool("transfer_call")).startswith("accepted:"))
+        self.sip.transfer_sip_participant.assert_awaited_once()
+
+    async def test_repeated_interruption_exhausts_retry_without_handoff(self):
+        with patch.object(
+            self.control.admission, "resolve", new=AsyncMock()
+        ) as resolve:
+            await self.run_tool("transfer_call", interrupted=True)
+            result = await self.run_tool("transfer_call", interrupted=True)
+            self.assertIn("Do not retry", result)
+            self.assertEqual(self.control.status, "failed")
+            self.assertTrue(
+                (await self.run_tool("transfer_call")).startswith("blocked:")
+            )
+            self.assertEqual(self.control.attempts, 2)
+            resolve.assert_not_awaited()
+            self.sip.transfer_sip_participant.assert_not_awaited()
 
     async def test_session_shutdown_drains_accepted_transfer(self):
         entered, finish = asyncio.Event(), asyncio.Event()
