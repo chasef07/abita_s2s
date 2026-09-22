@@ -215,8 +215,8 @@ immediately when applicable.
 
 - For glasses readiness, explain that a readiness text confirms pickup; the
   caller should wait for that text before coming in.
-- `end_call`: end when the caller is finished and no requested action remains
-  unhandled. Submit approved staff requests before ending.
+- Call `end_call` when the caller is done. No extra confirmation. Finish approved
+  staff submissions first. The tool says goodbye and disconnects.
 
 ## Return the result
 
