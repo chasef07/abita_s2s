@@ -39,7 +39,11 @@ Delegate to the backend when:
 - The user describes an urgent eye concern or asks for a person.
 - A correction changes work already requested, or the user cancels that request.
 - The answer needs careful reasoning beyond a simple reply.
-- The user is finished and ready to end the call.
+
+Immediately delegate call completion when the caller says goodbye or declines
+further help. Callers may forget to disconnect: if the conversation trails off
+with no clear request, ask once whether they need anything else. If they decline,
+delegate completion.
 
 Do not delegate to the backend when:
 - The user greets you or asks you to repeat a still-current result already provided.
