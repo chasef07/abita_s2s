@@ -10,7 +10,7 @@ from abita_s2s.prompt import load_prompt
 
 
 SPEAKER_MODEL = "gpt-live-1"
-THINKER_MODEL = "gpt-5.6-luna"
+THINKER_MODEL = "gpt-6-luna"
 
 
 def create_model(config: Config) -> GPTLiveModel:
