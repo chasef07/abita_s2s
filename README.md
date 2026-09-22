@@ -61,7 +61,6 @@ depend on configuration and execution mode.
 | [staff_tasks.py](src/abita_s2s/staff_tasks.py) | Caller-approved staff requests, delivery receipts, and duplicate-delivery protection. |
 | [call_control.py](src/abita_s2s/call_control.py), [handoff.py](src/abita_s2s/handoff.py) | Transfer admission, trusted destinations, SIP transfer, and ending the call. |
 | [reporting.py](src/abita_s2s/reporting.py) | Ordered Product START/checkpoint/CLOSEOUT delivery, combining application evidence with the native session report. |
-| [observability.py](src/abita_s2s/observability.py) | Post-call LiveKit judgments for completion, accuracy, tool use, and conciseness. |
 | [offices.py](src/abita_s2s/offices.py), [config.py](src/abita_s2s/config.py) | Trusted office routing, greetings, capabilities, and runtime configuration. |
 
 ## Call lifecycle
@@ -138,20 +137,6 @@ an insurance-plan override for these patients. New registration still requires
 accepted insurance; incomplete registration and pending or uncertain insurance
 writes block scheduling. Middleware remains responsible for provider eligibility
 and insurance restrictions on availability and booking.
-
-After Product closeout, calls with caller messages are evaluated through LiveKit
-Inference using `openai/gpt-4o-mini`. The four built-in judges receive full text history,
-including instructions and tool results; no separate judge API key is required
-when LiveKit Inference is available to the project. Evaluation is bounded to 90
-seconds within LiveKit's separate session-end budget. Results appear in LiveKit
-Cloud as `lk.judge.<name>:pass|fail|maybe`, with explanations.
-
-`abita.evaluation:complete` means all four judges returned, not that the call
-passed. `incomplete` indicates missing results, an error, or timeout; `skipped`
-means there were no caller messages. Review individual verdicts, including
-`maybe`, rather than treating missing evaluations as successful calls. Judgments
-do not independently verify backend state or audio quality. They are not added
-to Product closeout or used to change patient records.
 
 ## Release path
 
