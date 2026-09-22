@@ -1,6 +1,8 @@
 """One per-call scheduling owner: private references, inventory and write receipts."""
 
 import asyncio
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal
@@ -237,21 +239,26 @@ class Scheduling:
                 else "Do not retry this search; ask staff for help."
             )
         if slots := result.get("slots"):
-            groups = {}
+            today = self.now().astimezone(EASTERN).date()
+            lines.append("")
             for slot in slots:
-                groups.setdefault((slot["date"], slot["provider"]), []).append(slot)
-            for (day, provider), openings in groups.items():
-                calendar_day = date.fromisoformat(day)
-                lines.extend(
-                    [
-                        "",
-                        f"{calendar_day:%A, %B} {calendar_day.day}, {calendar_day.year}",
-                        provider,
-                    ]
+                start = datetime.fromisoformat(slot["datetime"])
+                start = (
+                    start.replace(tzinfo=EASTERN)
+                    if start.tzinfo is None
+                    else start.astimezone(EASTERN)
                 )
-                lines.extend(
-                    f"{slot['time']} — {slot['appointmentSlotRef']}"
-                    for slot in openings
+                days = (start.date() - today).days
+                if days == 0:
+                    relative = "today"
+                elif days == 1:
+                    relative = "tomorrow"
+                else:
+                    relative = f"in {days} days"
+                clock = start.strftime("%I:%M %p %Z").lstrip("0")
+                lines.append(
+                    f"{slot['appointmentSlotRef']} – {start:%A, %B} {start.day}, "
+                    f"{start.year} at {clock} ({relative}) — {slot['provider']}"
                 )
         return "\n".join(lines)
 
@@ -346,7 +353,6 @@ class Scheduling:
                 "stale",
                 "blocked: The patient or appointment details changed. Check again with current details.",
             )
-        previous = {item.slot.key: (ref, item) for ref, item in self._slots.items()}
         self._slots.clear()
         first = key.start.isoformat()
         through = (key.start + timedelta(days=13)).isoformat()
@@ -416,17 +422,19 @@ class Scheduling:
         expiry = result.bookingTokenExpiresAt
         unique = {slot.key: slot for slot in result.slots}
         for slot in unique.values():
-            prior = previous.get(slot.key)
-            if (
-                prior
-                and prior[1].context == key.context
-                and prior[1].office == key.office
-                and prior[1].visit == key.visit
-            ):
-                ref = prior[0]
-            else:
-                self._next_ref += 1
-                ref = f"S{self._next_ref}"
+            # Stable during inventory refresh; invalidation starts a new selection
+            # lifecycle so an obsolete write reference cannot authorize rebooking.
+            identity = json.dumps(
+                (generation, key.office, key.visit, slot.key),
+                separators=(",", ":"),
+            )
+            ref = "ST_" + hashlib.sha256(identity.encode()).hexdigest()[:6].upper()
+            # Short references must never overwrite another offered appointment.
+            collision = 0
+            while ref in self._slots:
+                collision += 1
+                candidate = f"{identity}:{collision}"
+                ref = "ST_" + hashlib.sha256(candidate.encode()).hexdigest()[:6].upper()
             self._slots[ref] = OfferedSlot(
                 slot, key.context, key.office, key.visit, expiry
             )
@@ -438,6 +446,7 @@ class Scheduling:
             slots=[
                 {
                     "appointmentSlotRef": ref,
+                    "datetime": item.slot.datetime,
                     "date": item.slot.date,
                     "time": item.slot.time,
                     "provider": provider_name(item.slot.provider),
