@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.4](https://github.com/chasef07/abita_s2s/compare/v0.6.3...v0.6.4) (2026-09-22)
+
+
+### Bug Fixes
+
+* clarify speaker call completion prompt ([#58](https://github.com/chasef07/abita_s2s/issues/58)) ([9bc03fe](https://github.com/chasef07/abita_s2s/commit/9bc03fed1ae0ec0653f0afc70023d057b5a71f1c))
+* prewarm AnyIO socket imports before calls ([#60](https://github.com/chasef07/abita_s2s/issues/60)) ([514213e](https://github.com/chasef07/abita_s2s/commit/514213e8f76ef74e6dc12fdefcd1ed16dcbbdf0d))
+* remove unsupported transfer interruption override ([#61](https://github.com/chasef07/abita_s2s/issues/61)) ([51feb10](https://github.com/chasef07/abita_s2s/commit/51feb101c57ee2855f54a67bffadb5c1416cf157))
+
 ## [0.6.3](https://github.com/chasef07/abita_s2s/compare/v0.6.2...v0.6.3) (2026-09-21)
 
 
