@@ -19,6 +19,7 @@ from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.knowledge import OfficeKnowledge
 from abita_s2s.middleware import PatientMiddleware
 from abita_s2s.model_config import create_model
+from abita_s2s.observability import log_openai_session
 from abita_s2s.offices import (
     get_office_profile,
     get_office_profile_by_phone,
@@ -298,6 +299,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         )
         if state.reporter:
             state.reporter.started = True
+        log_openai_session(session.current_agent.duplex_session, call.call_id)
     except BaseException as error:
         logger.error("session_start_failed cause=%s", type(error).__name__)
         try:

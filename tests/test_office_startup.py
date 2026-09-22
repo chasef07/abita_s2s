@@ -174,7 +174,13 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             ),
             add_shutdown_callback=Mock(side_effect=self.addAsyncCleanup),
         )
-        session = SimpleNamespace(start=AsyncMock(), on=Mock())
+        session = SimpleNamespace(
+            start=AsyncMock(),
+            on=Mock(),
+            current_agent=SimpleNamespace(
+                duplex_session=SimpleNamespace(session_id=None, on=Mock())
+            ),
+        )
         session_type = Mock(return_value=session)
         session_generic = MagicMock()
         session_generic.__getitem__.return_value = session_type
