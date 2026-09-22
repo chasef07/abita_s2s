@@ -122,7 +122,6 @@ class CallControl(EndCallTool):
             speech = ctx.session.generate_reply(
                 instructions="Say only: One moment while I transfer you to the office. Use the caller's language.",
                 tool_choice="none",
-                allow_interruptions=False,
             )
             await speech.wait_for_playout()
             if speech.interrupted or speech.exception() is not None:
