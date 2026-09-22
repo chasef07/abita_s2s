@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.5](https://github.com/chasef07/abita_s2s/compare/v0.6.4...v0.6.5) (2026-09-22)
+
+
+### Bug Fixes
+
+* log OpenAI live session IDs for call correlation ([#62](https://github.com/chasef07/abita_s2s/issues/62)) ([3acdeee](https://github.com/chasef07/abita_s2s/commit/3acdeee3dffa742712aec759e1aec66e47fb889e))
+* remove GPT-4o-mini post-call judges ([#63](https://github.com/chasef07/abita_s2s/issues/63)) ([8dcf439](https://github.com/chasef07/abita_s2s/commit/8dcf43908eeeb3273edda79af6995f7bd0ef26e4))
+* **scheduling:** distinguish confirmed appointment slots ([#66](https://github.com/chasef07/abita_s2s/issues/66)) ([3f0f41a](https://github.com/chasef07/abita_s2s/commit/3f0f41a9e86c0293759f52b4e6ae4e729bd4f6d3))
+
 ## [0.6.4](https://github.com/chasef07/abita_s2s/compare/v0.6.3...v0.6.4) (2026-09-22)
 
 
