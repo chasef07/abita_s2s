@@ -113,16 +113,21 @@ class InsuranceRegistration:
             )
         return reply(decision.outcome, decision.answer)
 
-    async def _run_write(self, checked: AcceptedInsurance, work):
+    def _write_blocker(self) -> dict | None:
         if self._closed:
             return staff()
-        if self._task and not self._task.done():
+        if self.state.insurance.write_pending:
             return reply(
                 "write_pending",
                 "blocked: A registration or insurance write is still in progress. Wait for its result.",
             )
         if self.state.insurance.write_uncertain:
             return staff("uncertain")
+        return None
+
+    async def _run_write(self, checked: AcceptedInsurance, work):
+        if blocked := self._write_blocker():
+            return blocked
         self.state.insurance.write_pending = True
 
         async def run():
@@ -154,16 +159,20 @@ class InsuranceRegistration:
         for prior, result in self._creations:
             if prior == key:
                 return result
-        if self.state.patient.active:
+        if blocked := self._write_blocker():
+            return blocked
+        if self.state.patient.active and not self._resolver.begin_registration(
+            r.firstName, r.dob
+        ):
             return reply(
                 "already_active",
-                "blocked: A verified patient is already active. Resolve the intended patient before creating a chart.",
+                "blocked: A verified patient is already active. Do not create another chart for the same patient. For a different new patient, provide their first name and valid DOB.",
             )
         checked = accepted_insurance(self.state)
         if checked is None:
             return reply(
                 "needs_insurance",
-                "needs_input: Check accepted coverage for this patient and the intended medical or routine vision visit before registration.",
+                "needs_input: Check accepted coverage for this patient and the intended medical or routine vision visit, then call add_patient again.",
             )
         if checked.decision.participation != "accepted":
             return reply(checked.decision.outcome, checked.decision.answer)

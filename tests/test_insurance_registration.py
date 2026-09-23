@@ -154,6 +154,96 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await owner.add(registration()), result)
         self.assertEqual(len(self.requests), 1)
 
+    async def test_two_new_patients_recheck_coverage_without_lookup(self):
+        state, resolver, owner = self.owner(
+            [
+                created(),
+                created(patientId="second-chart", name="Doe, John", dob="02/03/1982"),
+            ]
+        )
+        await owner.check("Aetna", "medical")
+        first = await owner.add(registration())
+        revision = state.patient.revision
+        second = registration(firstName="John", dob="02/03/1982")
+
+        self.assertEqual((await owner.add(second))["outcome"], "needs_insurance")
+        self.assertIsNone(state.patient.active)
+        self.assertIsNone(state.patient.absence)
+        self.assertIsNone(accepted_insurance(state))
+        self.assertGreater(state.patient.revision, revision)
+        self.assertEqual(
+            resolver.staff_task_patient(), {"name": "John", "dob": "02/03/1982"}
+        )
+        self.assertEqual(len(self.requests), 1)
+
+        await owner.check("Aetna", "medical")
+        result = await owner.add(second)
+        self.assertEqual(result["outcome"], "created")
+        self.assertEqual(state.patient.active.patientId, "second-chart")
+        self.assertTrue(insurance_ready(state))
+        self.assertEqual(await owner.add(second), result)
+        self.assertEqual(await owner.add(registration()), first)
+        self.assertEqual(state.patient.active.patientId, "second-chart")
+        self.assertEqual(
+            state.insurance.registrations,
+            {"new-chart": "created", "second-chart": "created"},
+        )
+        self.assertEqual([path for path, _ in self.requests], ["/api/add-patient"] * 2)
+
+    async def test_registration_switch_invalidates_inflight_patient_refresh(self):
+        entered, finish = asyncio.Event(), asyncio.Event()
+
+        async def delayed(request):
+            entered.set()
+            await finish.wait()
+            return httpx.Response(200, json=receipt())
+
+        state, resolver, owner = self.owner([delayed])
+        state.patient.active = Receipt.model_validate(
+            receipt(appointmentsStatus="error")
+        )
+        task = asyncio.create_task(resolver.resolve("Jane", "01/02/1980"))
+        try:
+            await asyncio.wait_for(entered.wait(), timeout=2)
+            result = await owner.add(registration(firstName="John", dob="02/03/1982"))
+            self.assertEqual(result["outcome"], "needs_insurance")
+        finally:
+            finish.set()
+        self.assertEqual((await task)["outcome"], "superseded")
+        self.assertIsNone(state.patient.active)
+        self.assertEqual(
+            resolver.staff_task_patient(), {"name": "John", "dob": "02/03/1982"}
+        )
+
+    async def test_existing_same_patient_is_not_cleared_for_registration(self):
+        state, resolver, owner = self.owner([receipt()])
+        await resolver.resolve("Jane", "01/02/1980")
+        active = state.patient.active
+        self.assertIsNotNone(active)
+        self.assertEqual((await owner.add(registration()))["outcome"], "already_active")
+        self.assertIs(state.patient.active, active)
+        self.assertEqual(len(self.requests), 1)
+
+    async def test_registration_switch_preserves_state_when_writes_blocked(self):
+        for blocked in ("write_pending", "write_uncertain", "closed"):
+            with self.subTest(blocked=blocked):
+                state, _, owner = self.owner([created()])
+                await owner.check("Aetna", "medical")
+                await owner.add(registration())
+                active, revision = state.patient.active, state.patient.revision
+                if blocked == "closed":
+                    owner.close_admission()
+                else:
+                    setattr(state.insurance, blocked, True)
+                result = await owner.add(
+                    registration(firstName="John", dob="02/03/1982")
+                )
+                self.assertTrue(result["answer"].startswith("blocked:"))
+                self.assertIs(state.patient.active, active)
+                self.assertEqual(state.patient.revision, revision)
+                self.assertIsNotNone(accepted_insurance(state))
+                self.assertEqual(len(self.requests), 1)
+
     async def test_callback_and_readback(self):
         state, _, owner = await self.prepared([], plan="VSP", coverage="routine_vision")
         self.assertEqual(

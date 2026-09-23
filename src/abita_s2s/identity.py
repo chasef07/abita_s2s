@@ -354,6 +354,29 @@ class PatientResolver:
             )
         return True
 
+    def begin_registration(self, first_name: str, dob: str) -> bool:
+        """Leave a different patient's chart for caller-confirmed new intake."""
+        active = self.state.patient.active
+        if (
+            self._closed
+            or not exact_name(first_name)
+            or not parse_dob(dob)
+            or (
+                active
+                and any(names_match(first_name, n) for n in first_names(active.name))
+                and dob_matches(dob, active.dob)
+            )
+        ):
+            return False
+        self._token = None
+        self._pending = (first_name, dob)
+        self._previous_id = None
+        self.state.patient.active = None
+        self.state.patient.absence = None
+        self.state.patient.revision += 1
+        self.state.insurance.accepted = None
+        return True
+
     def activate_created(self, checked: AcceptedInsurance, receipt: Receipt) -> bool:
         """Commit a validated creation only while its original acceptance is current."""
         if (
