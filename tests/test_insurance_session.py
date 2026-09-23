@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 from livekit.agents import AgentSession, llm
+from livekit.agents.llm.tool_context import ToolContext
 from livekit.agents.llm.utils import build_strict_openai_schema
 from test_insurance_registration import created, registration, updated
 from test_patient_resolution import CONFIG, call_state, search
@@ -16,9 +17,9 @@ from abita_s2s.identity import PatientResolver
 from insurance_fixtures import check_response, decision
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.insurance_state import insurance_ready
-from abita_s2s.middleware import PatientMiddleware
+from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.offices import SPRING_HILL
-from abita_s2s.registration_middleware import RegistrationMiddleware
+from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
 
 
 class InsuranceModel(llm.LLM):
@@ -210,15 +211,18 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
 
     def test_schema_preserves_top_level_inputs_and_nullable_identity(self):
         agent = AbitaAgent(SPRING_HILL, None)
+        tools = ToolContext(agent.tools).function_tools
         for tool in [
-            agent.check_insurance,
-            agent.add_patient,
-            agent.update_insurance,
-            agent.resolve_patient,
+            tools["check_insurance"],
+            tools["add_patient"],
+            tools["update_insurance"],
+            tools["resolve_patient"],
         ]:
             schema = build_strict_openai_schema(tool)
             self.assertFalse(schema["function"]["parameters"]["additionalProperties"])
-        schema = build_strict_openai_schema(agent.add_patient)["function"]["parameters"]
+        schema = build_strict_openai_schema(tools["add_patient"])["function"][
+            "parameters"
+        ]
         self.assertEqual(set(schema["properties"]), set(registration().model_dump()))
         self.assertNotIn("registration", schema["properties"])
         self.assertNotIn("ssnLast4", schema["properties"])

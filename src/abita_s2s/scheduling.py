@@ -8,16 +8,16 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from livekit.agents import RunContext, function_tool
+from livekit.agents import RunContext
 
 from abita_s2s.insurance_state import (
     AcceptedInsurance,
     insurance_ready,
     registration_insurance,
 )
-from abita_s2s.middleware import Appointment, Receipt
+from abita_s2s.integrations.patient_middleware import Appointment, Receipt
 from abita_s2s.offices import get_office_profile
-from abita_s2s.scheduling_http import (
+from abita_s2s.integrations.scheduling_http import (
     RescheduleReceipt,
     SchedulingFailure,
     SchedulingHTTP,
@@ -112,15 +112,6 @@ class Scheduling:
         self._closed = False
         self._receipts: dict[tuple, MutationReceipt] = {}
 
-    @property
-    def tools(self):
-        return [
-            self.list_available_appointments,
-            self.book_appointment,
-            self.cancel_appointment,
-            self.reschedule_appointment,
-        ]
-
     def close_admission(self) -> None:
         self._closed = True
 
@@ -204,63 +195,6 @@ class Scheduling:
                 return None
             return requested
         return called if requested is None else None
-
-    @function_tool
-    async def list_available_appointments(
-        self,
-        context: RunContext[CallState],
-        visitType: VisitType,
-        startDate: str | None = None,
-        office: Literal["hollywood", "sweetwater"] | None = None,
-    ) -> str:
-        """Find eligible slots for the active patient in a 14-day Eastern-time window.
-
-        Requires patient resolution or completed registration and no unfinished insurance write.
-
-        Args:
-            visitType: medical or routine_vision; match the existing visit when rescheduling.
-            startDate: YYYY-MM-DD, tomorrow or later; null defaults to tomorrow.
-                To search the next window, use the day after the returned searched-through date.
-            office: Required caller-selected office for Hollywood/Sweetwater calls;
-                omit for other offices.
-        """
-        if context.userdata is not self.state or self._closed:
-            return "blocked: Scheduling is unavailable."
-        result = await self.availability(visitType, startDate, office)
-        lines = [result["answer"]]
-        if "searchedFrom" in result:
-            lines.append(
-                f"Searched {result['searchedFrom']} through {result['searchedThrough']}."
-            )
-        if "retry_same_search" in result and result["outcome"] == "availability_failed":
-            lines.append(
-                "Retry this search once."
-                if result["retry_same_search"]
-                else "Do not retry this search; ask staff for help."
-            )
-        if slots := result.get("slots"):
-            today = self.now().astimezone(EASTERN).date()
-            lines.append("")
-            for slot in slots:
-                start = datetime.fromisoformat(slot["datetime"])
-                start = (
-                    start.replace(tzinfo=EASTERN)
-                    if start.tzinfo is None
-                    else start.astimezone(EASTERN)
-                )
-                days = (start.date() - today).days
-                if days == 0:
-                    relative = "today"
-                elif days == 1:
-                    relative = "tomorrow"
-                else:
-                    relative = f"in {days} days"
-                clock = start.strftime("%I:%M %p %Z").lstrip("0")
-                lines.append(
-                    f"{slot['appointmentSlotRef']} – {start:%A, %B} {start.day}, "
-                    f"{start.year} at {clock} ({relative}) — {slot['provider']}"
-                )
-        return "\n".join(lines)
 
     async def availability(self, visit, start=None, office=None):
         if self._closed:
@@ -457,86 +391,57 @@ class Scheduling:
         self._cache = (key, min(expiry, self.now() + timedelta(seconds=60)), answer)
         return answer
 
-    @function_tool
-    async def book_appointment(
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+    async def book(
         self,
         context: RunContext[CallState],
-        appointmentSlotRef: str,
-        appointmentReason: str,
-        referringDoctor: str,
-        readBack: Literal[True] | None,
+        *,
+        slot_ref: str,
+        reason: str,
+        referrer: str,
+        confirmed: Literal[True] | None,
     ) -> str:
-        """Book a new appointment using a returned slot after caller confirmation of date, time and provider.
-
-        Reuse the known visit reason. For a vague concern, ask one focused follow-up;
-        if still unclear, preserve the caller's words and note the limitation. Never diagnose.
-        readBack is true only after confirmation. Claim success only from this result. Do not retry uncertain writes.
-        Use reschedule_appointment to move an existing appointment.
-
-        Args:
-            referringDoctor: Caller-provided referring doctor. Reuse an answer already
-                supplied; otherwise ask "Did a doctor refer you?" If yes, ask for the
-                name. Use internal value "none" only when the caller says they have
-                no referring doctor. Do not ask whether to put or mark none, or
-                narrate the internal value.
-        """
         return await self._execute(
             context,
             self._book,
-            slot_ref=appointmentSlotRef,
-            reason=appointmentReason,
-            referrer=referringDoctor,
-            confirmed=readBack,
+            slot_ref=slot_ref,
+            reason=reason,
+            referrer=referrer,
+            confirmed=confirmed,
         )
 
-    @function_tool
-    async def cancel_appointment(
+    async def cancel(
         self,
         context: RunContext[CallState],
-        appointmentRef: str,
-        readBack: Literal[True] | None,
+        *,
+        confirmed: Literal[True] | None,
+        old_ref: str,
     ) -> str:
-        """Cancel only after verification and the caller confirms cancellation of the exact loaded appointment.
-
-        Use its private appointmentRef. readBack is true only after the caller confirms
-        the exact date, time, provider and intent to cancel.
-        Claim success only from the result; never retry uncertain cancellation.
-        """
         return await self._execute(
-            context, self._cancel, confirmed=readBack, old_ref=appointmentRef
+            context, self._cancel, confirmed=confirmed, old_ref=old_ref
         )
 
-    @function_tool
-    async def reschedule_appointment(
+    async def reschedule(
         self,
         context: RunContext[CallState],
-        oldAppointmentRef: str,
-        appointmentSlotRef: str,
-        appointmentReason: str,
-        referringDoctor: str,
-        readBack: Literal[True] | None,
+        *,
+        slot_ref: str,
+        reason: str,
+        referrer: str,
+        confirmed: Literal[True] | None,
+        old_ref: str,
     ) -> str:
-        """Move the caller-confirmed loaded appointment to a confirmed returned slot.
-
-        Confirm the old appointment and read back the new date, time and provider before readBack=true.
-        Reuse known visit and referral details; ask only for missing information.
-        Books first, then cancels the old visit. Report partial success and never repeat an uncertain booking.
-
-        Args:
-            referringDoctor: Caller-provided referring doctor. Reuse an answer already
-                supplied; otherwise ask "Did a doctor refer you?" If yes, ask for the
-                name. Use internal value "none" only when the caller says they have
-                no referring doctor. Do not ask whether to put or mark none, or
-                narrate the internal value.
-        """
         return await self._execute(
             context,
             self._reschedule,
-            slot_ref=appointmentSlotRef,
-            reason=appointmentReason,
-            referrer=referringDoctor,
-            confirmed=readBack,
-            old_ref=oldAppointmentRef,
+            slot_ref=slot_ref,
+            reason=reason,
+            referrer=referrer,
+            confirmed=confirmed,
+            old_ref=old_ref,
         )
 
     async def _execute(

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import httpx
 from insurance_fixtures import decision
+from livekit.agents.llm.tool_context import ToolContext
 from livekit.agents.llm.utils import build_strict_openai_schema
 
 from abita_s2s.agent import AbitaAgent
@@ -15,7 +16,7 @@ from abita_s2s.config import Config
 from abita_s2s.identity import (
     PatientResolver,
 )
-from abita_s2s.middleware import PatientMiddleware
+from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.name_matcher import phone_name_matches
 from abita_s2s.offices import SPRING_HILL
 from abita_s2s.state import CallContext, CallState
@@ -573,12 +574,13 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
     async def test_tool_schema_and_cross_call_guard(self):
         r, calls = self.resolver([])
         agent = AbitaAgent(SPRING_HILL, None, r)
-        schema = build_strict_openai_schema(agent.resolve_patient)["function"]
+        resolve_patient = ToolContext(agent.tools).function_tools["resolve_patient"]
+        schema = build_strict_openai_schema(resolve_patient)["function"]
         self.assertEqual(set(schema["parameters"]["properties"]), {"firstName", "dob"})
         self.assertFalse(schema["parameters"]["additionalProperties"])
         for value in schema["parameters"]["properties"].values():
             self.assertEqual(value["type"], ["string", "null"])
-        result = await agent.resolve_patient(
+        result = await resolve_patient(
             SimpleNamespace(userdata=call_state()), "Jane", None
         )
         self.assertEqual(

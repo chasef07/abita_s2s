@@ -12,22 +12,22 @@ from livekit import api, rtc
 from livekit.agents import AgentSession, JobContext, room_io
 
 from abita_s2s.agent import AbitaAgent
-from abita_s2s.call_control import CallControl
+from abita_s2s.tools.call_control import CallControl
 from abita_s2s.config import Config, load_config
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.knowledge import OfficeKnowledge
-from abita_s2s.middleware import PatientMiddleware
+from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.model_config import create_model
-from abita_s2s.observability import log_openai_session
+from abita_s2s.runtime.observability import log_openai_session
 from abita_s2s.offices import (
     get_office_profile,
     get_office_profile_by_phone,
 )
-from abita_s2s.registration_middleware import RegistrationMiddleware
-from abita_s2s.reporting import CallReporter
+from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
+from abita_s2s.runtime.reporting import CallReporter
 from abita_s2s.scheduling import Scheduling
-from abita_s2s.scheduling_http import SchedulingHTTP
+from abita_s2s.integrations.scheduling_http import SchedulingHTTP
 from abita_s2s.staff_tasks import StaffTasks
 from abita_s2s.state import CallContext, CallState
 

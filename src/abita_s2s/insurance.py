@@ -12,9 +12,9 @@ from abita_s2s.insurance_state import (
     CoverageType,
     accepted_insurance,
 )
-from abita_s2s.middleware import Receipt, Record
+from abita_s2s.integrations.patient_middleware import Receipt, Record
 from abita_s2s.name_matcher import dob_matches, exact_name, parse_dob
-from abita_s2s.registration_middleware import (
+from abita_s2s.integrations.registration_middleware import (
     CreationReceipt,
     RegistrationMiddleware,
     UpdatedReceipt,

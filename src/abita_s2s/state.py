@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Literal
 from abita_s2s.insurance_state import InsuranceState
 
 if TYPE_CHECKING:
-    from abita_s2s.middleware import Candidate, Receipt
-    from abita_s2s.reporting import CallReporter
+    from abita_s2s.integrations.patient_middleware import Candidate, Receipt
+    from abita_s2s.runtime.reporting import CallReporter
 
 
 @dataclass(frozen=True, repr=False)

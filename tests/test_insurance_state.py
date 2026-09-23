@@ -11,7 +11,7 @@ from abita_s2s.insurance_state import (
     insurance_ready,
     registration_insurance,
 )
-from abita_s2s.middleware import Receipt
+from abita_s2s.integrations.patient_middleware import Receipt
 from abita_s2s.state import PatientAbsence
 
 

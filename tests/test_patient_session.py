@@ -11,7 +11,7 @@ from test_patient_resolution import CONFIG, call_state, receipt
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.identity import PatientResolver
-from abita_s2s.middleware import PatientMiddleware
+from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.offices import SPRING_HILL
 
 

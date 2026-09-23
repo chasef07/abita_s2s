@@ -14,10 +14,10 @@ from livekit.agents.voice.report import SessionReport
 from test_patient_resolution import CONFIG, call_state
 
 from abita_s2s.config import load_config
-from abita_s2s.reporting import CallReporter, ReportingError
+from abita_s2s.runtime.reporting import CallReporter, ReportingError
 from abita_s2s.staff_tasks import StaffTasks
 from abita_s2s.identity import PatientResolver
-from abita_s2s.middleware import PatientMiddleware
+from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from test_patient_resolution import receipt
 from abita_s2s.runtime.session_startup import finish_voice_call
 
@@ -159,7 +159,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             drain=AsyncMock(side_effect=RuntimeError("private details"))
         )
         reporter.started = True
-        with self.assertLogs("abita_s2s.reporting", "ERROR") as logs:
+        with self.assertLogs("abita_s2s.runtime.reporting", "ERROR") as logs:
             await reporter.finish(lambda: REPORT)
         self.assertNotIn("private details", str(logs.output))
         self.assertEqual(self.requests[-1]["status"], "FAILED")
@@ -283,7 +283,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
 
         reporter = self.reporter(handler)
         with (
-            self.assertLogs("abita_s2s.reporting", "ERROR") as logs,
+            self.assertLogs("abita_s2s.runtime.reporting", "ERROR") as logs,
             self.assertRaises(ReportingError),
         ):
             await reporter.finish()
@@ -296,7 +296,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
 
         reporter = self.reporter(handler)
         with (
-            self.assertLogs("abita_s2s.reporting", "ERROR"),
+            self.assertLogs("abita_s2s.runtime.reporting", "ERROR"),
             self.assertRaises(ReportingError),
         ):
             await reporter.finish()

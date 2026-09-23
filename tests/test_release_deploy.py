@@ -41,8 +41,8 @@ class ComponentVersionTests(unittest.TestCase):
             for name in ("speaker.md", "thinker.md"):
                 (prompts / name).write_text(name + "\n")
             evals = root / "evals"
-            evals.mkdir()
-            (evals / "scenario.yaml").write_text("name: original\n")
+            (evals / "scenarios").mkdir(parents=True)
+            (evals / "scenarios/scenario.yaml").write_text("name: original\n")
             git("add", ".")
             git("commit", "-qm", "Initial bundles")
             git("tag", "prompts-v0.3.2")
@@ -63,11 +63,11 @@ class ComponentVersionTests(unittest.TestCase):
                 self.assertEqual(versions(), ("0.3.2", "0.3.2"))
                 (prompts / "speaker.md").write_text("changed\n")
                 self.assertEqual(versions(), ("0.3.3", "0.3.2"))
-                (evals / "added.yml").write_text("name: added\n")
+                (evals / "scenarios/added.yml").write_text("name: added\n")
                 self.assertEqual(versions(), ("0.3.3", "0.3.3"))
                 (prompts / "speaker.md").write_text("speaker.md\n")
                 self.assertEqual(versions(), ("0.3.2", "0.3.3"))
-                (evals / "added.yml").unlink()
+                (evals / "scenarios/added.yml").unlink()
                 (evals / "results.json").write_text("{}")
                 self.assertEqual(versions(), ("0.3.2", "0.3.2"))
                 git("add", ".")
@@ -75,8 +75,8 @@ class ComponentVersionTests(unittest.TestCase):
                 git("tag", "prompts-v0.3.3")
                 git("tag", "evals-v0.3.3")
                 self.assertEqual(versions(), ("0.3.2", "0.3.2"))
-                (evals / "scenario.yaml").unlink()
-                (evals / "replacement.yaml").write_text("name: original\n")
+                (evals / "scenarios/scenario.yaml").unlink()
+                (evals / "scenarios/replacement.yaml").write_text("name: original\n")
                 self.assertEqual(versions(), ("0.3.2", "0.3.3"))
 
     def test_reused_release_must_be_published_with_matching_content(self):
@@ -112,8 +112,10 @@ class ReleaseTests(unittest.TestCase):
                 agent_version="1.0.0",
                 prompts_version="0.8.0",
                 evals_version="0.9.0",
-                eval_files={"scenarios.yaml": "b" * 64},
-                evals_sha256=package.content_digest({"scenarios.yaml": "b" * 64}),
+                eval_files={"scenarios/intake.yaml": "b" * 64},
+                evals_sha256=package.content_digest(
+                    {"scenarios/intake.yaml": "b" * 64}
+                ),
                 prompt_files=files,
                 prompts_sha256=package.content_digest(files),
                 git_commit="a" * 40,
@@ -151,9 +153,12 @@ class ReleaseTests(unittest.TestCase):
                 (prompts / name).write_text(name)
             (root / "pyproject.toml").write_text('[project]\nversion="1.0.0"')
             (root / "uv.lock").write_text("locked")
-            (root / "evals").mkdir()
-            (root / "evals/scenarios.yaml").write_text("name: intake\nscenarios: []\n")
+            (root / "evals/scenarios").mkdir(parents=True)
+            (root / "evals/scenarios/intake.yaml").write_text(
+                "name: intake\nscenarios: []\n"
+            )
             (root / "evals/result.json").write_text("not a scenario")
+            (root / "evals/README.md").write_text("Scenario instructions")
 
             def git(*args):
                 if args[1] == "tag":
@@ -176,11 +181,12 @@ class ReleaseTests(unittest.TestCase):
                 first_evals = eval_archive.read_bytes()
                 with tarfile.open(eval_archive) as archive:
                     self.assertEqual(
-                        set(archive.getnames()), {"scenarios.yaml", "manifest.json"}
+                        set(archive.getnames()),
+                        {"scenarios/intake.yaml", "manifest.json"},
                     )
                     self.assertEqual(
-                        archive.extractfile("scenarios.yaml").read(),
-                        (root / "evals/scenarios.yaml").read_bytes(),
+                        archive.extractfile("scenarios/intake.yaml").read(),
+                        (root / "evals/scenarios/intake.yaml").read_bytes(),
                     )
                     self.assertEqual(
                         json.load(archive.extractfile("manifest.json")), manifest
@@ -192,7 +198,7 @@ class ReleaseTests(unittest.TestCase):
                 )
                 with self.assertRaises(ValueError):
                     builder.prepare("b" * 40, root / "out")
-                (root / "evals/scenarios.yaml").write_text(
+                (root / "evals/scenarios/intake.yaml").write_text(
                     "name: changed\nscenarios: []\n"
                 )
                 with self.assertRaisesRegex(ValueError, "different release"):
@@ -205,7 +211,7 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(reused["evals_version"], "0.9.0")
                 self.assertEqual(list((root / "reused").glob("*.tar.gz")), [])
                 self.assertEqual(manifest["prompts_sha256"], changed["prompts_sha256"])
-                (root / "evals/scenarios.yaml").unlink()
+                (root / "evals/scenarios/intake.yaml").unlink()
                 with self.assertRaisesRegex(ValueError, "at least one eval"):
                     builder.prepare("a" * 40, root / "empty")
 

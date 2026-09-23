@@ -7,7 +7,7 @@ import httpx
 
 from abita_s2s.config import Config
 from abita_s2s.insurance_contract import InsuranceDecision
-from abita_s2s.middleware import Record, Text
+from abita_s2s.integrations.patient_middleware import Record, Text
 from abita_s2s.offices import get_office_profile
 
 
