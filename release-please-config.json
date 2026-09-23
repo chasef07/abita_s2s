@@ -10,7 +10,13 @@
       "release-type": "python",
       "package-name": "abita-s2s",
       "changelog-path": "CHANGELOG.md",
-      "extra-files": ["uv.lock"]
+      "extra-files": [
+        {
+          "type": "toml",
+          "path": "uv.lock",
+          "jsonpath": "$.package[?(@.name.value=='abita-s2s')].version"
+        }
+      ]
     }
   }
 }
