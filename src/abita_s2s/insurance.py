@@ -138,6 +138,9 @@ class InsuranceRegistration:
             check.canonical_plan = accepted.decision.canonicalPlan
         current = insurance.current_eligibility
         if current is None or current[0] != revision or current[1] is not check:
+            if current and current[1].result and current[1].result.insuranceResolution:
+                insurance.accepted = None
+                insurance.check_revision += 1
             current = insurance.current_eligibility = (revision, check)
         if check.task is not None:
             await asyncio.shield(check.task)
@@ -150,6 +153,9 @@ class InsuranceRegistration:
         result = check.result
         if result is None:
             return "unavailable: Eligibility could not be confirmed. Continue intake without claiming coverage."
+        plan_answer = self._apply_eligibility_insurance(check)
+        if plan_answer and plan_answer["outcome"] != "accepted":
+            return plan_answer["answer"]
         if person := result.name_correction:
             return (
                 f"name_correction: Eligibility matched member ID and DOB. Use firstName={person.firstName!r}, lastName={person.lastName!r} "
@@ -157,7 +163,42 @@ class InsuranceRegistration:
                 "Obtain confirmation of the corrected name before add_patient. Do not repeat eligibility just for this returned spelling. "
                 f"Plan activity: {result.status}; this does not establish visit coverage or office participation."
             )
-        return f"eligibility: {result.status}. Review reason: {result.reviewReason or 'none'}. Continue intake; do not infer visit coverage."
+        plan_note = (
+            f" Registration plan: {check.canonical_plan}." if plan_answer else ""
+        )
+        return f"eligibility: {result.status}. Review reason: {result.reviewReason or 'none'}.{plan_note} Continue intake; do not infer visit coverage."
+
+    def _apply_eligibility_insurance(self, check: EligibilityCheck) -> dict | None:
+        resolution = check.result.insuranceResolution if check.result else None
+        if resolution is None or resolution.status == "unavailable":
+            return None
+        insurance = self.state.insurance
+        insurance.accepted = None
+        insurance.check_revision += 1
+        decision = resolution.decision
+        if (
+            resolution.status != "resolved"
+            or decision is None
+            or decision.officeId.replace("_", "-") != check.office
+            or decision.coverageType != check.request.coverageType
+            or decision.selfPay
+        ):
+            return reply(
+                "needs_insurance_review",
+                "blocked: Eligibility returned an unmapped or conflicting insurance plan. Office staff must confirm the correct plan before registration. Do not reuse the earlier insurance selection.",
+            )
+        if decision.participation == "accepted":
+            patient = self.state.patient
+            insurance.accepted = AcceptedInsurance(
+                check.office,
+                patient.revision,
+                None,
+                patient.absence,
+                decision,
+                requested_plan=check.request.plan,
+            )
+            check.canonical_plan = decision.canonicalPlan
+        return reply(decision.outcome, decision.answer)
 
     def _registration_eligibility(
         self, r: Registration, checked: AcceptedInsurance
@@ -213,6 +254,28 @@ class InsuranceRegistration:
 
     async def check(self, plan: str, coverage_type: CoverageType) -> dict:
         current = self.state.insurance.current_eligibility
+        if (
+            current
+            and current[0] == self.state.patient.revision
+            and self.state.patient.active is None
+        ):
+            check = current[1]
+            resolution = check.result.insuranceResolution if check.result else None
+            if resolution and resolution.status != "unavailable":
+                if coverage_type != check.request.coverageType or normalize(
+                    plan
+                ) not in {
+                    normalize(check.request.plan),
+                    normalize(check.canonical_plan or ""),
+                    *(normalize(p) for p in resolution.plans),
+                }:
+                    self.state.insurance.accepted = None
+                    self.state.insurance.check_revision += 1
+                    return reply(
+                        "needs_eligibility",
+                        "needs_input: Insurance changed after eligibility. Check eligibility for the new plan and member ID before registration.",
+                    )
+                return self._apply_eligibility_insurance(check)
         if current and normalize(plan) not in {
             normalize(current[1].request.plan),
             normalize(current[1].canonical_plan or ""),
@@ -314,7 +377,55 @@ class InsuranceRegistration:
                 "already_active",
                 "blocked: A verified patient is already active. Do not create another chart for the same patient. For a different new patient, provide their first name and valid DOB.",
             )
+        current = self.state.insurance.current_eligibility
+        if current and current[0] == self.state.patient.revision:
+            check = current[1]
+            if check.status == "pending":
+                return reply(
+                    "eligibility_pending",
+                    "needs_input: Finish the existing eligibility check before registration.",
+                )
+            resolution = check.result.insuranceResolution if check.result else None
+            if resolution and resolution.status != "unavailable":
+                person = check.result.name_correction or check.request
+                if (
+                    check.office != self.state.call.called_office_key
+                    or not dob_matches(check.request.dob, r.dob)
+                    or "".join(check.request.memberId.split()).upper()
+                    != "".join(r.insuranceMemberId.split()).upper()
+                    or exact_name(f"{r.firstName} {r.lastName}")
+                    not in {
+                        exact_name(
+                            f"{check.request.firstName} {check.request.lastName}"
+                        ),
+                        exact_name(f"{person.firstName} {person.lastName}"),
+                    }
+                ):
+                    return reply(
+                        "needs_eligibility",
+                        "needs_input: Registration details differ from the eligibility check. Check eligibility for this patient and member ID before registration.",
+                    )
+                # Do not recreate acceptance here: a later plan change clears it.
+                if (
+                    resolution.status != "resolved"
+                    or not resolution.decision
+                    or resolution.decision.participation != "accepted"
+                ):
+                    return self._apply_eligibility_insurance(check)
         checked = accepted_insurance(self.state)
+        if checked and current and current[0] == self.state.patient.revision:
+            resolution = (
+                current[1].result.insuranceResolution if current[1].result else None
+            )
+            if (
+                resolution
+                and resolution.status == "resolved"
+                and checked.decision != resolution.decision
+            ):
+                return reply(
+                    "needs_eligibility",
+                    "needs_input: Finish the existing eligibility check so registration uses its resolved insurance plan.",
+                )
         if checked is None:
             return reply(
                 "needs_insurance",

@@ -8,6 +8,13 @@ from uuid import uuid4
 from pydantic import ConfigDict, JsonValue
 
 from abita_s2s.integrations.patient_middleware import Record, Text
+from abita_s2s.insurance_contract import InsuranceDecision
+
+
+class InsuranceResolution(Record):
+    status: Literal["resolved", "unmapped", "conflicting", "unavailable"]
+    plans: list[str]
+    decision: InsuranceDecision | None = None
 
 
 class EligibilityInput(Record):
@@ -46,6 +53,7 @@ class EligibilityProvider(Record):
 class EligibilityResult(Record):
     # Preserve future middleware fields as well as opaque payer evidence.
     model_config = ConfigDict(strict=True, frozen=True, extra="allow")
+    insuranceResolution: InsuranceResolution | None = None
     provider: EligibilityProvider | None = None
     providerResults: list["EligibilityResult"] | None = None
     providerResponse: JsonValue = None
