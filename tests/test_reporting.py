@@ -41,7 +41,9 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
     def reporter(self, handler=None, drain=None, evaluate=None):
         self.requests = []
         if evaluate is not None:
-            evaluator = patch("abita_s2s.reporting.evaluate_call", side_effect=evaluate)
+            evaluator = patch(
+                "abita_s2s.runtime.reporting.evaluate_call", side_effect=evaluate
+            )
             evaluator.start()
             self.addCleanup(evaluator.stop)
 

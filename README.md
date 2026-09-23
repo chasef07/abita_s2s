@@ -74,4 +74,3 @@ call passed. `incomplete` records missing instructions, errors, or timeouts;
 failure does not prevent Product closeout or change the call's outcome. Scores
 do not independently verify backend state or audio quality. This first version
 stores one evaluation with closeout; it does not overwrite it with later reruns.
-
