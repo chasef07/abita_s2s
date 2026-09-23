@@ -75,3 +75,29 @@ call passed. `incomplete` records missing instructions, errors, or timeouts;
 failure does not prevent Product closeout or change the call's outcome. Scores
 do not independently verify backend state or audio quality. This first version
 stores one evaluation with closeout; it does not overwrite it with later reruns.
+
+## Release versions
+
+The complete deployed agent has one version and exact Git commit. Its release
+manifest also records a version, file inventory, and SHA-256 digest for each
+folder defined in [component_folders.json](src/abita_s2s/component_folders.json):
+
+- `src/abita_s2s/prompts/`
+- `src/abita_s2s/tools/`
+- `evals/`
+- `src/abita_s2s/observability/`
+
+Each component covers every Git-tracked file recursively, including documentation
+and non-code assets. Local caches and untracked output are excluded. An unchanged
+folder retains its previous component version; a changed folder takes the new
+agent release number. Component numbers can therefore skip agent releases.
+Changes include additions, edits, renames, and deletions. Comparison is against
+the latest component release in the selected commit's ancestry.
+
+Changed components receive immutable `<component>-v<version>` releases containing
+the full folder archive and a separate `release.json`. Unchanged releases are
+verified and reused. All components still ship through one agent deployment;
+LiveKit release attributes record all four component versions and digests.
+Older prompt/eval bundles are reused only if their original limited file coverage
+matches the complete folder. Jev's `evaluatorVersion` separately labels evaluation
+semantics; the observability release version identifies the whole source folder.

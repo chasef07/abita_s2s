@@ -9,10 +9,13 @@ from pathlib import Path
 PACKAGE = Path(__file__).parent
 
 
-def checksums(directory: Path) -> dict[str, str]:
+COMPONENTS = json.loads((PACKAGE / "component_folders.json").read_text())
+
+
+def checksums(directory: Path, names) -> dict[str, str]:
     return {
         name: hashlib.sha256((directory / name).read_bytes()).hexdigest()
-        for name in ("speaker.md", "thinker.md")
+        for name in names
     }
 
 
@@ -22,35 +25,29 @@ def content_digest(files: dict[str, str]) -> str:
     ).hexdigest()
 
 
-def eval_checksums(directory: Path) -> dict[str, str]:
-    files = {
-        path.relative_to(directory).as_posix(): hashlib.sha256(
-            path.read_bytes()
-        ).hexdigest()
-        for path in sorted(directory.rglob("*"))
-        if path.is_file() and path.suffix in (".yaml", ".yml")
-    }
-    if not files:
-        raise ValueError("Release requires at least one eval scenario file")
-    return files
-
-
 def identity() -> dict:
     path = PACKAGE / "release.json"
     if not path.exists():
         return {"agent_version": version("abita-s2s"), "git_commit": "development"}
     data = json.loads(path.read_text())
-    files = checksums(PACKAGE / "prompts")
-    if (
-        data["agent_version"] != version("abita-s2s")
-        or not re.fullmatch(r"\d+\.\d+\.\d+", data["prompts_version"])
-        or not re.fullmatch(r"\d+\.\d+\.\d+", data["evals_version"])
-        or not data["eval_files"]
-        or content_digest(data["eval_files"]) != data["evals_sha256"]
-        or files != data["prompt_files"]
-        or content_digest(files) != data["prompts_sha256"]
-    ):
-        raise ValueError("Installed release version, prompt or eval checksum mismatch")
+    if data["agent_version"] != version("abita-s2s"):
+        raise ValueError("Installed release version mismatch")
+    for component, directory in COMPONENTS.items():
+        files = data[f"{component}_files"]
+        if (
+            not re.fullmatch(r"\d+\.\d+\.\d+", data[f"{component}_version"])
+            or not files
+            or any(
+                Path(name).is_absolute() or ".." in Path(name).parts for name in files
+            )
+            or content_digest(files) != data[f"{component}_sha256"]
+        ):
+            raise ValueError("Installed component version or checksum mismatch")
+        # Evals ship as a separate archive; the other folders are installed code/data.
+        if directory.startswith("src/abita_s2s/"):
+            installed = PACKAGE / directory.removeprefix("src/abita_s2s/")
+            if checksums(installed, files) != files:
+                raise ValueError("Installed component content mismatch")
     return data
 
 

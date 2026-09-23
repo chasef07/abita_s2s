@@ -14,17 +14,18 @@ import subprocess
 import time
 import tomllib
 
-from release import component_version
+from release import component_version, component_files
 
-from abita_s2s.release import checksums, eval_checksums, content_digest
+from abita_s2s.release import COMPONENTS, checksums, content_digest
 
 KEYS = (
     "agent_version",
-    "prompts_version",
-    "evals_version",
     "git_commit",
-    "prompts_sha256",
-    "evals_sha256",
+    *(
+        key
+        for component in COMPONENTS
+        for key in (f"{component}_version", f"{component}_sha256")
+    ),
 )
 
 
@@ -70,7 +71,7 @@ def validate_release(directory: Path, commit: str):
         f"abita_s2s-{version}.tar.gz",
         f"abita_s2s-{version}-py3-none-any.whl",
     }
-    for component in ("prompts", "evals"):
+    for component in COMPONENTS:
         bundle_version = manifest[f"{component}_version"]
         if not re.fullmatch(r"\d+\.\d+\.\d+", bundle_version):
             raise ValueError("Invalid component version")
@@ -78,26 +79,22 @@ def validate_release(directory: Path, commit: str):
             expected_assets.add(f"{component}-v{bundle_version}.tar.gz")
     if checked != expected_assets:
         raise ValueError("Release checksum list is incomplete or unexpected")
-    files = checksums(Path("src/abita_s2s/prompts"))
-    sha = content_digest(files)
-    eval_files = eval_checksums(Path("evals"))
-    for component, content in (("prompts", files), ("evals", eval_files)):
-        if manifest[f"{component}_version"] != component_version(
-            component, version, commit, content
+    for component, directory in COMPONENTS.items():
+        files = component_files(component, commit)
+        if (
+            manifest[f"{component}_version"]
+            != component_version(component, version, commit, files)
+            or manifest[f"{component}_files"] != files
+            or manifest[f"{component}_sha256"] != content_digest(files)
+            or checksums(Path(directory), files) != files
         ):
-            raise ValueError(
-                "Component version does not match release history and content"
-            )
+            raise ValueError("Component version or content does not match release")
     if (
         manifest["agent_version"] != version
-        or manifest["eval_files"] != eval_files
-        or manifest["evals_sha256"] != content_digest(eval_files)
-        or manifest["prompt_files"] != files
-        or manifest["prompts_sha256"] != sha
         or manifest["uv_lock_sha256"]
         != hashlib.sha256(Path("uv.lock").read_bytes()).hexdigest()
     ):
-        raise ValueError("Release version, lock, prompt or eval mismatch")
+        raise ValueError("Release version or lock mismatch")
     return manifest
 
 
