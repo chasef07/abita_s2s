@@ -246,7 +246,9 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
     ctx.add_shutdown_callback(close_client)
     if config.interaction_url and not ctx.is_fake_job():
         if call.caller_phone:
-            state.reporter = CallReporter(call, client, config, drain_writes)
+            state.reporter = CallReporter(
+                call, client, config, drain_writes, insurance=state.insurance
+            )
         else:
             logger.error("Product call reporting unavailable: caller phone missing")
     try:

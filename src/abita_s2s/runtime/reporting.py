@@ -14,6 +14,7 @@ from abita_s2s.observability.jev import evaluate_call
 from abita_s2s.config import Config
 from abita_s2s.offices import get_office_profile
 from abita_s2s.state import CallContext
+from abita_s2s.insurance_state import InsuranceState
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +30,14 @@ class CallReporter:
         client: httpx.AsyncClient,
         config: Config,
         drain: Callable[[], Awaitable[None]],
+        *,
+        insurance: InsuranceState | None = None,
     ):
         self._client = client
         self._url = config.interaction_url
         self._secret = config.product_secret
         self._drain = drain
+        self._insurance = insurance
         self._base = {
             "officeKey": call.called_office_key,
             "officePhone": get_office_profile(call.called_office_key).trunk_numbers[0],
@@ -210,6 +214,19 @@ class CallReporter:
                     "domainOutcomes": deepcopy(self._facts),
                 },
             }
+            if self._insurance is not None:
+                payload["closeoutPayload"]["eligibilityChecks"] = [
+                    {
+                        "office": check.office,
+                        "request": check.request.model_dump(mode="json"),
+                        "status": check.status,
+                        "result": check.result.model_dump(mode="json")
+                        if check.result
+                        else None,
+                        "failureReason": check.failure_reason,
+                    }
+                    for check in self._insurance.eligibility_checks
+                ]
             if report is not None:
                 payload["transcript"] = report
                 payload["closeoutPayload"]["evaluation"] = await evaluate_call(report)

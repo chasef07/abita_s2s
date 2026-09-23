@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from typing import Literal
 
+from pydantic import ConfigDict, JsonValue
+
 from abita_s2s.integrations.patient_middleware import Record, Text
 
 
@@ -15,12 +17,17 @@ class EligibilityInput(Record):
 
 
 class IdentityEvidence(Record):
+    model_config = ConfigDict(strict=True, frozen=True, extra="allow")
     status: Text
     reviewRequired: bool
     reasons: list[str] | None = None
 
 
 class EligibilityResult(Record):
+    # Preserve future middleware fields as well as opaque payer evidence.
+    model_config = ConfigDict(strict=True, frozen=True, extra="allow")
+    providerResponse: JsonValue = None
+    providerHttpStatus: int | None = None
     status: Literal["active", "inactive", "review", "unknown"]
     officeId: Text
     checkedAt: Text
