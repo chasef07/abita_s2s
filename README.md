@@ -43,10 +43,19 @@ see the eval guide for verification boundaries.
 
 After accepted writes drain, calls with caller messages are evaluated by
 `typesafe-ai/jev` through Vercel AI Gateway using `AI_GATEWAY_API_KEY`.
-[jev.py](src/abita_s2s/jev.py) evaluates outcome against the full recorded text
-conversation, instructions, and tool results; clarity uses the agent's recorded
-instructions and user messages. Reaction requires post-call feedback and is
-currently recorded as unavailable by the live hook.
+[jev.py](src/abita_s2s/jev.py) sends the full recorded text conversation,
+instructions, and tool calls/results to each evaluator. Outcome judges achieved
+results from evidence; clarity judges the caller's request in context. Reaction
+scores the caller's expressed sentiment
+and satisfaction across the whole recorded conversation, including changes during
+the call. No clear sentiment is neutral or mixed; no separate feedback is required.
+This evaluates transcript text, not vocal tone.
+
+This adapts [TypeSafe's trace-observability example](https://evals.typesafe.ai/agent_trace_observability):
+completion, request clarity, and caller reaction remain independent judgments.
+Our evaluators all receive the whole call, and reaction uses in-call sentiment
+instead of requiring separate post-call feedback. The example's permission gate
+and automated triage actions are not implemented here.
 
 Evaluation has a 20-second total deadline. The existing Product CLOSEOUT request
 includes `closeoutPayload.evaluation`, stored on the AI Interaction in

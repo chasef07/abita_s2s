@@ -21,7 +21,15 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
         report = self.report()
         results = {
             "outcome": {"answers": {"request_fulfilled": {"probability": 0.1}}},
-            "reaction": {"status": "unavailable"},
+            "reaction": {
+                "answers": {
+                    "expressed_satisfaction": {
+                        "type": "score",
+                        "score": 2,
+                        "probabilities": {"2": 1},
+                    }
+                }
+            },
         }
         with (
             patch.dict("os.environ", {"AI_GATEWAY_API_KEY": "offline"}),
@@ -38,7 +46,7 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["results"], results)
-        self.assertEqual(result["evaluatorVersion"], "typesafe-trace-v1")
+        self.assertEqual(result["evaluatorVersion"], "typesafe-trace-v2")
         self.assertIn("evaluatedAt", result)
 
     async def test_timeout_or_error_is_incomplete_not_a_call_failure(self):

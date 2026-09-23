@@ -1,4 +1,4 @@
-"""TypeSafe's outcome, clarity, and reaction questions over a saved conversation.
+"""Outcome, clarity, and whole-call sentiment adapted from TypeSafe's trace demo.
 
 Reference: https://evals.typesafe.ai/agent_trace_observability
 This helper returns judgments; it does not execute the demo's triage actions.
@@ -15,7 +15,7 @@ from livekit.agents import ChatContext
 
 logger = logging.getLogger(__name__)
 EVALUATION_SECONDS = 20
-EVALUATOR_VERSION = "typesafe-trace-v1"
+EVALUATOR_VERSION = "typesafe-trace-v2"
 
 
 QUESTIONS = {
@@ -60,7 +60,7 @@ QUESTIONS = {
     "reaction": {
         "expressed_satisfaction": {
             "type": "score",
-            "instructions": "How satisfied is the user with the outcome, judging only by what they expressed after the assistant's final message?",
+            "instructions": "What overall sentiment and satisfaction does the user express across the entire call? Consider all user turns in context, including changes over the conversation. Do not let a polite closing erase earlier frustration, infer satisfaction from tool success, or infer vocal tone from text. If no clear sentiment is expressed, use neutral or mixed.",
             "criteria": [
                 "angry or escalating: complains, says the problem is unresolved, demands a person, or reopens",
                 "dissatisfied: says something was wrong, missing, or unhelpful",
@@ -71,7 +71,7 @@ QUESTIONS = {
         },
         "reports_unresolved": {
             "type": "boolean",
-            "instructions": "Does the user say their original issue is still unresolved, or that the assistant answered something other than what they asked?",
+            "instructions": "Across the entire call, does the user report that their original issue is unresolved or that the assistant answered something other than what they asked, without subsequently indicating that this concern was resolved?",
         },
     },
 }
@@ -81,9 +81,8 @@ async def evaluate_with_jev(
     history: ChatContext,
     *,
     agent_purpose: str,
-    feedback: dict | None = None,
 ) -> dict:
-    """Evaluate all recorded turns; feedback must be from after the final response.
+    """Evaluate outcome, clarity, and caller sentiment from the recorded call.
 
     Keep agent config updates in history, including the instructions active in the
     call. Supply the agent's actual purpose, not the evaluator's description of it.
@@ -106,22 +105,15 @@ async def evaluate_with_jev(
         },
         "clarity": {
             "agent_purpose": agent_purpose,
-            "user_messages": [item for item in messages if item["role"] == "user"],
-            "note": "Only the user's messages during the run are shown. Judge the request itself.",
+            "conversation": items,
+            "note": "Read the whole call for context, but judge only the user's request and its scope against the agent purpose. Do not infer request clarity from task success or caller sentiment.",
+        },
+        "reaction": {
+            "conversation": items,
+            "note": "Judge the user's expressed sentiment across the whole call. Assistant messages and tool results provide context, but are not evidence of the user's satisfaction. Consider both earlier and later reactions; absent sentiment is neutral or mixed.",
         },
     }
     results = {}
-    if feedback:
-        states["reaction"] = {
-            "assistant_final_message": final_message,
-            "feedback": feedback,
-            "note": "Judge only what the user expressed after the assistant's final message.",
-        }
-    else:
-        results["reaction"] = {
-            "status": "unavailable",
-            "reason": "No post-call feedback supplied.",
-        }
 
     async with httpx.AsyncClient(timeout=EVALUATION_SECONDS) as client:
         for group, state in states.items():

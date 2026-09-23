@@ -13,7 +13,7 @@ from abita_s2s.jev import QUESTIONS, evaluate_with_jev
 
 class JevTests(unittest.IsolatedAsyncioTestCase):
     async def run_evaluation(
-        self, feedback=None, missing_answer=False, invalid_answer=None
+        self, missing_answer=False, invalid_answer=None, sentiment_turns=False
     ):
         history = ChatContext()
         history.items.append(
@@ -36,6 +36,15 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         history.add_message(
             role="assistant", content="It is canceled.", interrupted=True
         )
+        if sentiment_turns:
+            history.add_message(
+                role="user", content="This is frustrating. It is still scheduled."
+            )
+            history.add_message(role="assistant", content="I can ask staff to help.")
+            history.add_message(
+                role="user", content="Thanks, but this still is not fixed."
+            )
+            history.add_message(role="assistant", content="Goodbye.")
         requests = []
 
         def respond(request):
@@ -72,13 +81,13 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             patch("abita_s2s.jev.httpx.AsyncClient", return_value=client),
         ):
             result = await evaluate_with_jev(
-                history, agent_purpose="Manage appointments.", feedback=feedback
+                history, agent_purpose="Manage appointments."
             )
         return requests, result
 
-    async def test_full_outcome_history_and_isolated_clarity(self):
+    async def test_all_evaluators_receive_full_recorded_history(self):
         requests, result = await self.run_evaluation()
-        self.assertEqual(len(requests), 2)
+        self.assertEqual(len(requests), 3)
         items = requests[0]["state"]["conversation"]
         self.assertEqual(
             [item["type"] for item in items],
@@ -96,18 +105,30 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(items[4]["interrupted"])
         self.assertIn("created_at", items[4])
         clarity = requests[1]["state"]
-        self.assertEqual(len(clarity["user_messages"]), 1)
-        self.assertNotIn("conversation", clarity)
-        self.assertEqual(result["reaction"]["status"], "unavailable")
+        self.assertEqual(clarity["conversation"], items)
+        self.assertEqual(requests[2]["state"]["conversation"], items)
+        self.assertIn("answers", result["reaction"])
         self.assertEqual(result["outcome"]["usage"]["inputTokens"], 100)
 
-    async def test_reaction_uses_only_supplied_feedback_and_final_message(self):
-        feedback = {"comment": "My appointment is still scheduled."}
-        requests, result = await self.run_evaluation(feedback)
+    async def test_reaction_scores_whole_call_without_separate_feedback(self):
+        requests, result = await self.run_evaluation(sentiment_turns=True)
         self.assertEqual(len(requests), 3)
         state = requests[2]["state"]
-        self.assertEqual(state["feedback"], feedback)
-        self.assertNotIn("conversation", state)
+        self.assertEqual(state["conversation"], requests[0]["state"]["conversation"])
+        caller_turns = [
+            item["content"]
+            for item in state["conversation"]
+            if item["type"] == "message" and item["role"] == "user"
+        ]
+        self.assertEqual(
+            caller_turns,
+            [
+                ["Yes, cancel my appointment."],
+                ["This is frustrating. It is still scheduled."],
+                ["Thanks, but this still is not fixed."],
+            ],
+        )
+        self.assertNotIn("feedback", state)
         self.assertEqual(set(result["reaction"]["answers"]), set(QUESTIONS["reaction"]))
 
     async def test_missing_answer_is_an_error(self):
