@@ -130,6 +130,12 @@ class InsuranceRegistration:
             return check
         insurance = self.state.insurance
         revision = self.state.patient.revision
+        accepted = accepted_insurance(self.state, details.coverageType)
+        if accepted and normalize(details.plan) in {
+            normalize(accepted.requested_plan),
+            normalize(accepted.decision.canonicalPlan),
+        }:
+            check.canonical_plan = accepted.decision.canonicalPlan
         current = insurance.current_eligibility
         if current is None or current[0] != revision or current[1] is not check:
             current = insurance.current_eligibility = (revision, check)
@@ -164,7 +170,7 @@ class InsuranceRegistration:
             check.office != self.state.call.called_office_key
             or check.request.coverageType != checked.decision.coverageType
             or not dob_matches(check.request.dob, r.dob)
-            or normalize(check.request.plan)
+            or normalize(check.canonical_plan or check.request.plan)
             not in {
                 normalize(checked.requested_plan),
                 normalize(checked.decision.canonicalPlan),
@@ -207,10 +213,9 @@ class InsuranceRegistration:
 
     async def check(self, plan: str, coverage_type: CoverageType) -> dict:
         current = self.state.insurance.current_eligibility
-        prior = accepted_insurance(self.state)
         if current and normalize(plan) not in {
             normalize(current[1].request.plan),
-            normalize(prior.decision.canonicalPlan) if prior else "",
+            normalize(current[1].canonical_plan or ""),
         }:
             self.state.insurance.current_eligibility = None
         self.state.insurance.accepted = None
@@ -243,18 +248,15 @@ class InsuranceRegistration:
                 active.patientId if active else None,
                 absence,
                 decision,
-                requested_plan=(
-                    prior.requested_plan
-                    if prior
-                    and current is not None
-                    and self.state.insurance.current_eligibility is current
-                    and normalize(current[1].request.plan)
-                    == normalize(prior.requested_plan)
-                    and normalize(prior.decision.canonicalPlan)
-                    == normalize(decision.canonicalPlan)
-                    else plan
-                ),
+                requested_plan=plan,
             )
+            if (
+                current is not None
+                and self.state.insurance.current_eligibility is current
+                and current[0] == revision
+                and current[1].request.coverageType == coverage_type
+            ):
+                current[1].canonical_plan = decision.canonicalPlan
         return reply(decision.outcome, decision.answer)
 
     def _write_blocker(self) -> dict | None:
