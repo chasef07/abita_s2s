@@ -8,7 +8,7 @@ import httpx
 from livekit.agents import ChatContext
 from livekit.agents.llm import AgentConfigUpdate, FunctionCall, FunctionCallOutput
 
-from abita_s2s.jev import QUESTIONS, evaluate_with_jev
+from abita_s2s.jev import evaluate_with_jev
 
 
 class JevTests(unittest.IsolatedAsyncioTestCase):
@@ -129,7 +129,21 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         self.assertNotIn("feedback", state)
-        self.assertEqual(set(result["reaction"]["answers"]), set(QUESTIONS["reaction"]))
+        self.assertEqual(
+            set(result["reaction"]["answers"]),
+            {"expressed_sentiment", "reports_unresolved"},
+        )
+        self.assertEqual(
+            set(requests[0]["questions"]),
+            {"request_fulfilled", "handed_off", "handoff_required", "claims_supported"},
+        )
+        assistant_turns = [
+            item["content"]
+            for item in requests[0]["state"]["conversation"]
+            if item["type"] == "message" and item["role"] == "assistant"
+        ]
+        self.assertEqual(assistant_turns[0], ["It is canceled."])
+        self.assertEqual(assistant_turns[-1], ["Goodbye."])
 
     async def test_missing_answer_is_an_error(self):
         with self.assertRaisesRegex(ValueError, "Incomplete Jev answers"):

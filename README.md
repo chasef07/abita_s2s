@@ -47,8 +47,12 @@ After accepted writes drain, calls with caller messages are evaluated by
 instructions, and tool calls/results to each evaluator. Outcome judges achieved
 results from evidence; clarity judges the caller's request in context. Reaction
 scores the caller's expressed sentiment
-and satisfaction across the whole recorded conversation, including changes during
+across the whole recorded conversation, including changes during
 the call. No clear sentiment is neutral or mixed; no separate feedback is required.
+Sentiment measures expressed emotion independently of resolution or handoff;
+`reports_unresolved` separately checks the caller's reported outcome.
+`claims_supported` checks factual claims throughout the call against evidence
+available when each claim was made. There is no `left_undone` question.
 This evaluates transcript text, not vocal tone.
 
 This adapts [TypeSafe's trace-observability example](https://evals.typesafe.ai/agent_trace_observability):

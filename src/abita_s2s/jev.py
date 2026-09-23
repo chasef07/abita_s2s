@@ -15,7 +15,7 @@ from livekit.agents import ChatContext
 
 logger = logging.getLogger(__name__)
 EVALUATION_SECONDS = 20
-EVALUATOR_VERSION = "typesafe-trace-v2"
+EVALUATOR_VERSION = "typesafe-trace-v3"
 
 
 QUESTIONS = {
@@ -32,13 +32,9 @@ QUESTIONS = {
             "type": "boolean",
             "instructions": "Do the agent's instructions -- its policy rules and entitlement lines -- require this request to be escalated, or deny the agent the operation needed to complete it?",
         },
-        "left_undone": {
-            "type": "boolean",
-            "instructions": "Was any part of what the user asked for left undone, unrouted, and unaddressed in the final message?",
-        },
         "claims_supported": {
             "type": "boolean",
-            "instructions": "Is every factual claim in the assistant's final message supported by a tool result or by something the user said in the conversation?",
+            "instructions": "Across the entire call, is every factual claim made by the assistant supported by evidence available when it was made, including recorded instructions or knowledge, tool results, or user statements? Check every assistant turn, not just the final message. A later correction does not erase an earlier unsupported claim.",
         },
     },
     "clarity": {
@@ -58,15 +54,15 @@ QUESTIONS = {
         },
     },
     "reaction": {
-        "expressed_satisfaction": {
+        "expressed_sentiment": {
             "type": "score",
-            "instructions": "What overall sentiment and satisfaction does the user express across the entire call? Consider all user turns in context, including changes over the conversation. Do not let a polite closing erase earlier frustration, infer satisfaction from tool success, or infer vocal tone from text. If no clear sentiment is expressed, use neutral or mixed.",
+            "instructions": "What overall sentiment does the user express across the entire call? Consider all user turns and changes over the conversation. Judge expressed emotion only, independently of task completion, satisfaction with the outcome, or whether a handoff was requested. A calmly stated unresolved issue or request for a person is not negative sentiment by itself. Do not let a polite closing erase earlier frustration or infer vocal tone from text. If no clear sentiment is expressed, use neutral or mixed.",
             "criteria": [
-                "angry or escalating: complains, says the problem is unresolved, demands a person, or reopens",
-                "dissatisfied: says something was wrong, missing, or unhelpful",
-                "neutral or mixed: no clear signal either way, or thanks alongside an unresolved point",
-                "satisfied: indicates the issue was handled",
-                "very satisfied: explicitly praises the help or confirms full resolution",
+                "very negative: strong anger, hostility, or distress is expressed",
+                "negative: frustration, annoyance, or disappointment is expressed",
+                "neutral or mixed: no clear emotional signal, matter-of-fact language, or mixed positive and negative emotion",
+                "positive: warmth, appreciation, or relief is expressed",
+                "very positive: strong enthusiasm, delight, or gratitude is expressed",
             ],
         },
         "reports_unresolved": {
@@ -92,15 +88,10 @@ async def evaluate_with_jev(
     if not agent_purpose.strip():
         raise ValueError("agent_purpose is required")
     items = history.to_dict(exclude_timestamp=False, exclude_metrics=True)["items"]
-    messages = [item for item in items if item["type"] == "message"]
-    final_message = next(
-        (item for item in reversed(messages) if item["role"] == "assistant"), None
-    )
     states = {
         "outcome": {
             "agent_purpose": agent_purpose,
             "conversation": items,
-            "final_message": final_message,
             "note": "Judge what was achieved from the tool results and the record, not the assistant's assertions. Agent config updates contain the recorded instructions.",
         },
         "clarity": {
@@ -110,7 +101,7 @@ async def evaluate_with_jev(
         },
         "reaction": {
             "conversation": items,
-            "note": "Judge the user's expressed sentiment across the whole call. Assistant messages and tool results provide context, but are not evidence of the user's satisfaction. Consider both earlier and later reactions; absent sentiment is neutral or mixed.",
+            "note": "Judge the user's expressed sentiment across the whole call. Assistant messages and tool results provide context, but do not establish the user's sentiment. Consider both earlier and later reactions; absent sentiment is neutral or mixed.",
         },
     }
     results = {}
