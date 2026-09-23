@@ -6,6 +6,7 @@ from typing import Literal
 import httpx
 
 from abita_s2s.config import Config
+from abita_s2s.eligibility_contract import EligibilityInput, EligibilityResult
 from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.integrations.patient_middleware import Record, Text
 from abita_s2s.offices import get_office_profile
@@ -39,6 +40,37 @@ class RegistrationMiddleware:
         self._client = client
         self._config = config
         self._deadline = deadline
+
+    async def eligibility(
+        self, office: str, details: EligibilityInput
+    ) -> EligibilityResult | None:
+        if not self._config.middleware_url or not self._config.middleware_token:
+            return None
+        try:
+            async with asyncio.timeout(self._deadline):
+                response = await self._client.post(
+                    self._config.middleware_url.rstrip("/") + "/api/eligibility/check",
+                    headers={"Authorization": self._config.middleware_token},
+                    json={
+                        **details.model_dump(),
+                        "office": get_office_profile(office).trunk_numbers[0],
+                    },
+                    timeout=self._deadline,
+                    follow_redirects=False,
+                )
+                response.raise_for_status()
+                result = EligibilityResult.model_validate(response.json())
+                if result.officeId.replace("_", "-") != office:
+                    return None
+                if result.status in ("active", "inactive") and (
+                    result.identity is None
+                    or result.identity.reviewRequired
+                    or result.identity.status != "exact_name_dob"
+                ):
+                    return None
+                return result
+        except (httpx.HTTPError, TimeoutError, ValueError):
+            return None
 
     async def check(
         self, office: str, plan: str, coverage: str, dob: str = ""

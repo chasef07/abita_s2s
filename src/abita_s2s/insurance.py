@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import ConfigDict
 
+from abita_s2s.eligibility_contract import EligibilityCheck, EligibilityInput
 from abita_s2s.identity import PatientResolver, reply
 from abita_s2s.insurance_state import (
     AcceptedInsurance,
@@ -69,6 +70,7 @@ class InsuranceRegistration:
         self._creations: list[tuple[tuple, dict]] = []
         self._updates: list[tuple[tuple, dict]] = []
         self._task: asyncio.Task | None = None
+        self._eligibility_tasks: set[asyncio.Task] = set()
         self._closed = False
 
     def close_admission(self) -> None:
@@ -76,8 +78,58 @@ class InsuranceRegistration:
 
     async def aclose(self):
         self._closed = True
+        if self._eligibility_tasks:
+            await asyncio.gather(*self._eligibility_tasks)
         if self._task:
             await asyncio.shield(self._task)
+
+    def start_eligibility(self, details: EligibilityInput) -> str:
+        if self._closed:
+            return "unavailable: Call is closing."
+        if not parse_dob(details.dob):
+            return "needs_input: Supply the patient's date of birth as MM/DD/YYYY."
+        active = self.state.patient.active
+        if active and (
+            active.patientId not in self.state.insurance.registrations
+            or (
+                dob_matches(active.dob, details.dob)
+                and exact_name(active.name)
+                in {
+                    exact_name(f"{details.firstName} {details.lastName}"),
+                    exact_name(f"{details.lastName} {details.firstName}"),
+                }
+            )
+        ):
+            return "skipped: Eligibility checks are only for new-patient intake."
+        if normalize(details.plan) == "self pay":
+            return "skipped: Self-pay does not require eligibility."
+        office = self.state.call.called_office_key
+        for check in self.state.insurance.eligibility_checks:
+            if check.office == office and check.request == details:
+                return (
+                    "already_started: Continue intake; do not wait or repeat the check."
+                )
+        check = EligibilityCheck(office=office, request=details)
+        self.state.insurance.eligibility_checks.append(check)
+
+        async def run():
+            try:
+                check.result = await self._middleware.eligibility(office, details)
+                check.status = "complete" if check.result is not None else "unavailable"
+                if check.result is None:
+                    check.failure_reason = "unverified_response"
+            except asyncio.CancelledError:
+                check.status = "unavailable"
+                check.failure_reason = "cancelled"
+                raise
+            except Exception:
+                check.status = "unavailable"
+                check.failure_reason = "request_failed"
+
+        task = asyncio.create_task(run())
+        self._eligibility_tasks.add(task)
+        task.add_done_callback(self._eligibility_tasks.discard)
+        return "started: Continue intake without waiting. Results are stored internally; do not announce coverage."
 
     async def check(self, plan: str, coverage_type: CoverageType) -> dict:
         self.state.insurance.accepted = None

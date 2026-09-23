@@ -4,6 +4,7 @@ from typing import Literal
 
 from livekit.agents import RunContext, function_tool
 
+from abita_s2s.eligibility_contract import EligibilityInput
 from abita_s2s.insurance import InsuranceRegistration, staff
 from abita_s2s.state import CallState
 
@@ -11,6 +12,39 @@ from abita_s2s.state import CallState
 class InsuranceTools:
     def __init__(self, insurance: InsuranceRegistration | None) -> None:
         self._insurance = insurance
+
+    @function_tool
+    async def check_new_patient_eligibility(
+        self,
+        context: RunContext[CallState],
+        firstName: str,
+        lastName: str,
+        dob: str,
+        plan: str,
+        insuranceMemberId: str,
+    ) -> str:
+        """Start a background eligibility check only for caller-declared new patients.
+
+        Use the patient's own name and DOB (MM/DD/YYYY), plan and card member ID
+        as soon as collected, before add_patient. Never use for existing patients
+        or self-pay. Continue intake without waiting or announcing coverage.
+        Call again only when the submitted details are corrected.
+        """
+        if self._insurance is None or self._insurance.state is not context.userdata:
+            return "unavailable: Continue intake; eligibility was not checked."
+        if not all(
+            v.strip() for v in (firstName, lastName, dob, plan, insuranceMemberId)
+        ):
+            return "needs_input: Collect name, date of birth, plan and member ID."
+        return self._insurance.start_eligibility(
+            EligibilityInput(
+                firstName=firstName,
+                lastName=lastName,
+                dob=dob,
+                plan=plan,
+                memberId=insuranceMemberId,
+            )
+        )
 
     @function_tool
     async def check_insurance(

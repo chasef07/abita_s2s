@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Literal
 from abita_s2s.insurance_contract import InsuranceDecision
 
 if TYPE_CHECKING:
+    from abita_s2s.eligibility_contract import EligibilityCheck
     from abita_s2s.state import CallState, PatientAbsence
 
 CoverageType = Literal["medical", "routine_vision"]
@@ -22,6 +23,8 @@ class AcceptedInsurance:
 
 @dataclass(repr=False)
 class InsuranceState:
+    # Each intake retains its own submitted details, including corrected requests.
+    eligibility_checks: list["EligibilityCheck"] = field(default_factory=list)
     accepted: AcceptedInsurance | None = None
     # Complete creation can schedule; partial creation must be resolved first.
     registrations: dict[str, Literal["created", "partial"]] = field(

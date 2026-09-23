@@ -91,6 +91,12 @@ answers. Clarify unclear details without guessing and apply volunteered correcti
    collected. Otherwise, ask for the name on the card. Use that name as
    `subscriberName`.
 10. Ask for the member ID.
+    For new patients with insurance, silently call `check_new_patient_eligibility`
+    as soon as their own first and last name, DOB, plan, and member ID are known,
+    even if supplied earlier. Continue intake without waiting; results are stored
+    in state. Skip self-pay and existing patients. Do not announce coverage or
+    change registration or booking based on this background check. Submit again
+    only if the caller corrects one of those details.
 11. Once all details are collected, give one full read-back of the identity,
    address, contact, and insurance details. Clarify any uncertain details and
    obtain confirmation. If the caller corrects something, confirm only the
