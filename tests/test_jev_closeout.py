@@ -20,8 +20,10 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
     async def test_results_and_metadata_are_returned_for_persistence(self):
         report = self.report()
         results = {
-            "outcome": {"answers": {"request_fulfilled": {"probability": 0.1}}},
-            "reaction": {
+            "request_understood": {
+                "answers": {"request_understood": {"type": "noul", "noul": 0.1}}
+            },
+            "expressed_sentiment": {
                 "answers": {
                     "expressed_sentiment": {
                         "type": "score",
@@ -36,7 +38,7 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
             patch(
                 "abita_s2s.observability.jev.evaluate_with_jev",
                 new_callable=AsyncMock,
-                return_value=results,
+                return_value={"results": results, "errors": {}},
             ) as judge,
         ):
             result = await evaluate_call(report)
@@ -46,7 +48,7 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["results"], results)
-        self.assertEqual(result["evaluatorVersion"], "typesafe-trace-v4")
+        self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v1")
         self.assertIn("evaluatedAt", result)
 
     async def test_timeout_or_error_is_incomplete_not_a_call_failure(self):

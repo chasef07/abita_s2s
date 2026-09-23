@@ -44,37 +44,48 @@ see the eval guide for verification boundaries.
 
 After accepted writes drain, calls with caller messages are evaluated by
 `typesafe-ai/jev` through Vercel AI Gateway using `AI_GATEWAY_API_KEY`.
-[jev.py](src/abita_s2s/observability/jev.py) sends the full recorded text conversation,
-instructions, and tool calls/results to each evaluator. Outcome judges achieved
-results from evidence; clarity judges the caller's request in context. Reaction
-scores the caller's expressed sentiment
-across the whole recorded conversation, including changes during
-the call. No clear sentiment is neutral or mixed; no separate feedback is required.
-Sentiment measures expressed emotion independently of resolution or handoff;
-`reports_unresolved` separately checks the caller's reported outcome.
-`claims_supported` checks factual claims throughout the call against evidence
-available when each claim was made. There is no `left_undone` question.
-This evaluates transcript text, not vocal tone.
+[jev.py](src/abita_s2s/observability/jev.py) uses the
+[TypeSafe-compatible API](https://vercel.com/docs/ai-gateway/sdks-and-apis/typesafe)
+at `POST /typesafe/v1/systemone`. Evaluator version `typesafe-scorecard-v1`
+replaces the previous outcome/clarity/reaction groups with five `noul` checks:
 
-This adapts [TypeSafe's trace-observability example](https://evals.typesafe.ai/agent_trace_observability):
-completion, request clarity, and caller reaction remain independent judgments.
-Our evaluators all receive the whole call, and reaction uses in-call sentiment
-instead of requiring separate post-call feedback. The example's permission gate
-and automated triage actions are not implemented here.
+- `request_understood`: understood the caller's request and corrections.
+- `appointment_datetime_correct`: tool results match the final agreed date/time
+  in the office timezone, including both appointments for rescheduling.
+- `office_rules_grounded`: policy answers come from recorded office rules and
+  knowledge, without invented restrictions, requirements, or exceptions.
+- `results_reported_truthfully`: action claims match tool evidence available
+  when the claim was made, including failed or uncertain results.
+- `resolved_or_handed_off`: every request is resolved or has a supported,
+  appropriate handoff, honoring requests for a person and office escalation rules.
 
-Evaluation has a 20-second total deadline. The existing Product CLOSEOUT request
-includes `closeoutPayload.evaluation`, stored on the AI Interaction in
-`ai_interactions.closeout_payload`. It contains evaluator version, model,
-timestamp, status, and raw grouped results with probabilities, scores, and usage.
-Authorized evidence retrieval exposes it through the existing
-`/v1/ai/interactions/{id}/evidence` endpoint. No database migration is needed.
+`expressed_sentiment` retains the existing five-level score from very negative to
+very positive across the whole call. No clear sentiment is neutral or mixed.
+Sentiment is independent of resolution or handoff and evaluates text, not vocal
+tone. Every judge receives the full recorded conversation, instructions, and
+tool calls/results. `noul` is TypeSafe's native yes/no primitive: its response
+contains a `noul` value from 0 to 1. We preserve that value without inventing a
+binary threshold, applicability decision, or aggregate grade. An absent matching
+appointment result cannot establish appointment correctness.
 
-Evaluation status `complete` means the applicable groups returned, not that the
-call passed. `incomplete` records missing instructions, errors, or timeouts;
-`skipped` records no caller messages or an unconfigured Gateway key. Evaluation
-failure does not prevent Product closeout or change the call's outcome. Scores
-do not independently verify backend state or audio quality. This first version
-stores one evaluation with closeout; it does not overwrite it with later reruns.
+Six independent requests run concurrently under a shared 20-second deadline,
+with a one-second outer cleanup allowance. Each transient HTTP or transport
+failure gets at most one retry within that deadline; `Retry-After` is respected.
+Successful judges survive other judges' HTTP errors, invalid answers, or timeouts.
+The existing Product CLOSEOUT request includes `closeoutPayload.evaluation`,
+stored in `ai_interactions.closeout_payload`. `results` is keyed by judge name and
+retains each successful raw response and usage. `errors` is keyed by failed judge
+and records only exception class, HTTP status when available, and attempt count;
+response bodies, credentials, and exception messages are not logged.
+
+`complete` means all six judges returned valid answers, not that the call passed.
+`incomplete` records judge errors, timeouts, or missing instructions; `skipped`
+records no caller messages or an unconfigured Gateway key. Failed judges have no
+answer rather than a fabricated pass/fail. Evaluation failure does not prevent
+Product closeout or change the call outcome. Evidence remains available through
+`/v1/ai/interactions/{id}/evidence`. No database migration is needed; older stored
+evaluations keep their original evaluator version and shape. This change does
+not rerun or overwrite past evaluations.
 
 ## Release versions
 
