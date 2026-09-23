@@ -61,7 +61,6 @@ class ResolvedInsuranceTests(unittest.IsolatedAsyncioTestCase):
         self,
     ):
         for resolution in [
-            dict(status="unmapped", plans=["Aetna Unknown Product"]),
             dict(
                 status="conflicting", plans=["Aetna Commercial", "Aetna Better Health"]
             ),
@@ -219,6 +218,43 @@ class ResolvedInsuranceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(owner.state.insurance.accepted)
         self.assertEqual(
             (await owner.add(registration(insuranceMemberId="other")))["outcome"],
+            "needs_insurance",
+        )
+        self.assertEqual(self.writes, [])
+
+    async def test_unmapped_plan_falls_back_and_keeps_patient_evidence(self):
+        for check_first in (True, False):
+            with self.subTest(check_first=check_first):
+                owner = self.setup_owner(
+                    dict(status="unmapped", plans=["Aetna Unknown Product"])
+                )
+                if check_first:
+                    await owner.check("Aetna", "medical")
+                answer = await owner.eligibility(details())
+                self.assertIn("no mapping", answer)
+                batch = owner.state.insurance.current_eligibility[1]
+                await owner.check("Aetna", "medical")
+                self.assertEqual(
+                    (await owner.add(registration(insuranceMemberId="wrong")))[
+                        "outcome"
+                    ],
+                    "needs_eligibility",
+                )
+                self.assertEqual(
+                    (await owner.add(registration(insuranceMemberId="test-member")))[
+                        "outcome"
+                    ],
+                    "created",
+                )
+                self.assertEqual(self.writes[0]["insurance"], "Aetna")
+                self.assertEqual(batch.patient_id, "new-chart")
+                self.assertEqual(batch.result.insuranceResolution.status, "unmapped")
+
+    async def test_unmapped_without_accepted_selection_cannot_register(self):
+        owner = self.setup_owner(dict(status="unmapped", plans=["Unknown"]))
+        await owner.eligibility(details())
+        self.assertEqual(
+            (await owner.add(registration(insuranceMemberId="test-member")))["outcome"],
             "needs_insurance",
         )
         self.assertEqual(self.writes, [])

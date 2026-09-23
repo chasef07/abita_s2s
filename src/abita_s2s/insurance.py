@@ -166,11 +166,16 @@ class InsuranceRegistration:
         plan_note = (
             f" Registration plan: {check.canonical_plan}." if plan_answer else ""
         )
+        if (
+            result.insuranceResolution
+            and result.insuranceResolution.status == "unmapped"
+        ):
+            plan_note = " Returned plan has no mapping; use the accepted check_insurance selection for registration. Payer evidence remains available for staff review."
         return f"eligibility: {result.status}. Review reason: {result.reviewReason or 'none'}.{plan_note} Continue intake; do not infer visit coverage."
 
     def _apply_eligibility_insurance(self, check: EligibilityCheck) -> dict | None:
         resolution = check.result.insuranceResolution if check.result else None
-        if resolution is None or resolution.status == "unavailable":
+        if resolution is None or resolution.status in ("unavailable", "unmapped"):
             return None
         insurance = self.state.insurance
         insurance.accepted = None
@@ -261,7 +266,7 @@ class InsuranceRegistration:
         ):
             check = current[1]
             resolution = check.result.insuranceResolution if check.result else None
-            if resolution and resolution.status != "unavailable":
+            if resolution and resolution.status not in ("unavailable", "unmapped"):
                 if coverage_type != check.request.coverageType or normalize(
                     plan
                 ) not in {
@@ -406,7 +411,7 @@ class InsuranceRegistration:
                         "needs_input: Registration details differ from the eligibility check. Check eligibility for this patient and member ID before registration.",
                     )
                 # Do not recreate acceptance here: a later plan change clears it.
-                if (
+                if resolution.status != "unmapped" and (
                     resolution.status != "resolved"
                     or not resolution.decision
                     or resolution.decision.participation != "accepted"
