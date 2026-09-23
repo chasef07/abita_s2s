@@ -29,6 +29,7 @@ uv run --no-sync ruff check .
 | --- | --- |
 | `src/abita_s2s/tools/` | Model-facing tools, grouped by capability. |
 | `src/abita_s2s/integrations/` | Patient, registration, and scheduling HTTP adapters. |
+| `src/abita_s2s/observability/` | Post-call evaluations and their result contracts. |
 | `src/abita_s2s/runtime/` | Call composition, reporting, and observability. |
 | `src/abita_s2s/prompts/` | Speaker and thinker instructions. |
 | `tests/` | Offline behavior, integration contracts, and release checks. |
@@ -43,7 +44,7 @@ see the eval guide for verification boundaries.
 
 After accepted writes drain, calls with caller messages are evaluated by
 `typesafe-ai/jev` through Vercel AI Gateway using `AI_GATEWAY_API_KEY`.
-[jev.py](src/abita_s2s/jev.py) sends the full recorded text conversation,
+[jev.py](src/abita_s2s/observability/jev.py) sends the full recorded text conversation,
 instructions, and tool calls/results to each evaluator. Outcome judges achieved
 results from evidence; clarity judges the caller's request in context. Reaction
 scores the caller's expressed sentiment

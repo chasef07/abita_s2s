@@ -8,7 +8,7 @@ import httpx
 from livekit.agents import ChatContext
 from livekit.agents.llm import AgentConfigUpdate, FunctionCall, FunctionCallOutput
 
-from abita_s2s.jev import evaluate_with_jev
+from abita_s2s.observability.jev import evaluate_with_jev
 
 
 class JevTests(unittest.IsolatedAsyncioTestCase):
@@ -78,7 +78,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
         with (
             patch.dict("os.environ", {"AI_GATEWAY_API_KEY": "synthetic-test-key"}),
-            patch("abita_s2s.jev.httpx.AsyncClient", return_value=client),
+            patch("abita_s2s.observability.jev.httpx.AsyncClient", return_value=client),
         ):
             result = await evaluate_with_jev(
                 history, agent_purpose="Manage appointments."

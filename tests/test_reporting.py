@@ -207,9 +207,11 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             reporter.started = True
             with (
                 patch.dict("os.environ", {"AI_GATEWAY_API_KEY": "offline"}),
-                patch("abita_s2s.jev.evaluate_with_jev", side_effect=failure),
-                patch("abita_s2s.jev.EVALUATION_SECONDS", 0.01),
-                self.assertLogs("abita_s2s.jev", "ERROR"),
+                patch(
+                    "abita_s2s.observability.jev.evaluate_with_jev", side_effect=failure
+                ),
+                patch("abita_s2s.observability.jev.EVALUATION_SECONDS", 0.01),
+                self.assertLogs("abita_s2s.observability.jev", "ERROR"),
             ):
                 await reporter.finish(lambda: report)
             self.assertEqual(self.requests[-1]["status"], "COMPLETED")

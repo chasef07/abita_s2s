@@ -10,7 +10,7 @@ from uuid import UUID
 
 import httpx
 
-from abita_s2s.jev import evaluate_call
+from abita_s2s.observability.jev import evaluate_call
 from abita_s2s.config import Config
 from abita_s2s.offices import get_office_profile
 from abita_s2s.state import CallContext
