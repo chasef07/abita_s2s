@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/chasef07/abita_s2s/compare/v0.6.5...v0.7.0) (2026-09-23)
+
+
+### Features
+
+* add Jev evaluations and version agent component folders ([#57](https://github.com/chasef07/abita_s2s/issues/57)) ([9589652](https://github.com/chasef07/abita_s2s/commit/95896528171473f276fd47eb95e9c5b1b64ed937))
+
 ## [0.6.5](https://github.com/chasef07/abita_s2s/compare/v0.6.4...v0.6.5) (2026-09-22)
 
 
