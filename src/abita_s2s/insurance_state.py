@@ -19,12 +19,14 @@ class AcceptedInsurance:
     patient_id: str | None
     absence: "PatientAbsence | None"
     decision: InsuranceDecision = field(hash=False)
+    requested_plan: str = ""
 
 
 @dataclass(repr=False)
 class InsuranceState:
     # Each intake retains its own submitted details, including corrected requests.
     eligibility_checks: list["EligibilityCheck"] = field(default_factory=list)
+    current_eligibility: tuple[int, "EligibilityCheck"] | None = None
     accepted: AcceptedInsurance | None = None
     # Complete creation can schedule; partial creation must be resolved first.
     registrations: dict[str, Literal["created", "partial"]] = field(

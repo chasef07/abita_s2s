@@ -87,32 +87,23 @@ class InsuranceRegistration:
         if self._task:
             await asyncio.shield(self._task)
 
-    def start_eligibility(self, details: EligibilityInput) -> str:
+    def _start_eligibility(self, details: EligibilityInput) -> EligibilityCheck | str:
         if self._closed:
             return "unavailable: Call is closing."
         if not parse_dob(details.dob):
             return "needs_input: Supply the patient's date of birth as MM/DD/YYYY."
-        active = self.state.patient.active
-        if active and (
-            active.patientId not in self.state.insurance.registrations
-            or (
-                dob_matches(active.dob, details.dob)
-                and exact_name(active.name)
-                in {
-                    exact_name(f"{details.firstName} {details.lastName}"),
-                    exact_name(f"{details.lastName} {details.firstName}"),
-                }
-            )
-        ):
-            return "skipped: Eligibility checks are only for new-patient intake."
         if normalize(details.plan) == "self pay":
+            self.state.insurance.current_eligibility = None
             return "skipped: Self-pay does not require eligibility."
+        if self.state.patient.active and not self._resolver.begin_registration(
+            details.firstName, details.dob
+        ):
+            self.state.insurance.current_eligibility = None
+            return "skipped: Eligibility checks are only for new-patient intake."
         office = self.state.call.called_office_key
         for check in self.state.insurance.eligibility_checks:
             if check.office == office and check.request == details:
-                return (
-                    "already_started: Continue intake; do not wait or repeat the check."
-                )
+                return check
         check = EligibilityCheck(office=office, request=details)
         self.state.insurance.eligibility_checks.append(check)
 
@@ -131,36 +122,29 @@ class InsuranceRegistration:
                 check.failure_reason = "request_failed"
 
         check.task = asyncio.create_task(run())
-        return "started: Continue intake without waiting. Results are stored internally; do not announce coverage."
+        return check
 
     async def eligibility(self, details: EligibilityInput) -> str:
+        check = self._start_eligibility(details)
+        if isinstance(check, str):
+            return check
+        insurance = self.state.insurance
         revision = self.state.patient.revision
-        answer = self.start_eligibility(details)
-        if not answer.startswith(("started:", "already_started:")):
-            return answer
-        check = next(
-            c
-            for c in self.state.insurance.eligibility_checks
-            if c.office == self.state.call.called_office_key and c.request == details
-        )
+        current = insurance.current_eligibility
+        if current is None or current[0] != revision or current[1] is not check:
+            current = insurance.current_eligibility = (revision, check)
         if check.task is not None:
             await asyncio.shield(check.task)
         if (
             self.state.patient.revision != revision
             or self.state.call.called_office_key != check.office
-            or self.state.insurance.eligibility_checks[-1] is not check
+            or insurance.current_eligibility is not current
         ):
             return "stale: Intake changed. Do not apply this eligibility result to the current patient."
         result = check.result
         if result is None:
             return "unavailable: Eligibility could not be confirmed. Continue intake without claiming coverage."
-        if (
-            result.identity
-            and result.identity.status == "matched_with_name_correction"
-            and not result.identity.reviewRequired
-            and result.matchedPatient
-        ):
-            person = result.matchedPatient
+        if person := result.name_correction:
             return (
                 f"name_correction: Eligibility matched member ID and DOB. Use firstName={person.firstName!r}, lastName={person.lastName!r} "
                 "in the patient's read-back before registration. If the patient is the policyholder, use that name for subscriberName too. "
@@ -169,15 +153,21 @@ class InsuranceRegistration:
             )
         return f"eligibility: {result.status}. Review reason: {result.reviewReason or 'none'}. Continue intake; do not infer visit coverage."
 
-    def _eligibility_name_blocker(self, r: Registration, plan: str) -> dict | None:
-        checks = self.state.insurance.eligibility_checks
-        if not checks:
+    def _eligibility_name_blocker(
+        self, r: Registration, checked: AcceptedInsurance
+    ) -> dict | None:
+        current = self.state.insurance.current_eligibility
+        if current is None or current[0] != self.state.patient.revision:
             return None
-        check = checks[-1]
+        check = current[1]
         if (
             check.office != self.state.call.called_office_key
             or not dob_matches(check.request.dob, r.dob)
-            or normalize(check.request.plan) != normalize(plan)
+            or normalize(check.request.plan)
+            not in {
+                normalize(checked.requested_plan),
+                normalize(checked.decision.canonicalPlan),
+            }
             or "".join(check.request.memberId.split()).upper()
             != "".join(r.insuranceMemberId.split()).upper()
         ):
@@ -187,16 +177,9 @@ class InsuranceRegistration:
                 "eligibility_pending",
                 "needs_input: Finish the existing check_new_patient_eligibility before confirming the registration name. Reuse the same inputs; it will not send another request.",
             )
-        result = check.result
-        if (
-            not result
-            or not result.identity
-            or result.identity.reviewRequired
-            or result.identity.status != "matched_with_name_correction"
-            or not result.matchedPatient
-        ):
+        person = check.result.name_correction if check.result else None
+        if person is None:
             return None
-        person = result.matchedPatient
         original = exact_name(f"{check.request.firstName} {check.request.lastName}")
         corrected = exact_name(f"{person.firstName} {person.lastName}")
         supplied = exact_name(f"{r.firstName} {r.lastName}")
@@ -214,6 +197,13 @@ class InsuranceRegistration:
         return None
 
     async def check(self, plan: str, coverage_type: CoverageType) -> dict:
+        current = self.state.insurance.current_eligibility
+        prior = accepted_insurance(self.state)
+        if current and normalize(plan) not in {
+            normalize(current[1].request.plan),
+            normalize(prior.decision.canonicalPlan) if prior else "",
+        }:
+            self.state.insurance.current_eligibility = None
         self.state.insurance.accepted = None
         self.state.insurance.check_revision += 1
         check_revision = self.state.insurance.check_revision
@@ -244,6 +234,17 @@ class InsuranceRegistration:
                 active.patientId if active else None,
                 absence,
                 decision,
+                requested_plan=(
+                    prior.requested_plan
+                    if prior
+                    and current is not None
+                    and self.state.insurance.current_eligibility is current
+                    and normalize(current[1].request.plan)
+                    == normalize(prior.requested_plan)
+                    and normalize(prior.decision.canonicalPlan)
+                    == normalize(decision.canonicalPlan)
+                    else plan
+                ),
             )
         return reply(decision.outcome, decision.answer)
 
@@ -311,9 +312,7 @@ class InsuranceRegistration:
         if checked.decision.participation != "accepted":
             return reply(checked.decision.outcome, checked.decision.answer)
         self_pay = checked.decision.selfPay
-        if not self_pay and (
-            blocked := self._eligibility_name_blocker(r, checked.decision.canonicalPlan)
-        ):
+        if not self_pay and (blocked := self._eligibility_name_blocker(r, checked)):
             return blocked
         phone = r.phone or (
             self.state.call.caller_phone if r.inboundPhoneConfirmed else None

@@ -127,7 +127,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             ("Jane", "corrected"),
             ("John", "other"),
         ]:
-            owner.start_eligibility(
+            owner._start_eligibility(
                 EligibilityInput(
                     firstName=first,
                     lastName="Sample",

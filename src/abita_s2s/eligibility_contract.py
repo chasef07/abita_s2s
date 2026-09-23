@@ -48,6 +48,16 @@ class EligibilityResult(Record):
     identity: IdentityEvidence | None = None
     matchedPatient: MatchedPatient | None = None
 
+    @property
+    def name_correction(self) -> MatchedPatient | None:
+        if (
+            self.identity
+            and self.identity.status == "matched_with_name_correction"
+            and not self.identity.reviewRequired
+        ):
+            return self.matchedPatient
+        return None
+
 
 @dataclass(repr=False)
 class EligibilityCheck:

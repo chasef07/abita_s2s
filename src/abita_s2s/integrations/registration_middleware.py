@@ -36,11 +36,18 @@ class WriteFailure(Record):
 
 class RegistrationMiddleware:
     def __init__(
-        self, client: httpx.AsyncClient, config: Config, *, deadline: float = 20
+        self,
+        client: httpx.AsyncClient,
+        config: Config,
+        *,
+        deadline: float = 20,
+        eligibility_deadline: float = 30,
     ):
         self._client = client
         self._config = config
         self._deadline = deadline
+        # Middleware allows Stedi 25 seconds; leave time for transport and decoding.
+        self._eligibility_deadline = eligibility_deadline
 
     async def eligibility(
         self, office: str, details: EligibilityInput
@@ -48,7 +55,7 @@ class RegistrationMiddleware:
         if not self._config.middleware_url or not self._config.middleware_token:
             return None
         try:
-            async with asyncio.timeout(self._deadline):
+            async with asyncio.timeout(self._eligibility_deadline):
                 response = await self._client.post(
                     self._config.middleware_url.rstrip("/") + "/api/eligibility/check",
                     headers={"Authorization": self._config.middleware_token},
@@ -56,7 +63,7 @@ class RegistrationMiddleware:
                         **details.model_dump(),
                         "office": get_office_profile(office).trunk_numbers[0],
                     },
-                    timeout=self._deadline,
+                    timeout=self._eligibility_deadline,
                     follow_redirects=False,
                 )
                 response.raise_for_status()
