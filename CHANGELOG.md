@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/chasef07/abita_s2s/compare/v0.7.0...v0.7.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* support registering multiple new patients per call ([#70](https://github.com/chasef07/abita_s2s/issues/70)) ([75a19e8](https://github.com/chasef07/abita_s2s/commit/75a19e86e6d6a24b5d626ba6c02b478d7a915af2))
+
 ## [0.7.0](https://github.com/chasef07/abita_s2s/compare/v0.6.5...v0.7.0) (2026-09-23)
 
 
