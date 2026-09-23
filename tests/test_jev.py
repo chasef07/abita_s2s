@@ -135,7 +135,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             set(requests[0]["questions"]),
-            {"request_fulfilled", "handed_off", "handoff_required", "claims_supported"},
+            {"request_fulfilled", "handoff_required", "claims_supported"},
         )
         assistant_turns = [
             item["content"]

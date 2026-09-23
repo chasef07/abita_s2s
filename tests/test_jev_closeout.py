@@ -46,7 +46,7 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["results"], results)
-        self.assertEqual(result["evaluatorVersion"], "typesafe-trace-v3")
+        self.assertEqual(result["evaluatorVersion"], "typesafe-trace-v4")
         self.assertIn("evaluatedAt", result)
 
     async def test_timeout_or_error_is_incomplete_not_a_call_failure(self):

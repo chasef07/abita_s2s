@@ -15,7 +15,7 @@ from livekit.agents import ChatContext
 
 logger = logging.getLogger(__name__)
 EVALUATION_SECONDS = 20
-EVALUATOR_VERSION = "typesafe-trace-v3"
+EVALUATOR_VERSION = "typesafe-trace-v4"
 
 
 QUESTIONS = {
@@ -23,10 +23,6 @@ QUESTIONS = {
         "request_fulfilled": {
             "type": "boolean",
             "instructions": "According to the tool results and the conversation record -- not the assistant's own words -- did the user get what they asked for?",
-        },
-        "handed_off": {
-            "type": "boolean",
-            "instructions": "Did the assistant route the request to a person or queue -- an escalation, case, ticket or transfer -- that a tool result confirms was created, and tell the user so?",
         },
         "handoff_required": {
             "type": "boolean",
