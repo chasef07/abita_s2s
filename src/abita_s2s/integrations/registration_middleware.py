@@ -10,6 +10,7 @@ from abita_s2s.eligibility_contract import EligibilityInput, EligibilityResult
 from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.integrations.patient_middleware import Record, Text
 from abita_s2s.offices import get_office_profile
+from abita_s2s.name_matcher import parse_dob
 
 
 class CreationReceipt(Record):
@@ -65,9 +66,26 @@ class RegistrationMiddleware:
                 if result.status in ("active", "inactive") and (
                     result.identity is None
                     or result.identity.reviewRequired
-                    or result.identity.status != "exact_name_dob"
+                    or result.identity.status
+                    not in ("exact_name_dob", "matched_with_name_correction")
                 ):
                     return None
+                if (
+                    result.identity
+                    and result.identity.status == "matched_with_name_correction"
+                ):
+                    matched = result.matchedPatient
+                    requested_dob = parse_dob(details.dob)
+                    if (
+                        result.identity.reviewRequired
+                        or matched is None
+                        or requested_dob is None
+                        or requested_dob.strftime("%Y%m%d") != matched.dateOfBirth
+                        or not matched.memberId
+                        or "".join(details.memberId.split()).upper()
+                        != "".join(matched.memberId.split()).upper()
+                    ):
+                        return None
                 return result
         except (httpx.HTTPError, TimeoutError, ValueError):
             return None

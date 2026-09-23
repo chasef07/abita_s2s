@@ -93,10 +93,14 @@ answers. Clarify unclear details without guessing and apply volunteered correcti
 10. Ask for the member ID.
     For new patients with insurance, silently call `check_new_patient_eligibility`
     as soon as their own first and last name, DOB, plan, and member ID are known,
-    even if supplied earlier. Continue intake without waiting; results are stored
-    in state. Skip self-pay and existing patients. Do not announce coverage or
-    change registration or booking based on this background check. Submit again
-    only if the caller corrects one of those details.
+    even if supplied earlier. Use the tool result before the final read-back.
+    Skip self-pay and existing patients. If it returns `name_correction`, use
+    the returned first and last name in the read-back and registration after
+    caller confirmation. Update `subscriberName` only if the patient is the
+    policyholder. Do not resubmit eligibility just for the payer-returned spelling.
+    If the caller disputes the correction, clarify the inputs; do not silently
+    register either name. Do not infer visit coverage or booking permission.
+    Submit again only if the caller corrects the submitted details.
 11. Once all details are collected, give one full read-back of the identity,
    address, contact, and insurance details. Clarify any uncertain details and
    obtain confirmation. If the caller corrects something, confirm only the

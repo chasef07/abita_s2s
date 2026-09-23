@@ -23,12 +23,12 @@ class InsuranceTools:
         plan: str,
         insuranceMemberId: str,
     ) -> str:
-        """Start a background eligibility check only for caller-declared new patients.
+        """Check eligibility and return supported name corrections for new-patient intake.
 
         Use the patient's own name and DOB (MM/DD/YYYY), plan and card member ID
         as soon as collected, before add_patient. Never use for existing patients
-        or self-pay. Continue intake without waiting or announcing coverage.
-        Call again only when the submitted details are corrected.
+        or self-pay. Use a returned name correction in the confirmed read-back.
+        Do not repeat for payer-returned spelling; retry only for caller-corrected inputs.
         """
         if self._insurance is None or self._insurance.state is not context.userdata:
             return "unavailable: Continue intake; eligibility was not checked."
@@ -36,7 +36,7 @@ class InsuranceTools:
             v.strip() for v in (firstName, lastName, dob, plan, insuranceMemberId)
         ):
             return "needs_input: Collect name, date of birth, plan and member ID."
-        return self._insurance.start_eligibility(
+        return await self._insurance.eligibility(
             EligibilityInput(
                 firstName=firstName,
                 lastName=lastName,

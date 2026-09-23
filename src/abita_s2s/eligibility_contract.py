@@ -1,6 +1,7 @@
 """Intake-scoped eligibility evidence; never chart identity or booking permission."""
 
-from dataclasses import dataclass
+import asyncio
+from dataclasses import dataclass, field
 from typing import Literal
 
 from pydantic import ConfigDict, JsonValue
@@ -23,6 +24,14 @@ class IdentityEvidence(Record):
     reasons: list[str] | None = None
 
 
+class MatchedPatient(Record):
+    model_config = ConfigDict(strict=True, frozen=True, extra="allow")
+    firstName: Text
+    lastName: Text
+    dateOfBirth: Text
+    memberId: str | None = None
+
+
 class EligibilityResult(Record):
     # Preserve future middleware fields as well as opaque payer evidence.
     model_config = ConfigDict(strict=True, frozen=True, extra="allow")
@@ -37,6 +46,7 @@ class EligibilityResult(Record):
     checkId: str | None = None
     errorCodes: list[str] | None = None
     identity: IdentityEvidence | None = None
+    matchedPatient: MatchedPatient | None = None
 
 
 @dataclass(repr=False)
@@ -46,3 +56,4 @@ class EligibilityCheck:
     status: Literal["pending", "complete", "unavailable"] = "pending"
     result: EligibilityResult | None = None
     failure_reason: str | None = None
+    task: asyncio.Task | None = field(default=None, repr=False)

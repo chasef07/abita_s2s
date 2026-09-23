@@ -57,7 +57,7 @@ class EligibilityTests(unittest.IsolatedAsyncioTestCase):
         self.addAsyncCleanup(owner.aclose)
         return owner
 
-    async def test_tool_returns_before_response_and_deduplicates(self):
+    async def test_tool_waits_for_response_and_deduplicates(self):
         release = asyncio.Event()
         entered = asyncio.Event()
         requests = []
@@ -73,18 +73,19 @@ class EligibilityTests(unittest.IsolatedAsyncioTestCase):
         context = SimpleNamespace(userdata=owner.state)
         args = details().model_dump()
         args["insuranceMemberId"] = args.pop("memberId")
+        first = asyncio.create_task(tool(context, **args))
+        second = asyncio.create_task(tool(context, **args))
         try:
-            answer = await asyncio.wait_for(tool(context, **args), 1)
-            self.assertTrue(answer.startswith("started:"))
             await asyncio.wait_for(entered.wait(), 1)
+            self.assertFalse(first.done())
+            self.assertFalse(second.done())
             self.assertEqual(
                 owner.state.insurance.eligibility_checks[0].status, "pending"
             )
-            self.assertTrue(
-                (await tool(context, **args)).startswith("already_started:")
-            )
         finally:
             release.set()
+        self.assertTrue((await first).startswith("eligibility: active"))
+        self.assertEqual(await second, await tool(context, **args))
         await owner.aclose()
         check = owner.state.insurance.eligibility_checks[0]
         self.assertEqual(check.result.status, "active")
@@ -95,6 +96,128 @@ class EligibilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(json.loads(requests[0].content)["memberId"], "test-member")
         self.assertIsNone(owner.state.patient.active)
         self.assertIsNone(owner.state.insurance.accepted)
+
+    async def test_corrected_name_reaches_tool_without_raw_benefits(self):
+        response = result(
+            identity=dict(status="matched_with_name_correction", reviewRequired=False),
+            matchedPatient=dict(
+                firstName="Jane",
+                lastName="Doe",
+                dateOfBirth="19800102",
+                memberId="test-member",
+            ),
+            providerResponse={"privateMarker": "not-model-visible"},
+        )
+        owner = self.owner(lambda request: httpx.Response(200, json=response))
+        answer = await owner.eligibility(details(firstName="Ane", lastName="Doe Jr."))
+        self.assertIn("name_correction:", answer)
+        self.assertIn("Jane", answer)
+        self.assertNotIn("not-model-visible", answer)
+        self.assertIsNone(owner.state.patient.active)
+        self.assertIsNone(owner.state.insurance.accepted)
+
+    async def test_late_correction_cannot_replace_newer_intake(self):
+        release = asyncio.Event()
+        entered = asyncio.Event()
+
+        async def handler(request):
+            body = json.loads(request.content)
+            if body["firstName"] == "Ane":
+                entered.set()
+                await release.wait()
+            return httpx.Response(
+                200,
+                json=result(
+                    identity=dict(
+                        status="matched_with_name_correction", reviewRequired=False
+                    ),
+                    matchedPatient=dict(
+                        firstName="Jane",
+                        lastName="Doe",
+                        dateOfBirth="19800102",
+                        memberId=body["memberId"],
+                    ),
+                ),
+            )
+
+        owner = self.owner(handler)
+        pending = asyncio.create_task(owner.eligibility(details(firstName="Ane")))
+        await entered.wait()
+        await owner.eligibility(details(firstName="John", memberId="other"))
+        release.set()
+        self.assertTrue((await pending).startswith("stale:"))
+        self.assertEqual(len(owner.state.insurance.eligibility_checks), 2)
+
+    async def test_patient_revision_change_hides_late_name(self):
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def handler(request):
+            entered.set()
+            await release.wait()
+            return httpx.Response(200, json=result())
+
+        owner = self.owner(handler)
+        waiting = asyncio.create_task(owner.eligibility(details()))
+        await entered.wait()
+        owner.state.patient.revision += 1
+        release.set()
+        self.assertTrue((await waiting).startswith("stale:"))
+        self.assertEqual(owner.state.insurance.eligibility_checks[0].status, "complete")
+
+    async def test_cancelled_tool_keeps_one_request_and_retains_result(self):
+        entered, release = asyncio.Event(), asyncio.Event()
+        calls = []
+
+        async def handler(request):
+            calls.append(request)
+            entered.set()
+            await release.wait()
+            return httpx.Response(200, json=result())
+
+        owner = self.owner(handler)
+        waiting = asyncio.create_task(owner.eligibility(details()))
+        await entered.wait()
+        waiting.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await waiting
+        release.set()
+        self.assertTrue(
+            (await owner.eligibility(details())).startswith("eligibility: active")
+        )
+        self.assertEqual(len(calls), 1)
+
+    async def test_correction_requires_bound_member_and_dob(self):
+        for matched in [
+            None,
+            dict(
+                firstName="Jane",
+                lastName="Doe",
+                dateOfBirth="19800102",
+                memberId="other",
+            ),
+            dict(
+                firstName="Jane",
+                lastName="Doe",
+                dateOfBirth="19800103",
+                memberId="test-member",
+            ),
+        ]:
+            owner = self.owner(
+                lambda request: httpx.Response(
+                    200,
+                    json=result(
+                        identity=dict(
+                            status="matched_with_name_correction", reviewRequired=False
+                        ),
+                        matchedPatient=matched,
+                    ),
+                )
+            )
+            self.assertTrue(
+                (await owner.eligibility(details(firstName="Ane"))).startswith(
+                    "unavailable:"
+                )
+            )
 
     async def test_corrections_and_patient_switch_keep_separate_evidence(self):
         release = asyncio.Event()
