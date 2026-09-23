@@ -11,8 +11,9 @@ from test_scheduling import verified
 
 from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.offices import get_office_profile
+from abita_s2s.tools.scheduling import SchedulingTools
 from abita_s2s.scheduling import Scheduling
-from abita_s2s.scheduling_http import SchedulingHTTP
+from abita_s2s.integrations.scheduling_http import SchedulingHTTP
 
 
 async def main(url):
@@ -71,7 +72,9 @@ async def main(url):
                 referringDoctor="none",
                 readBack=True,
             )
-            result = await owner.reschedule_appointment(context, **args)
+            result = await SchedulingTools(owner).reschedule_appointment(
+                context, **args
+            )
             expected = {
                 "success": "success:",
                 "partial": "blocked:",
@@ -85,7 +88,9 @@ async def main(url):
                 "failure": [54321],
             }[fixture["scenario"]]
             assert ids == expected_ids, (ids, expected_ids)
-            repeated = await owner.reschedule_appointment(context, **args)
+            repeated = await SchedulingTools(owner).reschedule_appointment(
+                context, **args
+            )
             if fixture["scenario"] == "failure":
                 assert repeated.startswith("needs_input:"), repeated
             else:
@@ -113,7 +118,9 @@ async def main(url):
                     now=lambda: datetime.fromisoformat(fixture["now"]),
                 )
                 try:
-                    response = await office_owner.list_available_appointments(
+                    response = await SchedulingTools(
+                        office_owner
+                    ).list_available_appointments(
                         SimpleNamespace(userdata=office_state),
                         visitType=visit,
                     )

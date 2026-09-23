@@ -14,9 +14,9 @@ from livekit.agents import AgentSession, llm
 from test_patient_resolution import call_state, receipt
 
 from abita_s2s.agent import AbitaAgent
-from abita_s2s.call_control import CallControl
+from abita_s2s.tools.call_control import CallControl
 from abita_s2s.config import load_config
-from abita_s2s.middleware import Receipt
+from abita_s2s.integrations.patient_middleware import Receipt
 from abita_s2s.offices import SPRING_HILL
 
 
@@ -181,7 +181,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.state.reporter = SimpleNamespace(transfer_status="idle")
         timeout = asyncio.timeout
         with patch(
-            "abita_s2s.call_control.asyncio.timeout",
+            "abita_s2s.tools.call_control.asyncio.timeout",
             side_effect=lambda seconds: timeout(0.01 if seconds == 40 else seconds),
         ):
             first = await self.control.transfer_call(ctx)
@@ -216,7 +216,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.state.reporter = SimpleNamespace(transfer_status="idle")
         timeout = asyncio.timeout
         with patch(
-            "abita_s2s.call_control.asyncio.timeout",
+            "abita_s2s.tools.call_control.asyncio.timeout",
             side_effect=lambda seconds: timeout(0.01 if seconds == 40 else seconds),
         ):
             result = await self.control.transfer_call(ctx)
@@ -462,7 +462,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         from test_patient_resolution import CONFIG, candidate, search
 
         from abita_s2s.identity import PatientResolver
-        from abita_s2s.middleware import PatientMiddleware
+        from abita_s2s.integrations.patient_middleware import PatientMiddleware
 
         started = asyncio.Event()
         cancelled = asyncio.Event()

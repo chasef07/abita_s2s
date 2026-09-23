@@ -13,15 +13,15 @@ import test_scheduling
 from test_patient_resolution import CONFIG, call_state, receipt, search
 from test_scheduling import NOW, inventory
 
-from abita_s2s.call_control import CallControl
+from abita_s2s.tools.call_control import CallControl
 from abita_s2s.config import load_config
 from abita_s2s.handoff import AdmissionRejected
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.insurance_state import insurance_ready
-from abita_s2s.middleware import PatientMiddleware
+from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.scheduling import Scheduling
-from abita_s2s.scheduling_http import SchedulingHTTP
+from abita_s2s.integrations.scheduling_http import SchedulingHTTP
 
 
 class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):

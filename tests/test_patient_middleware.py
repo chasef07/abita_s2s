@@ -7,7 +7,11 @@ import httpx
 from test_patient_resolution import CONFIG, receipt
 
 from abita_s2s.config import Config, load_config
-from abita_s2s.middleware import Failure, PatientMiddleware, Receipt
+from abita_s2s.integrations.patient_middleware import (
+    Failure,
+    PatientMiddleware,
+    Receipt,
+)
 from abita_s2s.offices import OFFICES
 
 

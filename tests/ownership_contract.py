@@ -11,10 +11,11 @@ from test_patient_resolution import call_state
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.insurance_state import accepted_insurance, insurance_ready
-from abita_s2s.middleware import PatientMiddleware
-from abita_s2s.registration_middleware import RegistrationMiddleware
+from abita_s2s.integrations.patient_middleware import PatientMiddleware
+from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
+from abita_s2s.tools.scheduling import SchedulingTools
 from abita_s2s.scheduling import Scheduling
-from abita_s2s.scheduling_http import Inventory, SchedulingHTTP
+from abita_s2s.integrations.scheduling_http import Inventory, SchedulingHTTP
 
 
 async def main(url):
@@ -77,7 +78,9 @@ async def main(url):
                     scenario == "availability_read_failure"
                 ), result
                 if scenario == "availability_policy_blocked":
-                    repeated = await scheduler.list_available_appointments(
+                    repeated = await SchedulingTools(
+                        scheduler
+                    ).list_available_appointments(
                         context, visitType="medical", startDate="2026-06-03"
                     )
                     assert repeated.startswith("blocked:"), repeated
@@ -129,14 +132,14 @@ async def main(url):
                         }
                     )
                 ref = scheduler.appointments()[0]["appointmentRef"]
-                result = await scheduler.cancel_appointment(
+                result = await SchedulingTools(scheduler).cancel_appointment(
                     context, appointmentRef=ref, readBack=True
                 )
                 if scenario == "cancellation_completed":
                     assert result.startswith("success:"), result
                     assert state.patient.active.appointments == []
                     assert (
-                        await scheduler.cancel_appointment(
+                        await SchedulingTools(scheduler).cancel_appointment(
                             context, appointmentRef=ref, readBack=True
                         )
                         == result
@@ -147,7 +150,7 @@ async def main(url):
                     if scenario == "cancellation_uncertain":
                         assert "outcome could not be confirmed" in result, result
                         assert (
-                            await scheduler.cancel_appointment(
+                            await SchedulingTools(scheduler).cancel_appointment(
                                 context, appointmentRef=ref, readBack=True
                             )
                             == result
@@ -155,7 +158,7 @@ async def main(url):
                     else:
                         assert "outcome could not be confirmed" not in result, result
                         assert state.patient.active.appointmentsStatus == "error"
-                        repeated = await scheduler.cancel_appointment(
+                        repeated = await SchedulingTools(scheduler).cancel_appointment(
                             context, appointmentRef=ref, readBack=True
                         )
                         assert repeated.startswith("needs_input:"), repeated

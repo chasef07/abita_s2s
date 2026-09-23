@@ -14,8 +14,8 @@ from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.insurance_state import accepted_insurance, insurance_ready
-from abita_s2s.middleware import Receipt
-from abita_s2s.registration_middleware import RegistrationMiddleware
+from abita_s2s.integrations.patient_middleware import Receipt
+from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
 
 
 class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):

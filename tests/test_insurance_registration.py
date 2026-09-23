@@ -16,8 +16,8 @@ from abita_s2s.insurance_state import (
     insurance_ready,
     registration_insurance,
 )
-from abita_s2s.middleware import PatientMiddleware, Receipt
-from abita_s2s.registration_middleware import RegistrationMiddleware
+from abita_s2s.integrations.patient_middleware import PatientMiddleware, Receipt
+from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
 
 
 def registration(**changes):
@@ -201,7 +201,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_creation_proceeds_directly_to_availability_without_recheck(self):
         from datetime import datetime, UTC
         from abita_s2s.scheduling import Scheduling
-        from abita_s2s.scheduling_http import SchedulingHTTP
+        from abita_s2s.integrations.scheduling_http import SchedulingHTTP
         from test_scheduling import inventory
 
         for repeated_decision in (None, decision("VSP", "routine_vision")):
@@ -239,7 +239,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_completed_chart_visit_change_uses_backend_policy(self):
         from datetime import datetime, UTC
         from abita_s2s.scheduling import Scheduling
-        from abita_s2s.scheduling_http import SchedulingHTTP
+        from abita_s2s.integrations.scheduling_http import SchedulingHTTP
 
         state, _, owner = await self.prepared(
             [created(insuranceDecision=decision("VSP", "routine_vision"))],

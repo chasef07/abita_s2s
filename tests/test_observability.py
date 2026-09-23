@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from abita_s2s.observability import log_openai_session
+from abita_s2s.runtime.observability import log_openai_session
 
 
 class ObservabilityTests(unittest.TestCase):
@@ -12,7 +12,9 @@ class ObservabilityTests(unittest.TestCase):
         for initial_id in (None, "live_first"):
             with self.subTest(initial_id=initial_id):
                 session = SimpleNamespace(session_id=initial_id, on=Mock())
-                with self.assertLogs("abita_s2s.observability", level="INFO") as logs:
+                with self.assertLogs(
+                    "abita_s2s.runtime.observability", level="INFO"
+                ) as logs:
                     log_openai_session(session, "sip-test")
                     event_name, listener = session.on.call_args.args
                     self.assertEqual(event_name, "openai_server_event_received")

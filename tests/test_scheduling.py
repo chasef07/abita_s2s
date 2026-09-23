@@ -10,19 +10,25 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 from livekit.agents import AgentSession, llm
+from livekit.agents.llm.tool_context import ToolContext
 from livekit.agents.llm.utils import build_strict_openai_schema
 from test_patient_resolution import CONFIG, call_state, receipt
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance_state import AcceptedInsurance
-from abita_s2s.middleware import Appointment, PatientMiddleware, Receipt
+from abita_s2s.integrations.patient_middleware import (
+    Appointment,
+    PatientMiddleware,
+    Receipt,
+)
 from abita_s2s.state import CandidateLookup
 from insurance_fixtures import decision
 from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.offices import SPRING_HILL, get_office_profile
+from abita_s2s.tools.scheduling import SchedulingTools
 from abita_s2s.scheduling import MutationReceipt, Scheduling
-from abita_s2s.scheduling_http import SchedulingHTTP
+from abita_s2s.integrations.scheduling_http import SchedulingHTTP
 
 NOW = datetime(2026, 9, 14, 17, tzinfo=UTC)
 
@@ -126,7 +132,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         return owner, requests
 
     async def tool(self, owner, name, **args):
-        output = await getattr(owner, name)(
+        output = await getattr(SchedulingTools(owner), name)(
             SimpleNamespace(
                 userdata=owner.state,
                 function_call=SimpleNamespace(call_id="native-call-id"),
@@ -584,6 +590,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         resolver = PatientResolver(owner.state, AsyncMock())
         self.addAsyncCleanup(resolver.aclose)
         agent = AbitaAgent(SPRING_HILL, None, resolver, scheduling=owner)
+        resolve_patient = ToolContext(agent.tools).function_tools["resolve_patient"]
         context = SimpleNamespace(
             userdata=owner.state, function_call=SimpleNamespace(call_id="resolution")
         )
@@ -594,7 +601,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         )
         # A provider reload has not yet reflected the booking confirmed this call.
         verified(owner.state, appointmentsStatus="none", appointments=[])
-        output = await agent.resolve_patient(context, "Jane", None)
+        output = await resolve_patient(context, "Jane", None)
         self.assertIn("Existing appointments", output)
         self.assertIn("2026-09-20 at 10:00 AM", output)
         self.assertNotIn("No upcoming appointments", output)
@@ -605,7 +612,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             cancelled_id=booked.id,
         )
         verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
-        output = await agent.resolve_patient(context, "Jane", None)
+        output = await resolve_patient(context, "Jane", None)
         self.assertIn("No upcoming appointments.", output)
         self.assertNotIn("Existing appointments", output)
 
@@ -1949,7 +1956,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     def test_schema_has_no_patient_ids_or_tokens(self):
         owner, _ = self.owner([])
-        for tool in owner.tools:
+        for tool in SchedulingTools(owner).tools:
             schema = build_strict_openai_schema(tool)
             serialized = json.dumps(schema)
             self.assertNotIn("hospitalName", serialized)

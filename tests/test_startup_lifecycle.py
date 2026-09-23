@@ -171,8 +171,8 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
             ctx, args = await existing.StartupTests.run_startup(
                 self, True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"}
             )
-        agent = args["agent"]
-        owner, resolver = agent._staff_tasks, agent._resolver
+        dependencies = args["dependencies"]
+        owner, resolver = dependencies.staff_tasks, dependencies.resolver
         owner._url, owner._secret = CONFIG.staff_tasks_url, CONFIG.product_secret
         owner.state.call = replace(owner.state.call, caller_phone="+15555550101")
 
@@ -208,7 +208,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         ctx, args = await existing.StartupTests.run_startup(
             self, True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"}
         )
-        owner = args["agent"]._insurance
+        owner = args["dependencies"].insurance
         pending = asyncio.create_task(asyncio.Event().wait())
         owner._task = pending
         try:

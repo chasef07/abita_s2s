@@ -14,7 +14,7 @@ from pydantic import (
 )
 
 from abita_s2s.config import Config
-from abita_s2s.middleware import Record, Text
+from abita_s2s.integrations.patient_middleware import Record, Text
 
 
 class Slot(Record):

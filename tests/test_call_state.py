@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock
 from test_patient_resolution import call_state, receipt
 
 from abita_s2s.identity import PatientResolver
-from abita_s2s.middleware import NotFound, Receipt
+from abita_s2s.integrations.patient_middleware import NotFound, Receipt
 from abita_s2s.state import CallState, CandidateLookup
 
 

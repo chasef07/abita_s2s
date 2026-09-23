@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import replace
 
 from abita_s2s.insurance_state import AcceptedInsurance, accepted_insurance
-from abita_s2s.middleware import (
+from abita_s2s.integrations.patient_middleware import (
     Candidate,
     Multiple,
     NotFound,

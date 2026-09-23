@@ -15,7 +15,7 @@ import httpx
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.config import Config
-from abita_s2s.middleware import NotFound
+from abita_s2s.integrations.patient_middleware import NotFound
 from abita_s2s.offices import (
     OFFICES,
     SPRING_HILL,
@@ -199,6 +199,9 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                 return_value=SimpleNamespace(sip=Mock(), aclose=AsyncMock()),
             ) as sip_api,
             patch("abita_s2s.runtime.session_startup.AgentSession", session_generic),
+            patch(
+                "abita_s2s.runtime.session_startup.AbitaAgent", wraps=AbitaAgent
+            ) as agent_factory,
         ):
             await start_voice_call(ctx, simulation=simulation)
             if fake or simulation is not None:
@@ -207,6 +210,11 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                 sip_api.assert_called_once_with(failover=False)
         args = session.start.call_args.kwargs
         args["userdata"] = session_type.call_args.kwargs["userdata"]
+        args["dependencies"] = SimpleNamespace(
+            knowledge=agent_factory.call_args.args[1],
+            resolver=agent_factory.call_args.args[2],
+            **agent_factory.call_args.kwargs,
+        )
         return ctx, args
 
     async def test_simulation_uses_sandbox_and_non_sip_participant(self):
@@ -238,7 +246,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state.call.call_id, "simulation-intake")
         self.assertIsNone(state.call.caller_phone)
         self.assertIsNone(state.reporter)
-        config = args["agent"]._insurance._middleware._config
+        config = args["dependencies"].insurance._middleware._config
         self.assertEqual(config.middleware_token, "sandbox-token")
         self.assertEqual(
             config.middleware_url, "https://abita-middleware-sandbox-test.run.app"
@@ -248,8 +256,8 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             config.knowledge_url, "https://product.test/v1/agent/knowledge/search"
         )
-        self.assertEqual(args["agent"]._knowledge._url, config.knowledge_url)
-        self.assertEqual(args["agent"]._knowledge._secret, "product-token")
+        self.assertEqual(args["dependencies"].knowledge._url, config.knowledge_url)
+        self.assertEqual(args["dependencies"].knowledge._secret, "product-token")
         self.assertIsNone(config.interaction_url)
         self.assertIsNone(config.handoff)
 
@@ -343,7 +351,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         ctx, args = await self.run_startup(
             True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"}
         )
-        owner = args["agent"]._insurance
+        owner = args["dependencies"].insurance
         finish = asyncio.Event()
         owner._task = asyncio.create_task(finish.wait())
         close_client = ctx.add_shutdown_callback.call_args_list[0].args[0]
@@ -358,7 +366,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         ctx, args = await self.run_startup(
             True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"}
         )
-        owner = args["agent"]._scheduling
+        owner = args["dependencies"].scheduling
         finish, entered = asyncio.Event(), asyncio.Event()
         owner._write_task = asyncio.create_task(finish.wait())
         original = owner.aclose
@@ -383,7 +391,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         ctx, args = await self.run_startup(
             True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"}
         )
-        owner = args["agent"]._staff_tasks
+        owner = args["dependencies"].staff_tasks
         order = []
         with (
             patch.object(
@@ -404,21 +412,21 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         ctx, args = await self.run_startup(
             True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"}
         )
-        agent = args["agent"]
+        dependencies = args["dependencies"]
         finish, entered = asyncio.Event(), asyncio.Event()
 
         async def wait_for_write():
             entered.set()
             await finish.wait()
 
-        client = agent._staff_tasks._client
+        client = dependencies.staff_tasks._client
         with (
             patch.object(
-                agent._scheduling,
+                dependencies.scheduling,
                 "aclose",
                 new=AsyncMock(side_effect=RuntimeError("write failed")),
             ),
-            patch.object(agent._insurance, "aclose", new=wait_for_write),
+            patch.object(dependencies.insurance, "aclose", new=wait_for_write),
         ):
             shutdown = asyncio.create_task(
                 ctx.add_shutdown_callback.call_args_list[0].args[0]()
@@ -518,7 +526,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                 }
             )
 
-        args["agent"]._scheduling._write_task = asyncio.create_task(write())
+        args["dependencies"].scheduling._write_task = asyncio.create_task(write())
         await entered.wait()
         shutdown = asyncio.create_task(finish_voice_call(ctx))
         await asyncio.sleep(0)
