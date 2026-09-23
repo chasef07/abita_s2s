@@ -10,6 +10,7 @@ from uuid import UUID
 
 import httpx
 
+from abita_s2s.observability.jev import evaluate_call
 from abita_s2s.config import Config
 from abita_s2s.offices import get_office_profile
 from abita_s2s.state import CallContext
@@ -211,6 +212,7 @@ class CallReporter:
             }
             if report is not None:
                 payload["transcript"] = report
+                payload["closeoutPayload"]["evaluation"] = await evaluate_call(report)
             if self._appointment:
                 payload["appointmentOutcome"] = self._appointment
             if self._pending:

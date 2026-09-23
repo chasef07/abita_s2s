@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 
 from release import digest, run
+from abita_s2s.release import COMPONENTS
 
 
 def publish(tag, commit, files):
@@ -97,7 +98,7 @@ if __name__ == "__main__":
     commit, version = manifest["git_commit"], manifest["agent_version"]
     if run("git", "rev-parse", "HEAD") != commit:
         raise ValueError("Publish must run at the built commit")
-    for component in ("prompts", "evals"):
+    for component in COMPONENTS:
         bundle_version = manifest[f"{component}_version"]
         if bundle_version != version:
             verify_reused_component(component, bundle_version, manifest)

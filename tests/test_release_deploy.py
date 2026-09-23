@@ -23,197 +23,216 @@ builder = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
 
 
+def git(root, *args):
+    return subprocess.check_output(["git", *args], cwd=root, text=True).strip()
+
+
+def repository(root, *, legacy=False):
+    git(root, "init", "-q")
+    git(root, "config", "user.name", "Release test")
+    git(root, "config", "user.email", "release@example.test")
+    for component, directory in package.COMPONENTS.items():
+        folder = root / directory
+        (folder / "nested").mkdir(parents=True)
+        (folder / "nested/data.txt").write_text(component)
+        (folder / "README.md").write_text("Instructions")
+    for name in ("speaker.md", "thinker.md"):
+        (root / package.COMPONENTS["prompts"] / name).write_text(name)
+    (root / "evals/scenario.yaml").write_text("name: test")
+    (root / "pyproject.toml").write_text('[project]\nversion="1.0.0"')
+    (root / "uv.lock").write_text("locked")
+    (root / ".gitignore").write_text(
+        "__pycache__/\n*.pyc\nout*/\nsrc/abita_s2s/release.json\n"
+    )
+    if not legacy:
+        (root / "src/abita_s2s/component_folders.json").write_text(
+            json.dumps(package.COMPONENTS)
+        )
+    git(root, "add", ".")
+    git(root, "commit", "-qm", "Initial folders")
+    return git(root, "rev-parse", "HEAD")
+
+
 class ComponentVersionTests(unittest.TestCase):
-    def test_versions_follow_content_independently_using_real_git_history(self):
+    def test_versions_follow_entire_folders_independently(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-
-            def git(*args):
-                return subprocess.check_output(
-                    ["git", *args], cwd=root, text=True
-                ).strip()
-
-            git("init", "-q")
-            git("config", "user.name", "Release test")
-            git("config", "user.email", "release@example.test")
-            prompts = root / "src/abita_s2s/prompts"
-            prompts.mkdir(parents=True)
-            for name in ("speaker.md", "thinker.md"):
-                (prompts / name).write_text(name + "\n")
-            evals = root / "evals"
-            (evals / "scenarios").mkdir(parents=True)
-            (evals / "scenarios/scenario.yaml").write_text("name: original\n")
-            git("add", ".")
-            git("commit", "-qm", "Initial bundles")
-            git("tag", "prompts-v0.3.2")
-            git("tag", "evals-v0.3.2")
+            repository(root)
+            for component in package.COMPONENTS:
+                git(root, "tag", f"{component}-v0.9.0")
             with patch.object(builder, "ROOT", root):
 
                 def versions():
-                    commit = git("rev-parse", "HEAD")
-                    return (
-                        builder.component_version(
-                            "prompts", "0.3.3", commit, package.checksums(prompts)
-                        ),
-                        builder.component_version(
-                            "evals", "0.3.3", commit, package.eval_checksums(evals)
-                        ),
+                    commit = git(root, "rev-parse", "HEAD")
+                    return {
+                        name: builder.component_version(
+                            name, "1.0.0", commit, builder.component_files(name, commit)
+                        )
+                        for name in package.COMPONENTS
+                    }
+
+                unchanged = dict.fromkeys(package.COMPONENTS, "0.9.0")
+                self.assertEqual(versions(), unchanged)
+                for component, directory in package.COMPONENTS.items():
+                    for operation in ("edit", "add", "rename", "delete"):
+                        with self.subTest(component=component, operation=operation):
+                            folder = root / directory
+                            if operation == "edit":
+                                (folder / "README.md").write_text("New instructions")
+                            elif operation == "add":
+                                (folder / "nested/new.json").write_text("{}")
+                            elif operation == "rename":
+                                (folder / "nested/data.txt").rename(
+                                    folder / "nested/moved.txt"
+                                )
+                            else:
+                                (folder / "README.md").unlink()
+                            git(root, "add", ".")
+                            git(root, "commit", "-qm", operation)
+                            self.assertEqual(
+                                versions(), {**unchanged, component: "1.0.0"}
+                            )
+                            git(root, "revert", "--no-edit", "HEAD")
+                            self.assertEqual(versions(), unchanged)
+                (root / "agent-only.txt").write_text("agent change")
+                git(root, "add", ".")
+                git(root, "commit", "-qm", "Agent only")
+                self.assertEqual(versions(), unchanged)
+                # A rerun ignores tags for the current release itself.
+                for component in package.COMPONENTS:
+                    git(root, "tag", f"{component}-v1.0.0")
+                self.assertEqual(versions(), unchanged)
+
+    def test_old_partial_bundles_cannot_represent_whole_folders(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            commit = repository(root, legacy=True)
+            for component in ("prompts", "evals"):
+                git(root, "tag", f"{component}-v0.9.0")
+            with patch.object(builder, "ROOT", root):
+                for component in package.COMPONENTS:
+                    files = builder.component_files(component, commit)
+                    self.assertEqual(
+                        builder.component_version(component, "1.0.0", commit, files),
+                        "1.0.0",
                     )
 
-                self.assertEqual(versions(), ("0.3.2", "0.3.2"))
-                (prompts / "speaker.md").write_text("changed\n")
-                self.assertEqual(versions(), ("0.3.3", "0.3.2"))
-                (evals / "scenarios/added.yml").write_text("name: added\n")
-                self.assertEqual(versions(), ("0.3.3", "0.3.3"))
-                (prompts / "speaker.md").write_text("speaker.md\n")
-                self.assertEqual(versions(), ("0.3.2", "0.3.3"))
-                (evals / "scenarios/added.yml").unlink()
-                (evals / "results.json").write_text("{}")
-                self.assertEqual(versions(), ("0.3.2", "0.3.2"))
-                git("add", ".")
-                git("commit", "-qm", "Agent-only release")
-                git("tag", "prompts-v0.3.3")
-                git("tag", "evals-v0.3.3")
-                self.assertEqual(versions(), ("0.3.2", "0.3.2"))
-                (evals / "scenarios/scenario.yaml").unlink()
-                (evals / "scenarios/replacement.yaml").write_text("name: original\n")
-                self.assertEqual(versions(), ("0.3.2", "0.3.3"))
-
     def test_reused_release_must_be_published_with_matching_content(self):
-        manifest = {"prompts_version": "0.3.2", "prompts_sha256": "a" * 64}
+        for component in package.COMPONENTS:
+            with self.subTest(component=component):
+                manifest = {
+                    f"{component}_version": "0.3.2",
+                    f"{component}_sha256": "a" * 64,
+                }
 
-        def command(*args):
-            if args[1:3] == ("release", "view"):
-                return "false"
-            self.assertEqual(args[1:3], ("release", "download"))
-            (Path(args[-1]) / "release.json").write_text(json.dumps(manifest))
-            return ""
+                def command(*args):
+                    if args[1:3] == ("release", "view"):
+                        return "false"
+                    self.assertEqual(args[1:3], ("release", "download"))
+                    (Path(args[-1]) / "release.json").write_text(json.dumps(manifest))
+                    return ""
 
-        with patch.object(publish_release, "run", side_effect=command):
-            publish_release.verify_reused_component("prompts", "0.3.2", manifest)
-            with self.assertRaisesRegex(ValueError, "content mismatch"):
-                publish_release.verify_reused_component(
-                    "prompts", "0.3.2", {**manifest, "prompts_sha256": "wrong"}
-                )
-        with patch.object(publish_release, "run", return_value="true"):
-            with self.assertRaisesRegex(ValueError, "already be published"):
-                publish_release.verify_reused_component("prompts", "0.3.2", manifest)
+                with patch.object(publish_release, "run", side_effect=command):
+                    publish_release.verify_reused_component(
+                        component, "0.3.2", manifest
+                    )
+                    with self.assertRaisesRegex(ValueError, "content mismatch"):
+                        publish_release.verify_reused_component(
+                            component,
+                            "0.3.2",
+                            {**manifest, f"{component}_sha256": "wrong"},
+                        )
+                with patch.object(publish_release, "run", return_value="true"):
+                    with self.assertRaisesRegex(ValueError, "already be published"):
+                        publish_release.verify_reused_component(
+                            component, "0.3.2", manifest
+                        )
 
 
 class ReleaseTests(unittest.TestCase):
-    def test_installed_manifest_rejects_version_and_checksum_mismatch(self):
+    def test_installed_manifest_checks_every_packaged_component(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "prompts").mkdir()
-            for name in ("speaker.md", "thinker.md"):
-                (root / "prompts" / name).write_text(name)
-            files = package.checksums(root / "prompts")
-            manifest = dict(
-                agent_version="1.0.0",
-                prompts_version="0.8.0",
-                evals_version="0.9.0",
-                eval_files={"scenarios/intake.yaml": "b" * 64},
-                evals_sha256=package.content_digest(
-                    {"scenarios/intake.yaml": "b" * 64}
-                ),
-                prompt_files=files,
-                prompts_sha256=package.content_digest(files),
-                git_commit="a" * 40,
-            )
+            commit = repository(root)
+            with patch.object(builder, "ROOT", root):
+                manifest, _ = builder.prepare(commit, root / "out")
+            installed = root / "src/abita_s2s"
             with (
-                patch.object(package, "PACKAGE", root),
+                patch.object(package, "PACKAGE", installed),
                 patch.object(package, "version", return_value="1.0.0"),
             ):
-                (root / "release.json").write_text(json.dumps(manifest))
                 self.assertEqual(package.identity(), manifest)
-                for key, value in (
-                    ("agent_version", "2.0.0"),
-                    ("prompts_version", "invalid"),
-                    ("evals_version", "invalid"),
-                    ("evals_sha256", "wrong"),
-                    ("eval_files", {}),
-                    ("prompts_sha256", "wrong"),
-                ):
-                    (root / "release.json").write_text(
-                        json.dumps({**manifest, key: value})
-                    )
-                    with self.assertRaises(ValueError):
-                        package.identity()
-                (root / "release.json").write_text(json.dumps(manifest))
-                (root / "prompts/speaker.md").write_text("changed")
-                with self.assertRaises(ValueError):
-                    package.identity()
+                for component, directory in package.COMPONENTS.items():
+                    for key, value in (
+                        (f"{component}_version", "bad"),
+                        (f"{component}_files", {}),
+                        (f"{component}_sha256", "bad"),
+                    ):
+                        with self.subTest(key=key):
+                            (installed / "release.json").write_text(
+                                json.dumps({**manifest, key: value})
+                            )
+                            with self.assertRaises(ValueError):
+                                package.identity()
+                    (installed / "release.json").write_text(json.dumps(manifest))
+                    if component != "evals":
+                        path = root / directory / "nested/data.txt"
+                        original = path.read_text()
+                        path.write_text("tampered")
+                        with self.assertRaises(ValueError):
+                            package.identity()
+                        path.write_text(original)
 
-    def test_archives_are_reproducible_and_eval_changes_change_identity(self):
+    def test_archives_cover_entire_tracked_folders_and_are_reproducible(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            prompts = root / "src/abita_s2s/prompts"
-            prompts.mkdir(parents=True)
-            for name in ("speaker.md", "thinker.md"):
-                (prompts / name).write_text(name)
-            (root / "pyproject.toml").write_text('[project]\nversion="1.0.0"')
-            (root / "uv.lock").write_text("locked")
-            (root / "evals/scenarios").mkdir(parents=True)
-            (root / "evals/scenarios/intake.yaml").write_text(
-                "name: intake\nscenarios: []\n"
-            )
-            (root / "evals/result.json").write_text("not a scenario")
-            (root / "evals/README.md").write_text("Scenario instructions")
-
-            def git(*args):
-                if args[1] == "tag":
-                    return ""
-                if args[1:] == ("rev-parse", "--is-shallow-repository"):
-                    return "false"
-                if args[1] == "rev-parse":
-                    return "a" * 40
-                if args[1] == "status":
-                    return ""
-                return "1000000000"
-
-            with (
-                patch.object(builder, "ROOT", root),
-                patch.object(builder, "run", side_effect=git),
-            ):
-                manifest, _ = builder.prepare("a" * 40, root / "out")
-                first = (root / "out/prompts-v1.0.0.tar.gz").read_bytes()
-                eval_archive = root / "out/evals-v1.0.0.tar.gz"
-                first_evals = eval_archive.read_bytes()
-                with tarfile.open(eval_archive) as archive:
+            commit = repository(root)
+            # Ignored runtime files must not affect source identities or bundles.
+            for directory in package.COMPONENTS.values():
+                cache = root / directory / "__pycache__"
+                cache.mkdir()
+                (cache / "module.pyc").write_bytes(b"cache")
+            with patch.object(builder, "ROOT", root):
+                manifest, _ = builder.prepare(commit, root / "out")
+                archives = {}
+                for component, directory in package.COMPONENTS.items():
+                    path = root / "out" / f"{component}-v1.0.0.tar.gz"
+                    archives[component] = path.read_bytes()
+                    with tarfile.open(path) as archive:
+                        self.assertEqual(
+                            set(archive.getnames()), set(manifest[f"{component}_files"])
+                        )
+                        self.assertIn("README.md", archive.getnames())
+                        self.assertIn("nested/data.txt", archive.getnames())
+                        for name in archive.getnames():
+                            self.assertEqual(
+                                archive.extractfile(name).read(),
+                                (root / directory / name).read_bytes(),
+                            )
+                builder.prepare(commit, root / "out")
+                for component, data in archives.items():
                     self.assertEqual(
-                        set(archive.getnames()),
-                        {"scenarios/intake.yaml", "manifest.json"},
+                        data, (root / "out" / f"{component}-v1.0.0.tar.gz").read_bytes()
                     )
-                    self.assertEqual(
-                        archive.extractfile("scenarios/intake.yaml").read(),
-                        (root / "evals/scenarios/intake.yaml").read_bytes(),
-                    )
-                    self.assertEqual(
-                        json.load(archive.extractfile("manifest.json")), manifest
-                    )
-                builder.prepare("a" * 40, root / "out")
-                self.assertEqual(first_evals, eval_archive.read_bytes())
-                self.assertEqual(
-                    first, (root / "out/prompts-v1.0.0.tar.gz").read_bytes()
-                )
                 with self.assertRaises(ValueError):
                     builder.prepare("b" * 40, root / "out")
-                (root / "evals/scenarios/intake.yaml").write_text(
-                    "name: changed\nscenarios: []\n"
-                )
-                with self.assertRaisesRegex(ValueError, "different release"):
-                    builder.prepare("a" * 40, root / "out")
-                changed, _ = builder.prepare("a" * 40, root / "changed")
-                self.assertNotEqual(manifest["evals_sha256"], changed["evals_sha256"])
                 with patch.object(builder, "component_version", return_value="0.9.0"):
-                    reused, _ = builder.prepare("a" * 40, root / "reused")
-                self.assertEqual(reused["prompts_version"], "0.9.0")
-                self.assertEqual(reused["evals_version"], "0.9.0")
-                self.assertEqual(list((root / "reused").glob("*.tar.gz")), [])
-                self.assertEqual(manifest["prompts_sha256"], changed["prompts_sha256"])
-                (root / "evals/scenarios/intake.yaml").unlink()
-                with self.assertRaisesRegex(ValueError, "at least one eval"):
-                    builder.prepare("a" * 40, root / "empty")
+                    reused, _ = builder.prepare(commit, root / "out-reused")
+                for component in package.COMPONENTS:
+                    self.assertEqual(reused[f"{component}_version"], "0.9.0")
+                self.assertEqual(list((root / "out-reused").glob("*.tar.gz")), [])
+                (root / "evals/README.md").write_text("Changed guidance")
+                git(root, "add", ".")
+                git(root, "commit", "-qm", "Update eval docs")
+                changed_commit = git(root, "rev-parse", "HEAD")
+                with self.assertRaisesRegex(ValueError, "different release"):
+                    builder.prepare(changed_commit, root / "out")
+                changed, _ = builder.prepare(changed_commit, root / "out-changed")
+                self.assertNotEqual(manifest["evals_sha256"], changed["evals_sha256"])
+                for component in ("prompts", "tools", "observability"):
+                    self.assertEqual(
+                        manifest[f"{component}_sha256"], changed[f"{component}_sha256"]
+                    )
 
     def test_publisher_refuses_reused_tag_before_upload(self):
         calls = []
@@ -330,6 +349,10 @@ class DeployTests(unittest.TestCase):
             git_commit="a" * 40,
             prompts_sha256="b" * 64,
             evals_sha256="c" * 64,
+            tools_version="0.9.0",
+            tools_sha256="d" * 64,
+            observability_version="0.8.0",
+            observability_sha256="e" * 64,
         )
         self.status = {
             "agents": [

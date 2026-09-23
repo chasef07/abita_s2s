@@ -1,4 +1,4 @@
-"""Build agent, prompt and eval releases from a clean exact commit. No cloud writes."""
+"""Build agent and whole-folder component releases from a clean exact commit. No cloud writes."""
 
 import argparse
 import gzip
@@ -13,7 +13,7 @@ import tarfile
 import tomllib
 
 from abita_s2s.model_config import SPEAKER_MODEL, THINKER_MODEL
-from abita_s2s.release import checksums, eval_checksums, content_digest
+from abita_s2s.release import COMPONENTS, checksums, content_digest
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,6 +24,21 @@ def run(*args, **kwargs):
 
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def component_files(component: str, ref: str) -> dict[str, str]:
+    """Hash the tracked folder at a commit, excluding untracked/ignored artifacts."""
+    directory = COMPONENTS[component]
+    paths = run(
+        "git", "ls-tree", "-r", "--name-only", "-z", ref, "--", directory
+    ).split("\0")
+    files = {}
+    for path in filter(None, paths):
+        data = subprocess.check_output(["git", "show", f"{ref}:{path}"], cwd=ROOT)
+        files[path.removeprefix(directory + "/")] = hashlib.sha256(data).hexdigest()
+    if not files:
+        raise ValueError(f"Release requires a nonempty {component} folder")
+    return files
 
 
 def component_version(component: str, version: str, commit: str, files: dict) -> str:
@@ -45,20 +60,36 @@ def component_version(component: str, version: str, commit: str, files: dict) ->
         # Ignore this release's tags so publishing cannot change a rebuild.
         if tuple(map(int, prior.split("."))) >= current:
             continue
-        directory = "src/abita_s2s/prompts" if component == "prompts" else "evals"
-        paths = run(
-            "git", "ls-tree", "-r", "--name-only", tag, "--", directory
-        ).splitlines()
-        prior_files = {}
-        for path in paths:
-            name = path.removeprefix(directory + "/")
-            if (component == "prompts" and name in ("speaker.md", "thinker.md")) or (
-                component == "evals" and Path(name).suffix in (".yaml", ".yml")
-            ):
-                data = subprocess.check_output(
-                    ["git", "show", f"{tag}:{path}"], cwd=ROOT
-                )
-                prior_files[name] = hashlib.sha256(data).hexdigest()
+        prior_files = component_files(component, tag)
+        # Older releases bundled only two prompt files and eval YAML. Compare
+        # their actual coverage, so old partial bundles cannot stand in for folders.
+        full_folders = (
+            subprocess.run(
+                [
+                    "git",
+                    "cat-file",
+                    "-e",
+                    f"{tag}:src/abita_s2s/component_folders.json",
+                ],
+                cwd=ROOT,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ).returncode
+            == 0
+        )
+        if not full_folders:
+            if component == "prompts":
+                prior_files = {
+                    name: sha
+                    for name, sha in prior_files.items()
+                    if name in ("speaker.md", "thinker.md")
+                }
+            elif component == "evals":
+                prior_files = {
+                    name: sha
+                    for name, sha in prior_files.items()
+                    if Path(name).suffix in (".yaml", ".yml")
+                }
         return prior if prior_files == files else version
     return version
 
@@ -76,20 +107,25 @@ def prepare(commit: str, output: Path):
     version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
     if not re.fullmatch(r"\d+\.\d+\.\d+", version):
         raise ValueError("Use a stable major.minor.patch release version")
-    files = checksums(ROOT / "src/abita_s2s/prompts")
-    eval_files = eval_checksums(ROOT / "evals")
     manifest = {
         "agent_version": version,
-        "prompts_version": component_version("prompts", version, commit, files),
-        "evals_version": component_version("evals", version, commit, eval_files),
         "git_commit": commit,
-        "prompt_files": files,
-        "prompts_sha256": content_digest(files),
-        "eval_files": eval_files,
-        "evals_sha256": content_digest(eval_files),
         "uv_lock_sha256": digest(ROOT / "uv.lock"),
         "models": {"speaker": SPEAKER_MODEL, "thinker": THINKER_MODEL},
     }
+    for component, directory in COMPONENTS.items():
+        files = component_files(component, commit)
+        if checksums(ROOT / directory, files) != files:
+            raise ValueError("Component checkout does not match the release commit")
+        manifest.update(
+            {
+                f"{component}_version": component_version(
+                    component, version, commit, files
+                ),
+                f"{component}_files": files,
+                f"{component}_sha256": content_digest(files),
+            }
+        )
     encoded = (json.dumps(manifest, sort_keys=True, indent=2) + "\n").encode()
     output.mkdir(parents=True, exist_ok=True)
     prior = output / "release.json"
@@ -101,16 +137,15 @@ def prepare(commit: str, output: Path):
     (output / "release.json").write_bytes(encoded)
     epoch = int(run("git", "show", "-s", "--format=%ct", commit))
     # Fixed order, owner and timestamps make reruns byte-identical.
-    for label, directory, names in (
-        ("prompts", ROOT / "src/abita_s2s/prompts", files),
-        ("evals", ROOT / "evals", eval_files),
-    ):
+    for label, relative in COMPONENTS.items():
+        directory = ROOT / relative
+        names = manifest[f"{label}_files"]
         if manifest[f"{label}_version"] != version:
             continue
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w") as archive:
             entries = {name: (directory / name).read_bytes() for name in names}
-            entries["manifest.json"] = encoded
+
             for name, data in sorted(entries.items()):
                 info = tarfile.TarInfo(name)
                 info.size, info.mtime, info.mode = len(data), epoch, 0o644

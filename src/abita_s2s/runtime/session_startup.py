@@ -36,7 +36,8 @@ SIP_WAIT_SECONDS = 20
 # Rescheduling can book then cancel: two 20s HTTP deadlines. Allow 10s margin.
 CLEANUP_SECONDS = 50
 TRANSPORT_CLOSE_SECONDS = 5
-SHUTDOWN_PROCESS_SECONDS = 60
+# Include post-call evaluation and report delivery after draining accepted writes.
+SHUTDOWN_PROCESS_SECONDS = 90
 
 
 async def wait_for_sip(ctx):

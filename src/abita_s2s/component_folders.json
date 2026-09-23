@@ -1,0 +1,6 @@
+{
+  "prompts": "src/abita_s2s/prompts",
+  "tools": "src/abita_s2s/tools",
+  "evals": "evals",
+  "observability": "src/abita_s2s/observability"
+}

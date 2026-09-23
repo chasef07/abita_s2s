@@ -38,8 +38,14 @@ OUTCOME = {
 
 
 class ReportingTests(unittest.IsolatedAsyncioTestCase):
-    def reporter(self, handler=None, drain=None):
+    def reporter(self, handler=None, drain=None, evaluate=None):
         self.requests = []
+        if evaluate is not None:
+            evaluator = patch(
+                "abita_s2s.runtime.reporting.evaluate_call", side_effect=evaluate
+            )
+            evaluator.start()
+            self.addCleanup(evaluator.stop)
 
         async def receive(request):
             self.requests.append(json.loads(request.content))
@@ -153,6 +159,65 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         await finish_voice_call(ctx)
         ctx.make_session_report.assert_called_once()
         self.assertEqual(self.requests[-1]["transcript"], REPORT)
+
+    async def test_evaluation_runs_after_drain_and_is_in_the_same_closeout(self):
+        events = []
+        evidence = {
+            "status": "complete",
+            "evaluatorVersion": "typesafe-trace-v1",
+            "results": {
+                "outcome": {
+                    "answers": {
+                        "claims_supported": {"type": "boolean", "probability": 0.37}
+                    }
+                }
+            },
+        }
+
+        async def drain():
+            events.append("drain")
+
+        async def evaluate(report):
+            self.assertEqual(report, REPORT)
+            events.append("evaluate")
+            return evidence
+
+        reporter = self.reporter(drain=drain, evaluate=evaluate)
+        reporter.started = True
+        await reporter.finish(lambda: REPORT)
+        await reporter.finish(lambda: REPORT)
+        self.assertEqual(events, ["drain", "evaluate"])
+        self.assertEqual([p["kind"] for p in self.requests], ["START", "CLOSEOUT"])
+        self.assertEqual(self.requests[-1]["closeoutPayload"]["evaluation"], evidence)
+
+    async def test_evaluation_timeout_or_error_still_delivers_completed_call(self):
+        history = llm.ChatContext()
+        history.items.append(llm.AgentConfigUpdate(instructions="Manage appointments."))
+        history.add_message(role="user", content="Please cancel my visit.")
+        report = {**REPORT, "chat_history": history.to_dict()}
+
+        async def hang(*_, **__):
+            await asyncio.Event().wait()
+
+        for failure, reason in [
+            (hang, "TimeoutError"),
+            (ValueError("private"), "ValueError"),
+        ]:
+            reporter = self.reporter()
+            reporter.started = True
+            with (
+                patch.dict("os.environ", {"AI_GATEWAY_API_KEY": "offline"}),
+                patch(
+                    "abita_s2s.observability.jev.evaluate_with_jev", side_effect=failure
+                ),
+                patch("abita_s2s.observability.jev.EVALUATION_SECONDS", 0.01),
+                self.assertLogs("abita_s2s.observability.jev", "ERROR"),
+            ):
+                await reporter.finish(lambda: report)
+            self.assertEqual(self.requests[-1]["status"], "COMPLETED")
+            evaluation = self.requests[-1]["closeoutPayload"]["evaluation"]
+            self.assertEqual(evaluation["status"], "incomplete")
+            self.assertEqual(evaluation["reason"], reason)
 
     async def test_drain_error_still_reports_failure(self):
         reporter = self.reporter(
