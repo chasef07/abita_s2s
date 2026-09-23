@@ -99,6 +99,7 @@ class WriteReceipt(Record):
     officeId: str | None = None
     office: str | None = None
     visitType: Literal["medical", "routine_vision"] | None = None
+    profileId: str | None = None
     providerName: str | None = None
     locationName: str | None = None
     appointmentTypeName: str | None = None

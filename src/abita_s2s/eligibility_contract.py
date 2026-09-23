@@ -3,6 +3,7 @@
 import asyncio
 from dataclasses import dataclass, field
 from typing import Literal
+from uuid import uuid4
 
 from pydantic import ConfigDict, JsonValue
 
@@ -15,6 +16,7 @@ class EligibilityInput(Record):
     dob: Text
     memberId: Text
     plan: Text
+    coverageType: Literal["medical", "routine_vision"] = "medical"
 
 
 class IdentityEvidence(Record):
@@ -32,9 +34,20 @@ class MatchedPatient(Record):
     memberId: str | None = None
 
 
+class EligibilityProvider(Record):
+    model_config = ConfigDict(strict=True, frozen=True, extra="allow")
+    profileId: Text
+    name: Text
+    firstName: Text
+    lastName: Text
+    npi: Text
+
+
 class EligibilityResult(Record):
     # Preserve future middleware fields as well as opaque payer evidence.
     model_config = ConfigDict(strict=True, frozen=True, extra="allow")
+    provider: EligibilityProvider | None = None
+    providerResults: list["EligibilityResult"] | None = None
     providerResponse: JsonValue = None
     providerHttpStatus: int | None = None
     status: Literal["active", "inactive", "review", "unknown"]
@@ -63,6 +76,10 @@ class EligibilityResult(Record):
 class EligibilityCheck:
     office: str
     request: EligibilityInput
+    id: str = field(default_factory=lambda: str(uuid4()))
+    patient_id: str | None = None
+    canonical_plan: str | None = None
+    invalidated: bool = False
     status: Literal["pending", "complete", "unavailable"] = "pending"
     result: EligibilityResult | None = None
     failure_reason: str | None = None

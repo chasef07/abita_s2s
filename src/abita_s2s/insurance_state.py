@@ -85,3 +85,20 @@ def insurance_ready(state: "CallState") -> bool:
     if not active:
         return False
     return state.insurance.registrations.get(active.patientId) != "partial"
+
+
+def appointment_eligibility(state: "CallState", patient_id: str, visit: CoverageType):
+    """Capture this patient's bound evidence before a booking request is sent."""
+    checked = accepted_insurance(state, visit)
+    if not checked or checked.patient_id != patient_id:
+        return None
+    for check in reversed(state.insurance.eligibility_checks):
+        if (
+            check.patient_id == patient_id
+            and check.office == checked.office_key
+            and check.request.coverageType == visit
+            and check.canonical_plan == checked.decision.canonicalPlan
+            and not check.invalidated
+        ):
+            return check
+    return None

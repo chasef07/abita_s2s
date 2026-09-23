@@ -22,11 +22,12 @@ class InsuranceTools:
         dob: str,
         plan: str,
         insuranceMemberId: str,
+        coverageType: Literal["medical", "routine_vision"],
     ) -> str:
         """Check eligibility and return supported name corrections for new-patient intake.
 
         Use the patient's own name and DOB (MM/DD/YYYY), plan and card member ID
-        as soon as collected, before add_patient. Never use for existing patients
+        and triaged coverageType as soon as collected, before add_patient. Never use for existing patients
         or self-pay. Use a returned name correction in the confirmed read-back.
         Do not repeat for payer-returned spelling; retry only for caller-corrected inputs.
         """
@@ -43,6 +44,7 @@ class InsuranceTools:
                 dob=dob,
                 plan=plan,
                 memberId=insuranceMemberId,
+                coverageType=coverageType,
             )
         )
 

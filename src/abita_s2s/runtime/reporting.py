@@ -217,6 +217,8 @@ class CallReporter:
             if self._insurance is not None:
                 payload["closeoutPayload"]["eligibilityChecks"] = [
                     {
+                        "id": check.id,
+                        "externalPatientId": check.patient_id,
                         "office": check.office,
                         "request": check.request.model_dump(mode="json"),
                         "status": check.status,

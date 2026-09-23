@@ -153,15 +153,16 @@ class InsuranceRegistration:
             )
         return f"eligibility: {result.status}. Review reason: {result.reviewReason or 'none'}. Continue intake; do not infer visit coverage."
 
-    def _eligibility_name_blocker(
+    def _registration_eligibility(
         self, r: Registration, checked: AcceptedInsurance
-    ) -> dict | None:
+    ) -> EligibilityCheck | None:
         current = self.state.insurance.current_eligibility
         if current is None or current[0] != self.state.patient.revision:
             return None
         check = current[1]
         if (
             check.office != self.state.call.called_office_key
+            or check.request.coverageType != checked.decision.coverageType
             or not dob_matches(check.request.dob, r.dob)
             or normalize(check.request.plan)
             not in {
@@ -171,6 +172,14 @@ class InsuranceRegistration:
             or "".join(check.request.memberId.split()).upper()
             != "".join(r.insuranceMemberId.split()).upper()
         ):
+            return None
+        return check
+
+    def _eligibility_name_blocker(
+        self, r: Registration, checked: AcceptedInsurance
+    ) -> dict | None:
+        check = self._registration_eligibility(r, checked)
+        if check is None:
             return None
         if check.status == "pending":
             return reply(
@@ -381,6 +390,10 @@ class InsuranceRegistration:
         if checked.decision.coverageType == "routine_vision":
             payload["coverageType"] = "routine_vision"
 
+        eligibility = (
+            self._registration_eligibility(r, checked) if not self_pay else None
+        )
+
         async def create():
             result = await self._middleware.create(checked.office_key, payload)
             if isinstance(result, WriteFailure):
@@ -395,7 +408,7 @@ class InsuranceRegistration:
                     else staff(result.status)
                 )
             else:
-                answer = self._created(result, r, checked)
+                answer = self._created(result, r, checked, eligibility)
             if self.state.reporter:
                 evidence = {"outcome": answer["outcome"]}
                 if answer["outcome"] in ("created", "partial"):
@@ -411,7 +424,9 @@ class InsuranceRegistration:
 
         return await self._run_write(checked, create)
 
-    def _created(self, result: CreationReceipt, r: Registration, checked) -> dict:
+    def _created(
+        self, result: CreationReceipt, r: Registration, checked, eligibility=None
+    ) -> dict:
         # Validate both complete names without inventing backend identifier formats.
         expected = {
             exact_name(f"{r.firstName} {r.lastName}"),
@@ -441,6 +456,15 @@ class InsuranceRegistration:
         )
         self.state.insurance.registrations[result.patientId] = result.status
         activated = self._resolver.activate_created(checked, patient)
+        if activated and result.status == "created" and eligibility is not None:
+            person = (
+                eligibility.result.name_correction if eligibility.result else None
+            ) or eligibility.request
+            if exact_name(f"{person.firstName} {person.lastName}") == exact_name(
+                f"{r.firstName} {r.lastName}"
+            ):
+                eligibility.patient_id = result.patientId
+                eligibility.canonical_plan = checked.decision.canonicalPlan
         status = "success" if result.status == "created" and activated else "blocked"
         if result.status == "created":
             coverage = (
@@ -494,6 +518,11 @@ class InsuranceRegistration:
                 break
 
         async def update():
+            # An attempted insurance replacement invalidates future appointment
+            # links even if a later plan label returns to the old value.
+            for check in self.state.insurance.eligibility_checks:
+                if check.patient_id == active.patientId:
+                    check.invalidated = True
             payload = {
                 "patientId": active.patientId,
                 "dob": active.dob,
