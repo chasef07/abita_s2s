@@ -62,6 +62,16 @@ class ResolvedInsuranceTests(unittest.IsolatedAsyncioTestCase):
     ):
         for resolution in [
             dict(
+                status="resolved",
+                plans=["CarePlus"],
+                decision=decision(
+                    "",
+                    participation="unknown",
+                    outcome="needs_staff_task",
+                    canSchedule=False,
+                ),
+            ),
+            dict(
                 status="conflicting", plans=["Aetna Commercial", "Aetna Better Health"]
             ),
             dict(
