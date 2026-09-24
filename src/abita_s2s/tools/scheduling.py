@@ -1,12 +1,25 @@
 """Model-facing appointment tools and availability presentation."""
 
+import asyncio
 from datetime import datetime
 from typing import Literal
 
-from livekit.agents import RunContext, function_tool
+from livekit.agents import RunContext, ToolError, function_tool
 
 from abita_s2s.scheduling import EASTERN, Scheduling, VisitType
 from abita_s2s.state import CallState
+
+
+async def _announce(context: RunContext[CallState], action: str) -> None:
+    async with asyncio.timeout(15):
+        await context.wait_for_playout()
+        speech = context.session.generate_reply(
+            instructions=f"Say only: One moment while I {action} your appointment. Use the caller's language.",
+            tool_choice="none",
+        )
+        await speech.wait_for_playout()
+    if speech.interrupted or speech.exception() is not None:
+        raise ToolError("Announcement did not complete. No appointment was changed.")
 
 
 class SchedulingTools:
@@ -102,6 +115,8 @@ class SchedulingTools:
                 no referring doctor. Do not ask whether to put or mark none, or
                 narrate the internal value.
         """
+        if readBack is True:
+            await _announce(context, "book")
         return await self._scheduling.book(
             context,
             slot_ref=appointmentSlotRef,
@@ -150,6 +165,8 @@ class SchedulingTools:
                 no referring doctor. Do not ask whether to put or mark none, or
                 narrate the internal value.
         """
+        if readBack is True:
+            await _announce(context, "reschedule")
         return await self._scheduling.reschedule(
             context,
             slot_ref=appointmentSlotRef,

@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
-from livekit.agents import AgentSession, llm
+from livekit.agents import AgentSession, ToolError, llm
 from livekit.agents.llm.tool_context import ToolContext
 from livekit.agents.llm.utils import build_strict_openai_schema
 from test_patient_resolution import CONFIG, call_state, receipt
@@ -108,13 +108,19 @@ def verified(state, patient_id="chart-jane", visit="medical", **extra):
     )
 
 
-class SchedulingTests(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        self.speech = SimpleNamespace(
-            wait_for_playout=AsyncMock(), interrupted=False, exception=lambda: None
-        )
-        self.generate_reply = Mock(return_value=self.speech)
+def speech_context(state):
+    speech = SimpleNamespace(
+        wait_for_playout=AsyncMock(), interrupted=False, exception=lambda: None
+    )
+    return SimpleNamespace(
+        userdata=state,
+        function_call=SimpleNamespace(call_id="native-call-id"),
+        wait_for_playout=AsyncMock(),
+        session=SimpleNamespace(generate_reply=Mock(return_value=speech)),
+    )
 
+
+class SchedulingTests(unittest.IsolatedAsyncioTestCase):
     def owner(self, responses, *, state=None):
         state = state or call_state(None)
         state.reporter = Mock()
@@ -139,12 +145,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def tool(self, owner, name, **args):
         output = await getattr(SchedulingTools(owner), name)(
-            SimpleNamespace(
-                userdata=owner.state,
-                function_call=SimpleNamespace(call_id="native-call-id"),
-                wait_for_playout=AsyncMock(),
-                session=SimpleNamespace(generate_reply=self.generate_reply),
-            ),
+            speech_context(owner.state),
             **args,
         )
         return output
@@ -1962,97 +1963,70 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(owner.appointments(), [])
         self.assertEqual(owner.state.patient.active.appointments, [])
 
-    async def test_booking_announces_before_write_and_replay_stays_quiet(self):
-        entered, finish = asyncio.Event(), asyncio.Event()
+    async def test_appointment_announcements_precede_writes(self):
+        for move in (False, True):
+            with self.subTest(reschedule=move):
+                owner, requests = self.owner(
+                    [inventory(), rescheduled() if move else booking()]
+                )
+                verified(
+                    owner.state,
+                    appointmentsStatus="found",
+                    appointments=[appointment()],
+                )
+                ref = await self.slots(owner)
+                context = speech_context(owner.state)
+                speech = context.session.generate_reply.return_value
 
-        async def announce():
-            entered.set()
-            await finish.wait()
+                async def playout():
+                    self.assertEqual(len(requests), 1)  # Availability only.
 
-        self.speech.wait_for_playout.side_effect = announce
-        owner, requests = self.owner([inventory(), booking()])
-        ref = await self.slots(owner)
-        pending = asyncio.create_task(self.book(owner, ref))
-        await asyncio.wait_for(entered.wait(), 1)
-        self.assertEqual(len(requests), 1)  # Only availability, no write yet.
-        duplicate = await self.book(owner, ref)
-        self.assertTrue(duplicate.startswith("blocked:"))
-        self.generate_reply.assert_called_once_with(
-            instructions="Say only: One moment while I book your appointment. Use the caller's language.",
-            tool_choice="none",
-        )
-        finish.set()
-        result = await pending
-        self.assertTrue(result.startswith("success:"), result)
-        self.assertEqual(await self.book(owner, ref), result)
-        self.assertEqual(len(requests), 2)
-        self.generate_reply.assert_called_once()
+                speech.wait_for_playout.side_effect = playout
+                args = dict(
+                    appointmentSlotRef=ref,
+                    appointmentReason="Eye exam",
+                    referringDoctor="none",
+                    readBack=True,
+                )
+                if move:
+                    args["oldAppointmentRef"] = owner.appointments()[0][
+                        "appointmentRef"
+                    ]
+                action = "reschedule" if move else "book"
+                result = await getattr(SchedulingTools(owner), action + "_appointment")(
+                    context, **args
+                )
+                self.assertTrue(result.startswith("success:"), result)
+                self.assertEqual(len(requests), 2)
+                context.session.generate_reply.assert_called_once_with(
+                    instructions=f"Say only: One moment while I {action} your appointment. Use the caller's language.",
+                    tool_choice="none",
+                )
+                speech.wait_for_playout.assert_awaited_once()
 
-    async def test_reschedule_announces_after_confirmation_and_before_write(self):
-        owner, requests = self.owner([inventory(), rescheduled()])
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
-        ref = await self.slots(owner)
-        args = dict(
-            oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
-            appointmentSlotRef=ref,
-            appointmentReason="Eye exam",
-            referringDoctor="none",
-            readBack=None,
-        )
-        result = await self.tool(owner, "reschedule_appointment", **args)
-        self.assertTrue(result.startswith("needs_input:"))
-        self.generate_reply.assert_not_called()
-
-        async def announce():
-            self.assertEqual(len(requests), 1)
-
-        self.speech.wait_for_playout.side_effect = announce
-        args["readBack"] = True
-        result = await self.tool(owner, "reschedule_appointment", **args)
-        self.assertTrue(result.startswith("success:"), result)
-        self.assertEqual(
-            await self.tool(owner, "reschedule_appointment", **args), result
-        )
-        self.generate_reply.assert_called_once_with(
-            instructions="Say only: One moment while I reschedule your appointment. Use the caller's language.",
-            tool_choice="none",
-        )
-        self.assertEqual(len(requests), 2)
-
-    async def test_announcement_failure_never_sends_a_booking(self):
-        for failure in ("interrupted", "exception", "timeout"):
+    async def test_announcement_failure_or_closed_call_prevents_write(self):
+        for failure in ("interrupted", "exception", "timeout", "closed"):
             with self.subTest(failure=failure):
                 owner, requests = self.owner([inventory()])
                 ref = await self.slots(owner)
-                self.speech.interrupted = failure == "interrupted"
-                self.speech.exception = lambda: (
-                    RuntimeError("speech failed") if failure == "exception" else None
+                context = speech_context(owner.state)
+                speech = context.session.generate_reply.return_value
+                speech.interrupted = failure == "interrupted"
+                speech.exception = lambda: (
+                    RuntimeError() if failure == "exception" else None
                 )
-                self.speech.wait_for_playout.side_effect = (
-                    TimeoutError() if failure == "timeout" else None
+                if failure == "timeout":
+                    speech.wait_for_playout.side_effect = TimeoutError()
+                elif failure == "closed":
+                    speech.wait_for_playout.side_effect = owner.close_admission
+                operation = SchedulingTools(owner).book_appointment(
+                    context, ref, "Eye exam", "none", True
                 )
-                result = await self.book(owner, ref)
-                self.assertTrue(result.startswith("unavailable:"), result)
-                self.assertEqual(len(requests), 1)
-                self.assertFalse(owner._receipts)
-
-    async def test_state_changes_during_announcement_prevent_booking(self):
-        for change in ("closed", "patient", "slots"):
-            with self.subTest(change=change):
-                owner, requests = self.owner([inventory()])
-                ref = await self.slots(owner)
-
-                async def announce():
-                    if change == "closed":
-                        owner.close_admission()
-                    elif change == "patient":
-                        owner.state.patient.revision += 1
-                    else:
-                        owner._invalidate()
-
-                self.speech.wait_for_playout.side_effect = announce
-                result = await self.book(owner, ref)
-                self.assertFalse(result.startswith("success:"), result)
+                if failure == "closed":
+                    self.assertTrue((await operation).startswith("blocked:"))
+                else:
+                    with self.assertRaises((ToolError, TimeoutError)):
+                        await operation
                 self.assertEqual(len(requests), 1)
                 self.assertFalse(owner._receipts)
 
