@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.2](https://github.com/chasef07/abita_s2s/compare/v0.9.1...v0.9.2) (2026-09-24)
+
+
+### Bug Fixes
+
+* announce booking and rescheduling before appointment writes ([#80](https://github.com/chasef07/abita_s2s/issues/80)) ([dd64e04](https://github.com/chasef07/abita_s2s/commit/dd64e0419da7fe582c693774706c0a5c271126e2))
+
 ## [0.9.1](https://github.com/chasef07/abita_s2s/compare/v0.9.0...v0.9.1) (2026-09-24)
 
 
