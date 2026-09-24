@@ -233,11 +233,6 @@ class InsuranceRegistration:
         check = self._registration_eligibility(r, checked)
         if check is None:
             return None
-        if check.status == "pending":
-            return reply(
-                "eligibility_pending",
-                "needs_input: Finish the existing check_new_patient_eligibility before confirming the registration name. Reuse the same inputs; it will not send another request.",
-            )
         person = check.result.name_correction if check.result else None
         if person is None:
             return None
@@ -274,6 +269,8 @@ class InsuranceRegistration:
                     normalize(check.canonical_plan or ""),
                     *(normalize(p) for p in resolution.plans),
                 }:
+                    # Keep the evidence, but invalidate a waiter still applying it.
+                    self.state.insurance.current_eligibility = (current[0], check)
                     self.state.insurance.accepted = None
                     self.state.insurance.check_revision += 1
                     return reply(
@@ -281,10 +278,14 @@ class InsuranceRegistration:
                         "needs_input: Insurance changed after eligibility. Check eligibility for the new plan and member ID before registration.",
                     )
                 return self._apply_eligibility_insurance(check)
-        if current and normalize(plan) not in {
-            normalize(current[1].request.plan),
-            normalize(current[1].canonical_plan or ""),
-        }:
+        if current and (
+            coverage_type != current[1].request.coverageType
+            or normalize(plan)
+            not in {
+                normalize(current[1].request.plan),
+                normalize(current[1].canonical_plan or ""),
+            }
+        ):
             self.state.insurance.current_eligibility = None
         self.state.insurance.accepted = None
         self.state.insurance.check_revision += 1
@@ -382,6 +383,7 @@ class InsuranceRegistration:
                 "already_active",
                 "blocked: A verified patient is already active. Do not create another chart for the same patient. For a different new patient, provide their first name and valid DOB.",
             )
+        checked = accepted_insurance(self.state)
         current = self.state.insurance.current_eligibility
         if current and current[0] == self.state.patient.revision:
             check = current[1]
@@ -417,13 +419,9 @@ class InsuranceRegistration:
                     or resolution.decision.participation != "accepted"
                 ):
                     return self._apply_eligibility_insurance(check)
-        checked = accepted_insurance(self.state)
-        if checked and current and current[0] == self.state.patient.revision:
-            resolution = (
-                current[1].result.insuranceResolution if current[1].result else None
-            )
             if (
-                resolution
+                checked
+                and resolution
                 and resolution.status == "resolved"
                 and checked.decision != resolution.decision
             ):

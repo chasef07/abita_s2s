@@ -158,6 +158,100 @@ class ResolvedInsuranceTests(unittest.IsolatedAsyncioTestCase):
             gate.set()
             await pending
 
+    async def test_pending_result_respects_latest_coverage(self):
+        for coverage in ("medical", "routine_vision"):
+            with self.subTest(coverage=coverage):
+                entered, release = asyncio.Event(), asyncio.Event()
+                writes = []
+
+                async def handler(request):
+                    body = json.loads(request.content)
+                    if request.url.path.endswith("/decision"):
+                        rejected = body["coverageType"] == "routine_vision"
+                        return httpx.Response(
+                            200,
+                            json=decision(
+                                coverage=body["coverageType"],
+                                participation="not_accepted"
+                                if rejected
+                                else "accepted",
+                                outcome="not_accepted" if rejected else "accepted",
+                                canSchedule=not rejected,
+                            ),
+                        )
+                    if request.url.path.endswith("/eligibility/check"):
+                        entered.set()
+                        await release.wait()
+                        return httpx.Response(
+                            200,
+                            json=result(
+                                insuranceResolution=dict(
+                                    status="resolved",
+                                    plans=["Aetna Better Health"],
+                                    decision=decision("Aetna Better Health"),
+                                )
+                            ),
+                        )
+                    writes.append(body)
+                    return httpx.Response(
+                        200, json=created(insuranceDecision=decision(body["insurance"]))
+                    )
+
+                owner = self.owner(handler)
+                await owner.check("Aetna", "medical")
+                pending = asyncio.create_task(owner.eligibility(details()))
+                await entered.wait()
+                batch = owner.state.insurance.current_eligibility[1]
+                try:
+                    await owner.check("Aetna", coverage)
+                finally:
+                    release.set()
+                answer = await pending
+                registered = await owner.add(
+                    registration(insuranceMemberId="test-member")
+                )
+                if coverage == "routine_vision":
+                    self.assertTrue(answer.startswith("stale:"))
+                    self.assertEqual(registered["outcome"], "needs_insurance")
+                    self.assertEqual(writes, [])
+                    self.assertIsNone(batch.patient_id)
+                else:
+                    self.assertEqual(registered["outcome"], "created")
+                    self.assertEqual(writes[0]["insurance"], "Aetna Better Health")
+                    self.assertEqual(batch.patient_id, "new-chart")
+                    self.assertEqual(len(owner.state.insurance.eligibility_checks), 1)
+
+    async def test_completed_result_cannot_apply_after_coverage_changes(self):
+        release = asyncio.Event()
+        owner = self.setup_owner(
+            dict(
+                status="resolved",
+                plans=["Aetna Better Health"],
+                decision=decision("Aetna Better Health"),
+            ),
+            gate=release,
+        )
+        await owner.check("Aetna", "medical")
+        check = owner._start_eligibility(details())
+        changed = []
+        # Queue the coverage change before the eligibility waiter resumes.
+        check.task.add_done_callback(
+            lambda _: changed.append(
+                asyncio.create_task(owner.check("Aetna", "routine_vision"))
+            )
+        )
+        pending = asyncio.create_task(owner.eligibility(details()))
+        await asyncio.sleep(0)
+        release.set()
+        answer = await pending
+        self.assertEqual((await changed[0])["outcome"], "needs_eligibility")
+        self.assertTrue(answer.startswith("stale:"))
+        self.assertEqual(
+            (await owner.add(registration(insuranceMemberId="test-member")))["outcome"],
+            "needs_insurance",
+        )
+        self.assertEqual(self.writes, [])
+
     async def test_unavailable_preserves_existing_policy(self):
         owner = self.setup_owner(dict(status="unavailable", plans=[]))
         await owner.check("Aetna", "medical")
