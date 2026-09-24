@@ -3,7 +3,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from livekit.plugins.openai.realtime import GPTLiveModel
+from abita_s2s.runtime.observability import ObservedGPTLiveModel as GPTLiveModel
 
 from abita_s2s.config import Config
 from abita_s2s.prompt import load_prompt
@@ -13,9 +13,10 @@ SPEAKER_MODEL = "gpt-live-1"
 THINKER_MODEL = "gpt-6-luna"
 
 
-def create_model(config: Config) -> GPTLiveModel:
+def create_model(config: Config, *, call_id: str = "") -> GPTLiveModel:
     now = datetime.now(ZoneInfo("America/New_York"))
     return GPTLiveModel(
+        call_id=call_id,
         api_key=config.openai_api_key,
         model=SPEAKER_MODEL,
         voice=config.voice,
