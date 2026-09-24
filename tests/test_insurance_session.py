@@ -214,6 +214,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
         tools = ToolContext(agent.tools).function_tools
         for tool in [
             tools["check_insurance"],
+            tools["check_new_patient_eligibility"],
             tools["add_patient"],
             tools["update_insurance"],
             tools["resolve_patient"],

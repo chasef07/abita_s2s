@@ -9,6 +9,7 @@ import httpx
 from test_patient_resolution import CONFIG, call_state, receipt, search
 
 from insurance_fixtures import decision, check_response
+from abita_s2s.eligibility_contract import EligibilityInput
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration, Registration, normalize
 from abita_s2s.insurance_state import (
@@ -78,12 +79,16 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotEqual(normalize("NHP HMO Only"), normalize("NHP HMO Access"))
 
-    def owner(self, responses):
+    def owner(self, responses, *, insurance_response=None):
         self.requests = []
 
         async def handler(request):
             if request.url.path == "/api/insurance/decision":
-                return check_response(request)
+                return (
+                    insurance_response(request)
+                    if insurance_response
+                    else check_response(request)
+                )
             self.requests.append((request.url.path, json.loads(request.content)))
             result = responses.pop(0)
             if callable(result):
@@ -109,6 +114,103 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         await resolver.resolve("Jane", "01/02/1980")
         self.assertEqual((await owner.check(plan, coverage))["outcome"], "accepted")
         return state, resolver, owner
+
+    async def test_payer_name_correction_requires_corrected_confirmed_registration(
+        self,
+    ):
+        correction = {
+            "status": "active",
+            "officeId": "spring_hill",
+            "checkedAt": "2026-09-23T12:00:00Z",
+            "identity": {
+                "status": "matched_with_name_correction",
+                "reviewRequired": False,
+            },
+            "matchedPatient": {
+                "firstName": "Jane",
+                "lastName": "Doe",
+                "dateOfBirth": "19800102",
+                "memberId": "member-example",
+            },
+        }
+        state, _, owner = self.owner([correction, created()])
+        await owner.check("Aetna", "medical")
+        await owner.eligibility(
+            EligibilityInput(
+                firstName="Ane",
+                lastName="Doe Jr.",
+                dob="01/02/1980",
+                plan="Aetna",
+                memberId="member-example",
+            )
+        )
+        old = registration(
+            firstName="Ane", lastName="Doe Jr.", subscriberName="Ane Doe Jr."
+        )
+        self.assertEqual((await owner.add(old))["outcome"], "needs_name_confirmation")
+        self.assertEqual(
+            (await owner.add(registration(subscriberName="Ane Doe Jr.")))["outcome"],
+            "needs_name_confirmation",
+        )
+        self.assertEqual(
+            (await owner.add(registration(readBack=None)))["outcome"],
+            "needs_read_back",
+        )
+        self.assertEqual(len(self.requests), 1)
+        self.assertEqual((await owner.add(registration()))["outcome"], "created")
+        self.assertEqual(self.requests[-1][1]["firstName"], "Jane")
+        self.assertEqual(self.requests[-1][1]["lastName"], "Doe")
+        self.assertEqual(self.requests[-1][1]["subscriberName"], "Jane Doe")
+
+    async def test_reselected_alias_check_still_requires_name_confirmation(self):
+        correction = {
+            "status": "active",
+            "officeId": "spring_hill",
+            "checkedAt": "2026-09-23T12:00:00Z",
+            "identity": {
+                "status": "matched_with_name_correction",
+                "reviewRequired": False,
+            },
+            "matchedPatient": {
+                "firstName": "Jane",
+                "lastName": "Doe",
+                "dateOfBirth": "19800102",
+                "memberId": "member-example",
+            },
+        }
+        state, _, owner = self.owner(
+            [correction, correction],
+            insurance_response=lambda request: httpx.Response(
+                200, json=decision("Aetna Commercial")
+            ),
+        )
+        await owner.check("Aetna Commercial HMO And PPO", "medical")
+        intake = EligibilityInput(
+            firstName="Ane",
+            lastName="Doe",
+            dob="01/02/1980",
+            plan="Aetna Commercial HMO And PPO",
+            memberId="member-example",
+        )
+        await owner.eligibility(intake)
+        await owner.eligibility(
+            intake.model_copy(update={"firstName": "Other", "memberId": "other"})
+        )
+        self.assertIn("name_correction:", await owner.eligibility(intake))
+        await owner.check("Aetna Commercial", "medical")
+        self.assertEqual(len(self.requests), 2)
+        self.assertEqual(
+            (await owner.add(registration(firstName="Ane", subscriberName="Ane Doe")))[
+                "outcome"
+            ],
+            "needs_name_confirmation",
+        )
+        await owner.check("Different Plan", "medical")
+        self.assertIsNone(
+            owner._eligibility_name_blocker(
+                registration(firstName="Ane"), state.insurance.accepted
+            )
+        )
 
     async def test_full_creation_validates_identity_and_caches_duplicate(self):
         state, _, owner = await self.prepared([created()])

@@ -47,6 +47,7 @@ class AbitaAgent(Agent):
             [
                 patients.add_patient,
                 coverage.check_insurance,
+                coverage.check_new_patient_eligibility,
                 patients.resolve_patient,
                 office_knowledge.search_office_knowledge,
                 coverage.update_insurance,

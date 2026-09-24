@@ -13,6 +13,9 @@ from livekit.agents.voice.events import CloseEvent, CloseReason
 from livekit.agents.voice.report import SessionReport
 from test_patient_resolution import CONFIG, call_state
 
+from abita_s2s.eligibility_contract import EligibilityCheck, EligibilityInput
+from abita_s2s.insurance import InsuranceRegistration
+from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
 from abita_s2s.config import load_config
 from abita_s2s.runtime.reporting import CallReporter, ReportingError
 from abita_s2s.staff_tasks import StaffTasks
@@ -38,7 +41,7 @@ OUTCOME = {
 
 
 class ReportingTests(unittest.IsolatedAsyncioTestCase):
-    def reporter(self, handler=None, drain=None, evaluate=None):
+    def reporter(self, handler=None, drain=None, evaluate=None, insurance=None):
         self.requests = []
         if evaluate is not None:
             evaluator = patch(
@@ -65,7 +68,113 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                 product_secret="offline-secret",
             ),
             drain or AsyncMock(),
+            insurance=insurance,
         )
+
+    async def test_full_eligibility_evidence_reaches_product_after_drain(self):
+        state = call_state()
+        received = []
+        provider = {
+            "benefitsInformation": [
+                {"code": "B", "benefitAmount": "35", "serviceTypeCodes": ["98"]},
+                {"code": "C", "benefitAmount": "1500", "timeQualifierCode": "29"},
+                {"code": "A", "benefitPercent": "0.2", "coverageLevelCode": "FAM"},
+            ],
+            "futureField": {"sequence": 9007199254740993, "values": [None, True]},
+        }
+        release = asyncio.Event()
+
+        async def receive(request):
+            if request.url.path == "/api/eligibility/check":
+                await release.wait()
+                return httpx.Response(
+                    200,
+                    json={
+                        "status": "review",
+                        "officeId": "spring_hill",
+                        "checkedAt": "2026-09-23T12:00:00Z",
+                        "reviewReason": "identity_uncertain",
+                        "providerResponse": provider,
+                        "providerHttpStatus": 200,
+                        "futureMiddlewareField": {"kept": True},
+                    },
+                )
+            received.append(json.loads(request.content))
+            return httpx.Response(201, json=ACK)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(receive))
+        self.addAsyncCleanup(client.aclose)
+        resolver = PatientResolver(state, PatientMiddleware(client, CONFIG))
+        self.addAsyncCleanup(resolver.aclose)
+        owner = InsuranceRegistration(
+            state, resolver, RegistrationMiddleware(client, CONFIG)
+        )
+        self.addAsyncCleanup(owner.aclose)
+        reporter = CallReporter(
+            state.call,
+            client,
+            replace(
+                CONFIG,
+                interaction_url="https://product.test/v1/ai/interactions",
+                product_secret="offline-secret",
+            ),
+            owner.aclose,
+            insurance=state.insurance,
+        )
+        reporter.started = True
+        for first, member in [
+            ("Jane", "original"),
+            ("Jane", "corrected"),
+            ("John", "other"),
+        ]:
+            owner._start_eligibility(
+                EligibilityInput(
+                    firstName=first,
+                    lastName="Sample",
+                    dob="01/02/1980",
+                    plan="Aetna",
+                    memberId=member,
+                )
+            )
+        finishing = asyncio.create_task(reporter.finish(lambda: REPORT))
+        await asyncio.sleep(0)
+        self.assertFalse(finishing.done())
+        release.set()
+        await finishing
+        checks = received[-1]["closeoutPayload"]["eligibilityChecks"]
+        self.assertEqual(
+            [c["request"]["memberId"] for c in checks],
+            ["original", "corrected", "other"],
+        )
+        for check in checks:
+            self.assertEqual(check["result"]["providerResponse"], provider)
+            self.assertEqual(check["result"]["futureMiddlewareField"], {"kept": True})
+            self.assertEqual(check["status"], "complete")
+            self.assertEqual(check["result"]["status"], "review")
+        self.assertNotIn("eligibilityChecks", received[0].get("closeoutPayload", {}))
+
+    async def test_unavailable_eligibility_is_preserved_without_a_transcript(self):
+        state = call_state()
+        state.insurance.eligibility_checks.append(
+            EligibilityCheck(
+                office="spring-hill",
+                request=EligibilityInput(
+                    firstName="Jane",
+                    lastName="Sample",
+                    dob="01/02/1980",
+                    plan="Aetna",
+                    memberId="synthetic",
+                ),
+                status="unavailable",
+                failure_reason="request_failed",
+            )
+        )
+        reporter = self.reporter(insurance=state.insurance)
+        await reporter.finish()
+        check = self.requests[-1]["closeoutPayload"]["eligibilityChecks"][0]
+        self.assertEqual(check["status"], "unavailable")
+        self.assertEqual(check["failureReason"], "request_failed")
+        self.assertIsNone(check["result"])
 
     async def test_native_report_and_ordered_private_outcomes_survive_cancellation(
         self,

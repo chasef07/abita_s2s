@@ -6,9 +6,11 @@ from typing import Literal
 import httpx
 
 from abita_s2s.config import Config
+from abita_s2s.eligibility_contract import EligibilityInput, EligibilityResult
 from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.integrations.patient_middleware import Record, Text
 from abita_s2s.offices import get_office_profile
+from abita_s2s.name_matcher import parse_dob
 
 
 class CreationReceipt(Record):
@@ -34,11 +36,66 @@ class WriteFailure(Record):
 
 class RegistrationMiddleware:
     def __init__(
-        self, client: httpx.AsyncClient, config: Config, *, deadline: float = 20
+        self,
+        client: httpx.AsyncClient,
+        config: Config,
+        *,
+        deadline: float = 20,
+        eligibility_deadline: float = 30,
     ):
         self._client = client
         self._config = config
         self._deadline = deadline
+        # Middleware allows Stedi 25 seconds; leave time for transport and decoding.
+        self._eligibility_deadline = eligibility_deadline
+
+    async def eligibility(
+        self, office: str, details: EligibilityInput
+    ) -> EligibilityResult | None:
+        if not self._config.middleware_url or not self._config.middleware_token:
+            return None
+        try:
+            async with asyncio.timeout(self._eligibility_deadline):
+                response = await self._client.post(
+                    self._config.middleware_url.rstrip("/") + "/api/eligibility/check",
+                    headers={"Authorization": self._config.middleware_token},
+                    json={
+                        **details.model_dump(),
+                        "office": get_office_profile(office).trunk_numbers[0],
+                    },
+                    timeout=self._eligibility_deadline,
+                    follow_redirects=False,
+                )
+                response.raise_for_status()
+                result = EligibilityResult.model_validate(response.json())
+                if result.officeId.replace("_", "-") != office:
+                    return None
+                if result.status in ("active", "inactive") and (
+                    result.identity is None
+                    or result.identity.reviewRequired
+                    or result.identity.status
+                    not in ("exact_name_dob", "matched_with_name_correction")
+                ):
+                    return None
+                if (
+                    result.identity
+                    and result.identity.status == "matched_with_name_correction"
+                ):
+                    matched = result.matchedPatient
+                    requested_dob = parse_dob(details.dob)
+                    if (
+                        result.identity.reviewRequired
+                        or matched is None
+                        or requested_dob is None
+                        or requested_dob.strftime("%Y%m%d") != matched.dateOfBirth
+                        or not matched.memberId
+                        or "".join(details.memberId.split()).upper()
+                        != "".join(matched.memberId.split()).upper()
+                    ):
+                        return None
+                return result
+        except (httpx.HTTPError, TimeoutError, ValueError):
+            return None
 
     async def check(
         self, office: str, plan: str, coverage: str, dob: str = ""
