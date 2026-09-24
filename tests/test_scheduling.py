@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
-from livekit.agents import AgentSession, llm
+from livekit.agents import AgentSession, ToolError, llm
 from livekit.agents.llm.tool_context import ToolContext
 from livekit.agents.llm.utils import build_strict_openai_schema
 from test_patient_resolution import CONFIG, call_state, receipt
@@ -108,6 +108,18 @@ def verified(state, patient_id="chart-jane", visit="medical", **extra):
     )
 
 
+def speech_context(state):
+    speech = SimpleNamespace(
+        wait_for_playout=AsyncMock(), interrupted=False, exception=lambda: None
+    )
+    return SimpleNamespace(
+        userdata=state,
+        function_call=SimpleNamespace(call_id="native-call-id"),
+        wait_for_playout=AsyncMock(),
+        session=SimpleNamespace(generate_reply=Mock(return_value=speech)),
+    )
+
+
 class SchedulingTests(unittest.IsolatedAsyncioTestCase):
     def owner(self, responses, *, state=None):
         state = state or call_state(None)
@@ -133,10 +145,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def tool(self, owner, name, **args):
         output = await getattr(SchedulingTools(owner), name)(
-            SimpleNamespace(
-                userdata=owner.state,
-                function_call=SimpleNamespace(call_id="native-call-id"),
-            ),
+            speech_context(owner.state),
             **args,
         )
         return output
@@ -1954,6 +1963,73 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(owner.appointments(), [])
         self.assertEqual(owner.state.patient.active.appointments, [])
 
+    async def test_appointment_announcements_precede_writes(self):
+        for move in (False, True):
+            with self.subTest(reschedule=move):
+                owner, requests = self.owner(
+                    [inventory(), rescheduled() if move else booking()]
+                )
+                verified(
+                    owner.state,
+                    appointmentsStatus="found",
+                    appointments=[appointment()],
+                )
+                ref = await self.slots(owner)
+                context = speech_context(owner.state)
+                speech = context.session.generate_reply.return_value
+
+                async def playout():
+                    self.assertEqual(len(requests), 1)  # Availability only.
+
+                speech.wait_for_playout.side_effect = playout
+                args = dict(
+                    appointmentSlotRef=ref,
+                    appointmentReason="Eye exam",
+                    referringDoctor="none",
+                    readBack=True,
+                )
+                if move:
+                    args["oldAppointmentRef"] = owner.appointments()[0][
+                        "appointmentRef"
+                    ]
+                action = "reschedule" if move else "book"
+                result = await getattr(SchedulingTools(owner), action + "_appointment")(
+                    context, **args
+                )
+                self.assertTrue(result.startswith("success:"), result)
+                self.assertEqual(len(requests), 2)
+                context.session.generate_reply.assert_called_once_with(
+                    instructions=f"Say only: One moment while I {action} your appointment. Use the caller's language.",
+                    tool_choice="none",
+                )
+                speech.wait_for_playout.assert_awaited_once()
+
+    async def test_announcement_failure_or_closed_call_prevents_write(self):
+        for failure in ("interrupted", "exception", "timeout", "closed"):
+            with self.subTest(failure=failure):
+                owner, requests = self.owner([inventory()])
+                ref = await self.slots(owner)
+                context = speech_context(owner.state)
+                speech = context.session.generate_reply.return_value
+                speech.interrupted = failure == "interrupted"
+                speech.exception = lambda: (
+                    RuntimeError() if failure == "exception" else None
+                )
+                if failure == "timeout":
+                    speech.wait_for_playout.side_effect = TimeoutError()
+                elif failure == "closed":
+                    speech.wait_for_playout.side_effect = owner.close_admission
+                operation = SchedulingTools(owner).book_appointment(
+                    context, ref, "Eye exam", "none", True
+                )
+                if failure == "closed":
+                    self.assertTrue((await operation).startswith("blocked:"))
+                else:
+                    with self.assertRaises((ToolError, TimeoutError)):
+                        await operation
+                self.assertEqual(len(requests), 1)
+                self.assertFalse(owner._receipts)
+
     def test_schema_has_no_patient_ids_or_tokens(self):
         owner, _ = self.owner([])
         for tool in SchedulingTools(owner).tools:
@@ -1977,13 +2053,23 @@ class SchedulingModel(llm.LLM):
 
     def chat(self, *, chat_ctx, tools=None, conn_options, **kwargs):
         self.requests.append(chat_ctx.copy())
-        return SchedulingStream(
+        stream = SchedulingStream(
             self, chat_ctx=chat_ctx, tools=tools or [], conn_options=conn_options
         )
+        stream.speech_only = kwargs.get("tool_choice") == "none"
+        return stream
 
 
 class SchedulingStream(llm.LLMStream):
     async def _run(self):
+        if self.speech_only:
+            self._event_ch.send_nowait(
+                llm.ChatChunk(
+                    id="offline-announcement",
+                    delta=llm.ChoiceDelta(role="assistant", content="One moment."),
+                )
+            )
+            return
         items = self._chat_ctx.items
         last_user = max(
             i
