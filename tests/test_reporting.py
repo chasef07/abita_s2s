@@ -299,6 +299,43 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([p["kind"] for p in self.requests], ["START", "CLOSEOUT"])
         self.assertEqual(self.requests[-1]["closeoutPayload"]["evaluation"], evidence)
 
+    async def test_partial_judge_results_reach_product_closeout(self):
+        history = llm.ChatContext()
+        history.items.append(llm.AgentConfigUpdate(instructions="Manage appointments."))
+        history.add_message(role="user", content="Please help with an appointment.")
+        report = {**REPORT, "chat_history": history.to_dict()}
+        reporter = self.reporter()
+        reporter.started = True
+
+        def respond(request):
+            questions = json.loads(request.content)["questions"]
+            name, question = next(iter(questions.items()))
+            if name == "office_rules_grounded":
+                return httpx.Response(400, json={"error": "private body"})
+            answer = (
+                {"type": "noul", "noul": 0.8}
+                if question["type"] == "noul"
+                else {"type": "score", "score": 2, "probabilities": {"2": 1}}
+            )
+            return httpx.Response(200, json={"answers": {name: answer}})
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        with (
+            patch.dict("os.environ", {"AI_GATEWAY_API_KEY": "offline"}),
+            patch("abita_s2s.observability.jev.httpx.AsyncClient", return_value=client),
+            self.assertLogs("abita_s2s.observability.jev", "ERROR"),
+        ):
+            await reporter.finish(lambda: report)
+        closeout = self.requests[-1]
+        self.assertEqual(closeout["status"], "COMPLETED")
+        evaluation = closeout["closeoutPayload"]["evaluation"]
+        self.assertEqual(evaluation["status"], "incomplete")
+        self.assertEqual(len(evaluation["results"]), 5)
+        self.assertEqual(
+            evaluation["errors"]["office_rules_grounded"]["httpStatus"], 400
+        )
+        self.assertNotIn("private body", json.dumps(closeout))
+
     async def test_evaluation_timeout_or_error_still_delivers_completed_call(self):
         history = llm.ChatContext()
         history.items.append(llm.AgentConfigUpdate(instructions="Manage appointments."))
