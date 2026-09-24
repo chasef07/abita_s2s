@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/chasef07/abita_s2s/compare/v0.9.0...v0.9.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* prompt continued intake and evaluate conversational stalls ([#78](https://github.com/chasef07/abita_s2s/issues/78)) ([42075ea](https://github.com/chasef07/abita_s2s/commit/42075ea0aaf58d45660925190556f2caf489974f))
+
 ## [0.9.0](https://github.com/chasef07/abita_s2s/compare/v0.8.0...v0.9.0) (2026-09-24)
 
 
