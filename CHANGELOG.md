@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.0](https://github.com/chasef07/abita_s2s/compare/v0.8.0...v0.9.0) (2026-09-24)
+
+
+### Features
+
+* add Jev scorecard and preserve partial evaluations ([#74](https://github.com/chasef07/abita_s2s/issues/74)) ([7b84dd1](https://github.com/chasef07/abita_s2s/commit/7b84dd15b17f399a461bff349e67f78b6e2abf67))
+* **observability:** trace GPT-Live and export to Google Cloud ([#76](https://github.com/chasef07/abita_s2s/issues/76)) ([635ff55](https://github.com/chasef07/abita_s2s/commit/635ff559f604d43b947740fe27f642cff8a1adcf))
+
 ## [0.8.0](https://github.com/chasef07/abita_s2s/compare/v0.7.1...v0.8.0) (2026-09-24)
 
 
