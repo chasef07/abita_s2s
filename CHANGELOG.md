@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/chasef07/abita_s2s/compare/v0.7.1...v0.8.0) (2026-09-24)
+
+
+### Features
+
+* **eligibility:** retain physician checks and link appointment evidence ([#72](https://github.com/chasef07/abita_s2s/issues/72)) ([2e84c0f](https://github.com/chasef07/abita_s2s/commit/2e84c0fd5f4eb159d1778ad1067e8428e49f36be))
+
 ## [0.7.1](https://github.com/chasef07/abita_s2s/compare/v0.7.0...v0.7.1) (2026-09-23)
 
 
