@@ -120,7 +120,7 @@ class GoogleCloudTracingTests(unittest.TestCase):
                     http_session.headers["Authorization"], "Bearer private-token"
                 )
                 self.assertEqual(
-                    post.call_args.kwargs["url"], ENV["GOOGLE_CLOUD_TRACE_ENDPOINT"]
+                    post.call_args.args[1], ENV["GOOGLE_CLOUD_TRACE_ENDPOINT"]
                 )
                 payload = ExportTraceServiceRequest.FromString(
                     post.call_args.kwargs["data"]
