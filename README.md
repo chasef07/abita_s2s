@@ -46,8 +46,8 @@ After accepted writes drain, calls with caller messages are evaluated by
 `typesafe-ai/jev` through Vercel AI Gateway using `AI_GATEWAY_API_KEY`.
 [jev.py](src/abita_s2s/observability/jev.py) uses the
 [TypeSafe-compatible API](https://vercel.com/docs/ai-gateway/sdks-and-apis/typesafe)
-at `POST /typesafe/v1/systemone`. Evaluator version `typesafe-scorecard-v1`
-replaces the previous outcome/clarity/reaction groups with five `noul` checks:
+at `POST /typesafe/v1/systemone`. Evaluator version `typesafe-scorecard-v2`
+includes six `noul` checks:
 
 - `request_understood`: understood the caller's request and corrections.
 - `appointment_datetime_correct`: tool results match the final agreed date/time
@@ -58,6 +58,10 @@ replaces the previous outcome/clarity/reaction groups with five `noul` checks:
   when the claim was made, including failed or uncertain results.
 - `resolved_or_handed_off`: every request is resolved or has a supported,
   appropriate handoff, honoring requests for a person and office escalation rules.
+- `conversation_responsive`: caller attempts to regain attention or repeat unanswered
+  information indicate a stall, even if the agent later recovers. Ordinary greetings,
+  clarifications, and caller-requested pauses do not. This checks conversational
+  evidence, not measured audio silence or its technical cause.
 
 `expressed_sentiment` retains the existing five-level score from very negative to
 very positive across the whole call. No clear sentiment is neutral or mixed.
@@ -68,7 +72,7 @@ contains a `noul` value from 0 to 1. We preserve that value without inventing a
 binary threshold, applicability decision, or aggregate grade. An absent matching
 appointment result cannot establish appointment correctness.
 
-Six independent requests run concurrently under a shared 20-second deadline,
+Seven independent requests run concurrently under a shared 20-second deadline,
 with a one-second outer cleanup allowance. Each transient HTTP or transport
 failure gets at most one retry within that deadline; `Retry-After` is respected.
 Successful judges survive other judges' HTTP errors, invalid answers, or timeouts.
@@ -78,7 +82,7 @@ retains each successful raw response and usage. `errors` is keyed by failed judg
 and records only exception class, HTTP status when available, and attempt count;
 response bodies, credentials, and exception messages are not logged.
 
-`complete` means all six judges returned valid answers, not that the call passed.
+`complete` means all seven judges returned valid answers, not that the call passed.
 `incomplete` records judge errors, timeouts, or missing instructions; `skipped`
 records no caller messages or an unconfigured Gateway key. Failed judges have no
 answer rather than a fabricated pass/fail. Evaluation failure does not prevent

@@ -330,7 +330,13 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(closeout["status"], "COMPLETED")
         evaluation = closeout["closeoutPayload"]["evaluation"]
         self.assertEqual(evaluation["status"], "incomplete")
-        self.assertEqual(len(evaluation["results"]), 5)
+        self.assertEqual(len(evaluation["results"]), 6)
+        self.assertEqual(
+            evaluation["results"]["conversation_responsive"]["answers"][
+                "conversation_responsive"
+            ],
+            {"type": "noul", "noul": 0.8},
+        )
         self.assertEqual(
             evaluation["errors"]["office_rules_grounded"]["httpStatus"], 400
         )
