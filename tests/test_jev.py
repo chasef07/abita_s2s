@@ -79,13 +79,16 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             result = await evaluate_call({"chat_history": history.to_dict()})
         return requests, result
 
-    async def test_six_judges_receive_full_history_and_return_decisions(self):
+    async def test_seven_judges_receive_full_history_and_return_decisions(self):
         requests, result = await self.run_evaluation(
-            values={"appointment_datetime_correct": 0.1}
+            values={
+                "appointment_datetime_correct": 0.1,
+                "conversation_responsive": 0.05,
+            }
         )
-        self.assertEqual(len(requests), 6)
+        self.assertEqual(len(requests), 7)
         self.assertEqual(result["status"], "complete")
-        self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v1")
+        self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v2")
         self.assertEqual(
             set(result["results"]),
             {
@@ -94,6 +97,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 "office_rules_grounded",
                 "results_reported_truthfully",
                 "resolved_or_handed_off",
+                "conversation_responsive",
                 "expressed_sentiment",
             },
         )
@@ -101,6 +105,12 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             "appointment_datetime_correct"
         ]
         self.assertEqual(answer, {"type": "noul", "noul": 0.1})
+        self.assertEqual(
+            result["results"]["conversation_responsive"]["answers"][
+                "conversation_responsive"
+            ],
+            {"type": "noul", "noul": 0.05},
+        )
         for request in requests:
             self.assertEqual(
                 request["state"]["conversation"], requests[0]["state"]["conversation"]
@@ -122,9 +132,9 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertLogs("abita_s2s.observability.jev", "ERROR") as logs:
             requests, result = await self.run_evaluation(behavior)
-        self.assertEqual(len(requests), 6)
+        self.assertEqual(len(requests), 7)
         self.assertEqual(result["status"], "incomplete")
-        self.assertEqual(len(result["results"]), 5)
+        self.assertEqual(len(result["results"]), 6)
         self.assertNotIn("office_rules_grounded", result["results"])
         self.assertEqual(
             result["errors"]["office_rules_grounded"],
@@ -139,7 +149,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 return httpx.Response(503)
 
         requests, result = await self.run_evaluation(behavior)
-        self.assertEqual(len(requests), 7)
+        self.assertEqual(len(requests), 8)
         self.assertEqual(result["status"], "complete")
         self.assertFalse(result["errors"])
 
@@ -151,7 +161,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         with self.assertLogs("abita_s2s.observability.jev", "ERROR"):
             _, result = await self.run_evaluation(behavior)
         self.assertEqual(result["status"], "incomplete")
-        self.assertEqual(len(result["results"]), 5)
+        self.assertEqual(len(result["results"]), 6)
         self.assertEqual(
             result["errors"]["expressed_sentiment"]["cause"], "TimeoutError"
         )
@@ -176,7 +186,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLogs("abita_s2s.observability.jev", "ERROR"),
             ):
                 _, result = await self.run_evaluation(behavior)
-                self.assertEqual(len(result["results"]), 5)
+                self.assertEqual(len(result["results"]), 6)
                 self.assertNotIn("request_understood", result["results"])
                 self.assertEqual(
                     result["errors"]["request_understood"]["cause"], "ValueError"
@@ -189,9 +199,9 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertLogs("abita_s2s.observability.jev", "ERROR"):
             requests, result = await self.run_evaluation(behavior)
-        self.assertEqual(len(requests), 6)
+        self.assertEqual(len(requests), 7)
         self.assertEqual(result["errors"]["request_understood"]["httpStatus"], 429)
-        self.assertEqual(len(result["results"]), 5)
+        self.assertEqual(len(result["results"]), 6)
 
     async def test_exhausted_http_and_transport_retries_remain_visible(self):
         for transport_failure in (False, True):
@@ -209,8 +219,8 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLogs("abita_s2s.observability.jev", "ERROR") as logs,
             ):
                 requests, result = await self.run_evaluation(behavior)
-            self.assertEqual(len(requests), 7)
-            self.assertEqual(len(result["results"]), 5)
+            self.assertEqual(len(requests), 8)
+            self.assertEqual(len(result["results"]), 6)
             error = result["errors"]["request_understood"]
             self.assertEqual(error["attempts"], 2)
             self.assertEqual(
@@ -219,7 +229,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertNotIn("synthetic-secret", str(result) + str(logs.output))
 
-    async def test_invalid_sentiment_preserves_all_five_checks(self):
+    async def test_invalid_sentiment_preserves_all_six_checks(self):
         for answer in [
             {"type": "score", "score": 5, "probabilities": {"2": 1}},
             {"type": "score", "score": True, "probabilities": {"2": 1}},
@@ -236,7 +246,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLogs("abita_s2s.observability.jev", "ERROR"),
             ):
                 _, result = await self.run_evaluation(behavior)
-            self.assertEqual(len(result["results"]), 5)
+            self.assertEqual(len(result["results"]), 6)
             self.assertEqual(
                 result["errors"]["expressed_sentiment"]["cause"], "ValueError"
             )
