@@ -469,9 +469,7 @@ class Scheduling:
                     "stale",
                     "blocked: The call or patient changed before the appointment operation started.",
                 )
-            result = await operation(
-                patient, captured, call_id=context.function_call.call_id, **arguments
-            )
+            result = await operation(patient, captured, context=context, **arguments)
             return self._finish_change(result, captured)
 
         # Retain both the write and reconciliation even if the tool caller leaves.
@@ -526,8 +524,9 @@ class Scheduling:
         *,
         old_ref: str,
         confirmed: bool | None,
-        call_id: str,
+        context: RunContext[CallState],
     ) -> dict:
+        call_id = context.function_call.call_id
         old, receipt_key = self._target(p, "cancel", old_ref)
         if saved := self._receipts.get(receipt_key):
             return saved.result
@@ -596,9 +595,10 @@ class Scheduling:
         reason: str,
         referrer: str,
         confirmed: bool | None,
-        call_id: str,
+        context: RunContext[CallState],
         old: Appointment | None = None,
     ) -> dict:
+        call_id = context.function_call.call_id
         slot_ref = slot_ref.strip().upper()
         receipt_key = (
             (p.patientId, "reschedule", old.id)
@@ -689,6 +689,35 @@ class Scheduling:
                     "needs_input: Reload appointments to obtain reschedule authorization, then reconfirm the move.",
                 )
             body["rescheduleToken"] = old.rescheduleToken
+        # Both booking paths announce only after validation and receipt replay.
+        # The existing write owner prevents duplicate announcements and mutations.
+        action = "reschedule" if old else "book"
+        try:
+            async with asyncio.timeout(15):
+                await context.wait_for_playout()
+                speech = context.session.generate_reply(
+                    instructions=f"Say only: One moment while I {action} your appointment. Use the caller's language.",
+                    tool_choice="none",
+                )
+                await speech.wait_for_playout()
+            if speech.interrupted or speech.exception() is not None:
+                raise RuntimeError("Announcement did not complete")
+        except Exception:
+            return reply(
+                "unavailable",
+                "unavailable: The appointment announcement did not complete. No appointment was changed.",
+            )
+        # Speech yields control: never write against a changed patient or call.
+        if self._closed or self._context() != captured:
+            return reply(
+                "stale",
+                "blocked: The call or patient changed before the appointment operation started.",
+            )
+        if offered.expires <= self.now() or self._slots.get(slot_ref) is not offered:
+            return reply(
+                "needs_input",
+                "needs_input: Search availability again and choose a current returned slot.",
+            )
         self._invalidate()
         self._receipts[receipt_key] = MutationReceipt(
             self._write_failure(
@@ -823,7 +852,7 @@ class Scheduling:
         reason: str,
         referrer: str,
         confirmed: bool | None,
-        call_id: str,
+        context: RunContext[CallState],
     ) -> dict:
         old, receipt_key = self._target(p, "reschedule", old_ref)
         saved = self._receipts.get(receipt_key)
@@ -859,7 +888,7 @@ class Scheduling:
             reason=reason,
             referrer=referrer,
             confirmed=confirmed,
-            call_id=call_id,
+            context=context,
             old=old,
         )
 

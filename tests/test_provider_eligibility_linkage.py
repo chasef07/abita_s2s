@@ -5,6 +5,7 @@ import json
 import unittest
 from dataclasses import replace
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 from insurance_fixtures import check_response, decision
@@ -22,6 +23,18 @@ from abita_s2s.integrations.registration_middleware import RegistrationMiddlewar
 from abita_s2s.integrations.scheduling_http import SchedulingHTTP
 from abita_s2s.runtime.reporting import CallReporter
 from abita_s2s.scheduling import Scheduling
+
+
+def scheduling_context(state, call_id):
+    speech = SimpleNamespace(
+        wait_for_playout=AsyncMock(), interrupted=False, exception=lambda: None
+    )
+    return SimpleNamespace(
+        userdata=state,
+        function_call=SimpleNamespace(call_id=call_id),
+        wait_for_playout=AsyncMock(),
+        session=SimpleNamespace(generate_reply=Mock(return_value=speech)),
+    )
 
 
 def batch():
@@ -200,9 +213,7 @@ class ProviderEligibilityLinkageTests(unittest.IsolatedAsyncioTestCase):
         available = await h.scheduler.availability("medical")
         self.assertEqual(available["outcome"], "found", available)
         ref = available["slots"][0]["appointmentSlotRef"]
-        context = SimpleNamespace(
-            userdata=h.state, function_call=SimpleNamespace(call_id="synthetic-booking")
-        )
+        context = scheduling_context(h.state, "synthetic-booking")
         return await h.scheduler.book(
             context,
             slot_ref=ref,
@@ -355,10 +366,7 @@ class ProviderEligibilityLinkageTests(unittest.IsolatedAsyncioTestCase):
         old_ref = h.scheduler.appointments()[0]["appointmentRef"]
         replacement = await h.scheduler.availability("medical", start="2026-09-16")
         self.assertEqual(replacement["outcome"], "found")
-        context = SimpleNamespace(
-            userdata=h.state,
-            function_call=SimpleNamespace(call_id="synthetic-reschedule"),
-        )
+        context = scheduling_context(h.state, "synthetic-reschedule")
         result = await h.scheduler.reschedule(
             context,
             old_ref=old_ref,

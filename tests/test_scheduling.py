@@ -109,6 +109,12 @@ def verified(state, patient_id="chart-jane", visit="medical", **extra):
 
 
 class SchedulingTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.speech = SimpleNamespace(
+            wait_for_playout=AsyncMock(), interrupted=False, exception=lambda: None
+        )
+        self.generate_reply = Mock(return_value=self.speech)
+
     def owner(self, responses, *, state=None):
         state = state or call_state(None)
         state.reporter = Mock()
@@ -136,6 +142,8 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             SimpleNamespace(
                 userdata=owner.state,
                 function_call=SimpleNamespace(call_id="native-call-id"),
+                wait_for_playout=AsyncMock(),
+                session=SimpleNamespace(generate_reply=self.generate_reply),
             ),
             **args,
         )
@@ -1954,6 +1962,100 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(owner.appointments(), [])
         self.assertEqual(owner.state.patient.active.appointments, [])
 
+    async def test_booking_announces_before_write_and_replay_stays_quiet(self):
+        entered, finish = asyncio.Event(), asyncio.Event()
+
+        async def announce():
+            entered.set()
+            await finish.wait()
+
+        self.speech.wait_for_playout.side_effect = announce
+        owner, requests = self.owner([inventory(), booking()])
+        ref = await self.slots(owner)
+        pending = asyncio.create_task(self.book(owner, ref))
+        await asyncio.wait_for(entered.wait(), 1)
+        self.assertEqual(len(requests), 1)  # Only availability, no write yet.
+        duplicate = await self.book(owner, ref)
+        self.assertTrue(duplicate.startswith("blocked:"))
+        self.generate_reply.assert_called_once_with(
+            instructions="Say only: One moment while I book your appointment. Use the caller's language.",
+            tool_choice="none",
+        )
+        finish.set()
+        result = await pending
+        self.assertTrue(result.startswith("success:"), result)
+        self.assertEqual(await self.book(owner, ref), result)
+        self.assertEqual(len(requests), 2)
+        self.generate_reply.assert_called_once()
+
+    async def test_reschedule_announces_after_confirmation_and_before_write(self):
+        owner, requests = self.owner([inventory(), rescheduled()])
+        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        ref = await self.slots(owner)
+        args = dict(
+            oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
+            appointmentSlotRef=ref,
+            appointmentReason="Eye exam",
+            referringDoctor="none",
+            readBack=None,
+        )
+        result = await self.tool(owner, "reschedule_appointment", **args)
+        self.assertTrue(result.startswith("needs_input:"))
+        self.generate_reply.assert_not_called()
+
+        async def announce():
+            self.assertEqual(len(requests), 1)
+
+        self.speech.wait_for_playout.side_effect = announce
+        args["readBack"] = True
+        result = await self.tool(owner, "reschedule_appointment", **args)
+        self.assertTrue(result.startswith("success:"), result)
+        self.assertEqual(
+            await self.tool(owner, "reschedule_appointment", **args), result
+        )
+        self.generate_reply.assert_called_once_with(
+            instructions="Say only: One moment while I reschedule your appointment. Use the caller's language.",
+            tool_choice="none",
+        )
+        self.assertEqual(len(requests), 2)
+
+    async def test_announcement_failure_never_sends_a_booking(self):
+        for failure in ("interrupted", "exception", "timeout"):
+            with self.subTest(failure=failure):
+                owner, requests = self.owner([inventory()])
+                ref = await self.slots(owner)
+                self.speech.interrupted = failure == "interrupted"
+                self.speech.exception = lambda: (
+                    RuntimeError("speech failed") if failure == "exception" else None
+                )
+                self.speech.wait_for_playout.side_effect = (
+                    TimeoutError() if failure == "timeout" else None
+                )
+                result = await self.book(owner, ref)
+                self.assertTrue(result.startswith("unavailable:"), result)
+                self.assertEqual(len(requests), 1)
+                self.assertFalse(owner._receipts)
+
+    async def test_state_changes_during_announcement_prevent_booking(self):
+        for change in ("closed", "patient", "slots"):
+            with self.subTest(change=change):
+                owner, requests = self.owner([inventory()])
+                ref = await self.slots(owner)
+
+                async def announce():
+                    if change == "closed":
+                        owner.close_admission()
+                    elif change == "patient":
+                        owner.state.patient.revision += 1
+                    else:
+                        owner._invalidate()
+
+                self.speech.wait_for_playout.side_effect = announce
+                result = await self.book(owner, ref)
+                self.assertFalse(result.startswith("success:"), result)
+                self.assertEqual(len(requests), 1)
+                self.assertFalse(owner._receipts)
+
     def test_schema_has_no_patient_ids_or_tokens(self):
         owner, _ = self.owner([])
         for tool in SchedulingTools(owner).tools:
@@ -1977,13 +2079,23 @@ class SchedulingModel(llm.LLM):
 
     def chat(self, *, chat_ctx, tools=None, conn_options, **kwargs):
         self.requests.append(chat_ctx.copy())
-        return SchedulingStream(
+        stream = SchedulingStream(
             self, chat_ctx=chat_ctx, tools=tools or [], conn_options=conn_options
         )
+        stream.speech_only = kwargs.get("tool_choice") == "none"
+        return stream
 
 
 class SchedulingStream(llm.LLMStream):
     async def _run(self):
+        if self.speech_only:
+            self._event_ch.send_nowait(
+                llm.ChatChunk(
+                    id="offline-announcement",
+                    delta=llm.ChoiceDelta(role="assistant", content="One moment."),
+                )
+            )
+            return
         items = self._chat_ctx.items
         last_user = max(
             i

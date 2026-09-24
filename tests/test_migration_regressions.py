@@ -65,6 +65,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(str(requests[0].url), "http://127.0.0.1:8000/v1/handoffs")
         self.assertEqual(requests[0].headers["Authorization"], "Bearer offline")
 
+    asyncSetUp = test_scheduling.SchedulingTests.asyncSetUp
     tool = test_scheduling.SchedulingTests.tool
     book = test_scheduling.SchedulingTests.book
 
