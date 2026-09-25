@@ -76,3 +76,10 @@ def get_office_profile_by_phone(phone: str) -> OfficeProfile:
         if "+" + digits in office.trunk_numbers:
             return office
     raise ValueError("Missing or unsupported SIP trunk phone number")
+
+
+def get_product_office_key(phone: str) -> str:
+    office = get_office_profile_by_phone(phone)
+    if re.sub(r"\D", "", phone) in ("17864657479", "7864657479"):
+        return "sweetwater-optical"
+    return office.key

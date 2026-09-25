@@ -12,7 +12,7 @@ import httpx
 
 from abita_s2s.observability.jev import evaluate_call
 from abita_s2s.config import Config
-from abita_s2s.offices import get_office_profile
+from abita_s2s.offices import get_office_profile, get_product_office_key
 from abita_s2s.state import CallContext
 from abita_s2s.insurance_state import InsuranceState
 
@@ -38,9 +38,11 @@ class CallReporter:
         self._secret = config.product_secret
         self._drain = drain
         self._insurance = insurance
+        office = get_office_profile(call.called_office_key)
+        office_phone = call.called_number or office.trunk_numbers[0]
         self._base = {
-            "officeKey": call.called_office_key,
-            "officePhone": get_office_profile(call.called_office_key).trunk_numbers[0],
+            "officeKey": get_product_office_key(office_phone),
+            "officePhone": office_phone,
             "callerPhone": call.caller_phone,
             "sourceCallId": call.call_id,
             "startedAt": call.session_started_at.isoformat(),

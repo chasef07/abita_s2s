@@ -4,6 +4,7 @@ import asyncio
 import json
 import unittest
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
@@ -136,6 +137,43 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
         )
         outputs = [x for x in agent.chat_ctx.items if x.type == "function_call_output"]
         return outputs[-1].output
+
+    async def test_sweetwater_tasks_preserve_inbound_number_and_product_location(self):
+        office = get_office_profile("sweetwater")
+        for phone in office.trunk_numbers:
+            with self.subTest(phone=phone):
+                state = call_state(office)
+                state.call = replace(state.call, called_number=phone)
+                async with self.setup_session(state=state) as (
+                    session,
+                    agent,
+                    _,
+                    _,
+                    requests,
+                    _,
+                ):
+                    result = await self.invoke(session, agent)
+                    self.assertEqual(result.split(":", 1)[0], "created")
+                    self.assertEqual(len(requests), 1)
+                    self.assertEqual(
+                        requests[0]["officeKey"],
+                        "sweetwater-optical"
+                        if phone == "+17864657479"
+                        else "sweetwater",
+                    )
+                    self.assertEqual(requests[0]["officePhone"], "+17864657475")
+                    if phone == "+17864657475":
+                        self.assertNotIn("inboundOfficePhone", requests[0])
+                    else:
+                        self.assertEqual(requests[0]["inboundOfficePhone"], phone)
+
+    async def test_sweetwater_rejects_another_offices_inbound_number(self):
+        state = call_state(get_office_profile("sweetwater"))
+        state.call = replace(state.call, called_number="+19542872010")
+        async with self.setup_session(state=state) as (_, _, _, owner, requests, _):
+            with self.assertRaisesRegex(ValueError, "Inbound office does not match"):
+                owner._payload(**NEED)
+            self.assertEqual(requests, [])
 
     async def test_distinct_needs_duplicates_and_changed_details(self):
         async with self.setup_session() as (session, agent, state, owner, requests, _):

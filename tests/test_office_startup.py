@@ -544,7 +544,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             payloads[-1]["appointmentOutcome"]["externalPatientId"], "original-patient"
         )
-        self.assertEqual(payloads[-1]["officePhone"], "+17275919997")
+        self.assertEqual(payloads[-1]["officePhone"], "+18135484830")
 
     async def test_model_start_failure_delivers_failed_closeout_before_shutdown(self):
         payloads = []

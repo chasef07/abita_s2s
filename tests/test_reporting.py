@@ -17,6 +17,7 @@ from abita_s2s.eligibility_contract import EligibilityCheck, EligibilityInput
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
 from abita_s2s.config import load_config
+from abita_s2s.offices import get_office_profile
 from abita_s2s.runtime.reporting import CallReporter, ReportingError
 from abita_s2s.staff_tasks import StaffTasks
 from abita_s2s.identity import PatientResolver
@@ -41,7 +42,9 @@ OUTCOME = {
 
 
 class ReportingTests(unittest.IsolatedAsyncioTestCase):
-    def reporter(self, handler=None, drain=None, evaluate=None, insurance=None):
+    def reporter(
+        self, handler=None, drain=None, evaluate=None, insurance=None, call=None
+    ):
         self.requests = []
         if evaluate is not None:
             evaluator = patch(
@@ -60,7 +63,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         client = httpx.AsyncClient(transport=httpx.MockTransport(receive))
         self.addAsyncCleanup(client.aclose)
         return CallReporter(
-            call_state().call,
+            call or call_state().call,
             client,
             replace(
                 CONFIG,
@@ -70,6 +73,29 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             drain or AsyncMock(),
             insurance=insurance,
         )
+
+    async def test_sweetwater_reports_dialed_number_and_product_location(self):
+        office = get_office_profile("sweetwater")
+        for inbound in office.trunk_numbers:
+            with self.subTest(inbound=inbound):
+                call = replace(call_state(office=office).call, called_number=inbound)
+                reporter = self.reporter(call=call, evaluate=AsyncMock(return_value={}))
+                reporter.started = True
+                reporter.appointment(OUTCOME)
+                await reporter.finish(lambda: REPORT)
+                self.assertEqual(
+                    [request["kind"] for request in self.requests],
+                    ["START", "OUTCOME_CHECKPOINT", "CLOSEOUT"],
+                )
+                for request in self.requests:
+                    self.assertEqual(
+                        request["officeKey"],
+                        "sweetwater-optical"
+                        if inbound == "+17864657479"
+                        else "sweetwater",
+                    )
+                    self.assertEqual(request["officePhone"], inbound)
+        self.assertEqual(office.trunk_numbers[0], "+17864657475")
 
     async def test_full_eligibility_evidence_reaches_product_after_drain(self):
         state = call_state()
