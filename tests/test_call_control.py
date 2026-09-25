@@ -15,9 +15,10 @@ from test_patient_resolution import call_state, receipt
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.tools.call_control import CallControl
-from abita_s2s.config import load_config
+from abita_s2s.config import HandoffConfig, load_config
+from abita_s2s.handoff import HandoffAdmission
 from abita_s2s.integrations.patient_middleware import Receipt
-from abita_s2s.offices import SPRING_HILL
+from abita_s2s.offices import SPRING_HILL, get_office_profile
 
 
 class Model(llm.LLM):
@@ -61,6 +62,46 @@ class Stream(llm.LLMStream):
 
 
 class CallControlTests(unittest.IsolatedAsyncioTestCase):
+    async def test_sweetwater_handoff_locations_match_dialed_number(self):
+        office = get_office_profile("sweetwater")
+        for phone in office.trunk_numbers:
+            with self.subTest(phone=phone):
+                requests = []
+
+                def receive(request):
+                    requests.append(json.loads(request.content))
+                    return httpx.Response(
+                        200,
+                        json={
+                            "id": "00000000-0000-4000-8000-000000000001",
+                            "expiresAt": (
+                                datetime.now(UTC) + timedelta(seconds=60)
+                            ).isoformat(),
+                            "sipDestination": "sip:acuity-handoff@product.test",
+                        },
+                    )
+
+                state = call_state(office=office)
+                state.call = replace(state.call, called_number=phone)
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(receive)
+                ) as client:
+                    admission = HandoffAdmission(
+                        state,
+                        client,
+                        HandoffConfig(
+                            "https://product.test/v1/handoffs",
+                            "offline",
+                            "00000000-0000-4000-8000-000000000001",
+                        ),
+                    )
+                    target = await admission.resolve()
+                self.assertTrue(target.admitted)
+                self.assertEqual(
+                    requests[0]["officeKey"],
+                    "sweetwater-optical" if phone == "+17864657479" else "sweetwater",
+                )
+
     async def asyncSetUp(self):
         self.state = call_state(None)
         self.state.call = replace(
@@ -318,7 +359,11 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.control.status, "ambiguous")
 
     async def test_product_partial_write_conflict_and_stable_identity(self):
-        self.state.call = replace(self.state.call, called_office_key="spring-hill")
+        self.state.call = replace(
+            self.state.call,
+            called_office_key="spring-hill",
+            called_number=SPRING_HILL.trunk_numbers[0],
+        )
         requests = []
 
         def handler(request):

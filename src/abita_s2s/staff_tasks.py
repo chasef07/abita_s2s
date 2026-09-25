@@ -11,7 +11,7 @@ import httpx
 
 from abita_s2s.config import Config
 from abita_s2s.identity import PatientResolver
-from abita_s2s.offices import get_office_profile
+from abita_s2s.offices import get_office_profile, get_product_office_key
 from abita_s2s.state import CallState
 
 Category = Literal[
@@ -181,7 +181,6 @@ class StaffTasks:
             "callerPhone": phone,
             "category": category,
             "message": message,
-            "officeKey": office.key,
             "officePhone": office.trunk_numbers[0],
             "source": "agent",
             "summary": summary,
@@ -196,6 +195,9 @@ class StaffTasks:
                     "Inbound office does not match this office. No request was sent."
                 )
             payload["inboundOfficePhone"] = inbound
+        payload["officeKey"] = get_product_office_key(
+            inbound or office.trunk_numbers[0]
+        )
         return payload
 
     async def _deliver(

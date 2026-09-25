@@ -9,7 +9,7 @@ from uuid import UUID
 import httpx
 
 from abita_s2s.config import HandoffConfig
-from abita_s2s.offices import get_office_profile
+from abita_s2s.offices import get_office_profile, get_product_office_key
 from abita_s2s.state import CallState
 
 
@@ -58,7 +58,9 @@ class HandoffAdmission:
             if product:
                 identity = {
                     "practiceId": practice,
-                    "officeKey": office.key,
+                    "officeKey": get_product_office_key(
+                        call.called_number or office.trunk_numbers[0]
+                    ),
                     "sourceCallId": call.call_id,
                 }
                 contact = {
