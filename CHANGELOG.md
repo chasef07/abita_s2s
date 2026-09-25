@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.3](https://github.com/chasef07/abita_s2s/compare/v0.9.2...v0.9.3) (2026-09-25)
+
+
+### Bug Fixes
+
+* preserve Product call numbers and Sweetwater Optical routing ([#82](https://github.com/chasef07/abita_s2s/issues/82)) ([2ac5b84](https://github.com/chasef07/abita_s2s/commit/2ac5b845f7c80f15d4e768909f33cd1075063fef))
+
 ## [0.9.2](https://github.com/chasef07/abita_s2s/compare/v0.9.1...v0.9.2) (2026-09-24)
 
 

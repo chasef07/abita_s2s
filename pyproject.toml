@@ -1,6 +1,6 @@
 [project]
 name = "abita-s2s"
-version = "0.9.2"
+version = "0.9.3"
 description = "Abita voice agent using LiveKit Python and OpenAI GPT-Live"
 readme = "README.md"
 authors = [
