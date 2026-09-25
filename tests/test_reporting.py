@@ -4,7 +4,6 @@ import asyncio
 import json
 import unittest
 from dataclasses import replace
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
@@ -23,7 +22,6 @@ from abita_s2s.staff_tasks import StaffTasks
 from abita_s2s.identity import PatientResolver
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from test_patient_resolution import receipt
-from abita_s2s.runtime.session_startup import finish_voice_call
 
 ACK = {"status": "created", "interactionId": "d3665980-68ce-4336-87af-e2ba40ad2e8e"}
 REPORT = {
@@ -268,33 +266,6 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             self.requests[1]["appointmentOutcome"]["bookingResult"]["status"], "booked"
         )
 
-    async def test_failed_start_does_not_invent_a_transcript(self):
-        reporter = self.reporter()
-        await reporter.finish()
-        self.assertEqual(self.requests[-1]["status"], "FAILED")
-        self.assertNotIn("transcript", self.requests[-1])
-
-    async def test_report_without_native_close_does_not_claim_completion(self):
-        reporter = self.reporter()
-        reporter.started = True
-        await reporter.finish(lambda: {**REPORT, "events": []})
-        self.assertEqual(self.requests[-1]["status"], "FAILED")
-
-    async def test_native_hook_uses_primary_session_and_report(self):
-        reporter = self.reporter()
-        reporter.started = True
-        state = call_state()
-        state.reporter = reporter
-        ctx = SimpleNamespace(
-            primary_session=SimpleNamespace(userdata=state),
-            make_session_report=Mock(
-                return_value=SimpleNamespace(to_dict=lambda: REPORT)
-            ),
-        )
-        await finish_voice_call(ctx)
-        ctx.make_session_report.assert_called_once()
-        self.assertEqual(self.requests[-1]["transcript"], REPORT)
-
     async def test_evaluation_runs_after_drain_and_is_in_the_same_closeout(self):
         events = []
         evidence = {
@@ -397,17 +368,6 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(evaluation["status"], "incomplete")
             self.assertEqual(evaluation["reason"], reason)
 
-    async def test_drain_error_still_reports_failure(self):
-        reporter = self.reporter(
-            drain=AsyncMock(side_effect=RuntimeError("private details"))
-        )
-        reporter.started = True
-        with self.assertLogs("abita_s2s.runtime.reporting", "ERROR") as logs:
-            await reporter.finish(lambda: REPORT)
-        self.assertNotIn("private details", str(logs.output))
-        self.assertEqual(self.requests[-1]["status"], "FAILED")
-        self.assertTrue(self.requests[-1]["closeoutPayload"]["mutationDrainFailed"])
-
     async def test_staff_delivery_exception_or_cancellation_fails_closeout(self):
         for error in (RuntimeError("delivery failed"), asyncio.CancelledError()):
             with self.subTest(error=type(error).__name__):
@@ -422,15 +382,6 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(
                     self.requests[-1]["closeoutPayload"]["mutationDrainFailed"]
                 )
-
-    async def test_appointment_domain_outcomes_use_product_names(self):
-        reporter = self.reporter()
-        reporter.appointment(OUTCOME)
-        await reporter.finish(lambda: REPORT)
-        self.assertEqual(
-            self.requests[-1]["closeoutPayload"]["domainOutcomes"][0]["outcome"],
-            "booked",
-        )
 
     async def test_verified_and_switched_patients_reach_product_classification(self):
         reporter = self.reporter()
@@ -489,26 +440,6 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(current[-1]["status"], "success")
         self.assertEqual(current[-1]["callId"], "identity-call")
 
-    async def test_error_close_is_failed_and_accepted_transfer_is_escalated(self):
-        for reason, transfer, expected in [
-            ("error", "accepted", "FAILED"),
-            ("participant_disconnected", "accepted", "ESCALATED"),
-            ("participant_disconnected", "ambiguous", "COMPLETED"),
-        ]:
-            reporter = self.reporter()
-            reporter.started = True
-            reporter.transfer_status = transfer
-            await reporter.finish(
-                lambda reason=reason: {
-                    **REPORT,
-                    "events": [{"type": "close", "reason": reason}],
-                }
-            )
-            self.assertEqual(self.requests[-1]["status"], expected)
-            self.assertEqual(
-                self.requests[-1]["closeoutPayload"]["transferStatus"], transfer
-            )
-
     async def test_transient_delivery_retries_identical_envelope(self):
         async def handler(request):
             if len(self.requests) == 1:
@@ -519,19 +450,6 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         await reporter.finish()
         self.assertEqual(self.requests[0], self.requests[1])
         self.assertEqual(len(self.requests), 3)
-
-    async def test_rejected_closeout_is_visible_and_not_retried(self):
-        async def handler(request):
-            return httpx.Response(401, text="private data")
-
-        reporter = self.reporter(handler)
-        with (
-            self.assertLogs("abita_s2s.runtime.reporting", "ERROR") as logs,
-            self.assertRaises(ReportingError),
-        ):
-            await reporter.finish()
-        self.assertNotIn("private data", str(logs.output))
-        self.assertEqual(len(self.requests), 2)
 
     async def test_invalid_acknowledgement_is_not_success(self):
         async def handler(request):

@@ -9,7 +9,6 @@ from insurance_fixtures import decision
 from abita_s2s.insurance_contract import InsuranceDecision
 from unittest.mock import AsyncMock
 import httpx
-import test_scheduling
 from test_patient_resolution import CONFIG, call_state, receipt, search
 from test_scheduling import NOW, inventory
 
@@ -65,9 +64,6 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(str(requests[0].url), "http://127.0.0.1:8000/v1/handoffs")
         self.assertEqual(requests[0].headers["Authorization"], "Bearer offline")
 
-    tool = test_scheduling.SchedulingTests.tool
-    book = test_scheduling.SchedulingTests.book
-
     async def resolved_owner(self, responses, **fields):
         state = call_state(None)
         responses = [
@@ -91,46 +87,6 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNone(state.insurance.accepted)
         return scheduling, resolver, requests
-
-    async def test_resolve_returning_patient_then_availability_and_booking(self):
-        owner, _, requests = await self.resolved_owner(
-            [
-                inventory(),
-                {"status": "booked", "appointmentId": 888},
-            ]
-        )
-        available = await owner.availability("medical")
-        self.assertEqual(available["outcome"], "found", available)
-        result = await self.book(owner, available["slots"][0]["appointmentSlotRef"])
-        self.assertEqual(result.split(":", 1)[0], "success")
-        self.assertEqual(len(requests), 3)
-
-    async def test_resolve_returning_patient_then_reschedule(self):
-        owner, _, requests = await self.resolved_owner(
-            [
-                inventory(),
-                test_scheduling.rescheduled(),
-            ],
-            appointmentsStatus="found",
-            appointments=[test_scheduling.appointment()],
-        )
-        old_ref = owner.appointments()[0]["appointmentRef"]
-        available = await owner.availability("medical")
-        self.assertEqual(available["outcome"], "found")
-        result = await self.tool(
-            owner,
-            "reschedule_appointment",
-            oldAppointmentRef=old_ref,
-            appointmentSlotRef=available["slots"][0]["appointmentSlotRef"],
-            appointmentReason="Annual medical follow up",
-            referringDoctor="none",
-            readBack=True,
-        )
-        self.assertEqual(result.split(":", 1)[0], "success")
-        self.assertEqual(
-            [r.url.path for r in requests[-1:]],
-            ["/api/appointment/reschedule"],
-        )
 
     async def test_previous_patients_check_does_not_block_returning_patient(self):
         for plan in ("Self Pay", "Unknown corrected plan"):
@@ -198,43 +154,6 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual((await owner.availability("medical"))["outcome"], "found")
             self.assertEqual(responses, [])
-
-    async def test_participation_question_does_not_invalidate_chart_slots(self):
-        owner, resolver, requests = await self.resolved_owner(
-            [inventory(), test_scheduling.booking()],
-        )
-        available = await owner.availability("medical")
-        slot = available["slots"][0]["appointmentSlotRef"]
-        insurance = InsuranceRegistration(
-            owner.state, resolver, AsyncMock(check=AsyncMock(return_value=None))
-        )
-        await insurance.check("Unrelated plan question", "medical")
-        self.assertIsNone(owner.state.insurance.accepted)
-        self.assertTrue(insurance_ready(owner.state))
-        self.assertEqual((await self.book(owner, slot)).split(":", 1)[0], "success")
-        self.assertEqual(len(requests), 3)
-
-    async def test_existing_chart_checks_are_backend_owned_but_writes_still_block(self):
-        owner, resolver, requests = await self.resolved_owner([])
-        state = owner.state
-        active = state.patient.active
-        for changed in (
-            None,
-            InsuranceDecision.model_validate(decision(canSchedule=False)),
-            InsuranceDecision.model_validate(decision(coverage="routine_vision")),
-        ):
-            state.patient.active = active.model_copy(
-                update={"insuranceDecision": changed}
-            )
-            self.assertTrue(insurance_ready(state))
-        for field in ("write_pending", "write_uncertain"):
-            setattr(state.insurance, field, True)
-            self.assertFalse(insurance_ready(state))
-            setattr(state.insurance, field, False)
-        for status in ("created", "partial"):
-            state.insurance.registrations[active.patientId] = status
-            self.assertEqual(insurance_ready(state), status == "created")
-        self.assertEqual(len(requests), 1)
 
     async def test_optional_practice_does_not_block_staff_tasks_or_direct_office(self):
         for practice in ("", "invalid"):

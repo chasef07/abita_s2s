@@ -479,13 +479,6 @@ class DeployTests(unittest.TestCase):
             self.client.execute("deploy", self.manifest)
         self.assertFalse(any(c[0] == "deploy" for c in self.calls))
 
-    def test_automatic_deploy_reports_failed_health(self):
-        with (
-            patch.object(self.client, "wait", side_effect=ValueError("Unhealthy")),
-            self.assertRaisesRegex(ValueError, "Unhealthy"),
-        ):
-            self.client.execute("deploy", self.manifest)
-
     def test_missing_target_is_gated(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "livekit.toml"

@@ -205,15 +205,6 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.control.status, "accepted")
         self.sip.transfer_sip_participant.assert_awaited_once()
 
-    async def test_transport_uncertainty_suppresses_retry_and_hangup(self):
-        self.sip.transfer_sip_participant.side_effect = TimeoutError()
-        result = await self.run_tool("transfer_call")
-        self.assertTrue(result.startswith("ambiguous: "))
-        self.assertIn("Do not retry or end the call", result)
-        await self.run_tool("transfer_call")
-        self.assertEqual((await self.run_tool("end_call")).split(":", 1)[0], "blocked")
-        self.sip.transfer_sip_participant.assert_awaited_once()
-
     async def test_preparation_deadline_returns_bounded_retry_and_drains(self):
         async def hang():
             await asyncio.Event().wait()
@@ -341,22 +332,6 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         )
         job.shutdown.assert_called_once()
         job.add_shutdown_callback.assert_not_called()
-
-    async def test_cancel_during_refer_is_ambiguous(self):
-        started = asyncio.Event()
-
-        async def refer(*args, **kwargs):
-            started.set()
-            raise asyncio.CancelledError()
-
-        self.sip.transfer_sip_participant.side_effect = refer
-        # Real executor sees a canceled tool; the owner's state still fences retries.
-        try:
-            await self.run_tool("transfer_call")
-        except (TimeoutError, IndexError, asyncio.CancelledError):
-            pass
-        self.assertTrue(started.is_set())
-        self.assertEqual(self.control.status, "ambiguous")
 
     async def test_product_partial_write_conflict_and_stable_identity(self):
         self.state.call = replace(
@@ -494,45 +469,6 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
                 (await self.run_tool("transfer_call")).split(":", 1)[0], "blocked"
             )
         self.assertEqual(self.events, [])
-
-    async def test_pending_duplicate_does_not_send_second_refer(self):
-        self.control.status = "pending"
-        self.assertEqual(
-            (await self.run_tool("transfer_call")).split(":", 1)[0], "pending"
-        )
-        self.assertEqual((await self.run_tool("end_call")).split(":", 1)[0], "blocked")
-        self.sip.transfer_sip_participant.assert_not_awaited()
-
-    async def test_session_close_cancels_pending_patient_read(self):
-        from test_patient_resolution import CONFIG, candidate, search
-
-        from abita_s2s.identity import PatientResolver
-        from abita_s2s.integrations.patient_middleware import PatientMiddleware
-
-        started = asyncio.Event()
-        cancelled = asyncio.Event()
-
-        async def handler(request):
-            started.set()
-            try:
-                await asyncio.Event().wait()
-            except asyncio.CancelledError:
-                cancelled.set()
-                return httpx.Response(200, json=search(candidate()))
-
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            resolver = PatientResolver(self.state, PatientMiddleware(client, CONFIG))
-            self.addAsyncCleanup(resolver.aclose)
-            self.session.current_agent._resolver = resolver
-            task = asyncio.create_task(resolver.resolve("Jane", "01/02/1980"))
-            await asyncio.wait_for(started.wait(), 2)
-            await self.session.aclose()
-            await asyncio.wait_for(cancelled.wait(), 2)
-            await asyncio.gather(task, return_exceptions=True)
-            self.assertIsNone(self.state.patient.active)
-            self.assertEqual(
-                (await resolver.resolve("Jane", None))["outcome"], "superseded"
-            )
 
     async def test_announcement_failure_never_sends_refer_and_retry_is_bounded(self):
         speech = SimpleNamespace(

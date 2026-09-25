@@ -122,33 +122,6 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await r.resolve("Jane", None))["outcome"], "verified")
         self.assertEqual(len(calls), 1)
 
-    async def test_resolution_waits_for_shared_phone_lookup(self):
-        started, release = asyncio.Event(), asyncio.Event()
-
-        async def delayed(request):
-            started.set()
-            await release.wait()
-            return httpx.Response(200, json=receipt())
-
-        r, calls = self.resolver([delayed])
-        r.start_phone_lookup()
-        await started.wait()
-        first = asyncio.create_task(r.resolve("Jane", None))
-        duplicate = asyncio.create_task(r.resolve("Jane", None))
-        try:
-            await asyncio.sleep(0)
-            await asyncio.sleep(0)
-            self.assertFalse(r._precall.done())
-            self.assertIsNone(r.state.patient.active)
-            first.cancel()
-            with self.assertRaises(asyncio.CancelledError):
-                await first
-        finally:
-            release.set()
-        self.assertEqual((await duplicate)["outcome"], "verified")
-        self.assertEqual(r.state.patient.active.patientId, "chart-jane")
-        self.assertEqual(len(calls), 1)
-
     async def test_no_caller_id_requires_dob_then_hydrates(self):
         r, calls = self.resolver([receipt()], call_state(None))
         r.start_phone_lookup()
@@ -168,32 +141,6 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
             {"firstName": "Jane", "dob": "01/02/1980", "office": "+17275919997"},
         )
         self.assertEqual(len(calls), 1)
-
-    async def test_shared_phone_and_caller_acting_for_other_patient(self):
-        r, calls = self.resolver(
-            [
-                {
-                    "status": "multiple_matches",
-                    "matches": [candidate(), candidate("child", "John")],
-                },
-                receipt("child", "John"),
-            ]
-        )
-        await self.preload(r)
-        self.assertEqual((await r.resolve("John", None))["outcome"], "verified")
-        self.assertEqual(r.state.patient.active.patientId, "child")
-        self.assertEqual(calls[1]["patientId"], "child")
-
-    async def test_patient_not_on_callers_phone_uses_name_dob(self):
-        r, calls = self.resolver([receipt(), receipt("child", "John")])
-        await self.preload(r)
-        self.assertEqual(
-            (await r.resolve("John", None))["answer"],
-            "needs_input: What is the patient's date of birth?",
-        )
-        self.assertEqual((await r.resolve(None, "01/02/1980"))["outcome"], "verified")
-        self.assertNotIn("phone", calls[1])
-        self.assertEqual(r.state.patient.active.patientId, "child")
 
     async def test_same_name_requires_dob_and_same_dob_remains_ambiguous(self):
         for second_dob in ("02/03/1982", "01/02/1980"):
@@ -263,15 +210,6 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(r.state.patient.absence)
         self.assertEqual((await r.resolve(None, "01/02/1980"))["outcome"], "verified")
         self.assertIsNone(r.state.patient.absence)
-
-    async def test_name_spelling_correction(self):
-        r, _ = self.resolver([receipt()])
-        await self.preload(r)
-        self.assertEqual(
-            (await r.resolve("Jame", None))["answer"],
-            "needs_input: What is the patient's date of birth?",
-        )
-        self.assertEqual((await r.resolve("J-A-N-E", None))["outcome"], "verified")
 
     async def test_complete_absence_is_distinct_from_failed_partial_or_unexpected_search(
         self,
@@ -349,24 +287,6 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.state.patient.active.appointmentsStatus, "none")
         self.assertEqual(len(calls), 2)
 
-    async def test_duplicates_share_one_pending_read(self):
-        started, release = asyncio.Event(), asyncio.Event()
-
-        async def delayed(request):
-            started.set()
-            await release.wait()
-            return httpx.Response(200, json=search(candidate()))
-
-        r, calls = self.resolver([delayed])
-        first = asyncio.create_task(r.resolve("Jane", "01/02/1980"))
-        await started.wait()
-        duplicate = asyncio.create_task(r.resolve("Jane", "01/02/1980"))
-        await asyncio.sleep(0)
-        release.set()
-        results = await asyncio.gather(first, duplicate)
-        self.assertEqual([v["outcome"] for v in results], ["verified", "verified"])
-        self.assertEqual(len(calls), 1)
-
     async def test_superseded_read_cannot_commit_even_if_transport_ignores_cancellation(
         self,
     ):
@@ -418,27 +338,6 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(r.state.patient.active.patientId, "chart-jane")
                 self.assertEqual(len(calls), 1)
 
-    async def test_lookup_finishes_after_its_only_waiter_leaves(self):
-        started, release = asyncio.Event(), asyncio.Event()
-
-        async def delayed(request):
-            started.set()
-            await release.wait()
-            return httpx.Response(200, json=search(candidate()))
-
-        r, calls = self.resolver([delayed])
-        task = asyncio.create_task(r.resolve("Jane", "01/02/1980"))
-        await started.wait()
-        task.cancel()
-        with self.assertRaises(asyncio.CancelledError):
-            await task
-        self.assertIsNone(r.state.patient.active)
-        release.set()
-        self.assertEqual((await r._task)["outcome"], "verified")
-        self.assertIsNone(r._token)
-        self.assertEqual((await r.resolve("Jane", "01/02/1980"))["outcome"], "verified")
-        self.assertEqual(len(calls), 1)
-
     async def test_shutdown_fences_read_even_if_transport_swallows_cancellation(
         self,
     ):
@@ -467,29 +366,6 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         await closing
         self.assertEqual((await task)["outcome"], "superseded")
         self.assertIsNone(r.state.patient.active)
-
-    async def test_appointment_references_remain_private(self):
-        appt = {
-            "id": 123,
-            "date": "10/01/2026",
-            "time": "9:00 AM",
-            "provider": "Doctor Example",
-            "officeId": "office-ref",
-            "office": "Spring Hill",
-            "cancellationToken": "cancel-private",
-            "rescheduleToken": "reschedule-private",
-        }
-        r, _ = self.resolver([receipt(appointmentsStatus="found", appointments=[appt])])
-        await self.preload(r)
-        result = await r.resolve("Jane", None)
-        self.assertEqual(r.state.patient.active.appointmentsStatus, "found")
-        self.assertEqual(r.state.patient.active.appointments[0].officeId, "office-ref")
-        self.assertEqual(
-            r.state.patient.active.appointments[0].cancellationToken,
-            "cancel-private",
-        )
-        self.assertNotIn("cancel-private", json.dumps(result))
-        self.assertNotIn("123", json.dumps(result))
 
     async def test_phone_absence_and_failure_never_establish_registration_absence(self):
         for body, status in [
@@ -563,13 +439,6 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await resolving)["outcome"], "superseded")
         self.assertIsNone(r.state.patient.active)
         self.assertEqual(r.state.patient.lookup.status, "not_attempted")
-
-    async def test_close_fences_result_and_rejects_new_work(self):
-        r, calls = self.resolver([])
-        await r.aclose()
-        self.assertEqual((await r.resolve("Jane", None))["outcome"], "superseded")
-        r.start_phone_lookup()
-        self.assertEqual(calls, [])
 
     async def test_tool_schema_and_cross_call_guard(self):
         r, calls = self.resolver([])

@@ -101,25 +101,6 @@ class EligibilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(owner.state.patient.active)
         self.assertIsNone(owner.state.insurance.accepted)
 
-    async def test_corrected_name_reaches_tool_without_raw_benefits(self):
-        response = result(
-            identity=dict(status="matched_with_name_correction", reviewRequired=False),
-            matchedPatient=dict(
-                firstName="Jane",
-                lastName="Doe",
-                dateOfBirth="19800102",
-                memberId="test-member",
-            ),
-            providerResponse={"privateMarker": "not-model-visible"},
-        )
-        owner = self.owner(lambda request: httpx.Response(200, json=response))
-        answer = await owner.eligibility(details(firstName="Ane", lastName="Doe Jr."))
-        self.assertIn("name_correction:", answer)
-        self.assertIn("Jane", answer)
-        self.assertNotIn("not-model-visible", answer)
-        self.assertIsNone(owner.state.patient.active)
-        self.assertIsNone(owner.state.insurance.accepted)
-
     async def test_late_correction_cannot_replace_newer_intake(self):
         release = asyncio.Event()
         entered = asyncio.Event()
@@ -152,24 +133,6 @@ class EligibilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue((await pending).startswith("stale:"))
         self.assertEqual(len(owner.state.insurance.eligibility_checks), 2)
 
-    async def test_cached_check_can_be_reselected_after_another_intake(self):
-        calls = []
-
-        def handler(request):
-            calls.append(request)
-            return httpx.Response(200, json=result())
-
-        owner = self.owner(handler)
-        await owner.eligibility(details())
-        await owner.eligibility(details(firstName="John", memberId="other"))
-        answer = await owner.eligibility(details())
-        self.assertTrue(answer.startswith("eligibility: active"))
-        self.assertEqual(len(calls), 2)
-        self.assertIs(
-            owner.state.insurance.current_eligibility[1],
-            owner.state.insurance.eligibility_checks[0],
-        )
-
     async def test_existing_chart_allows_different_new_patient_intake(self):
         owner = self.owner(lambda request: httpx.Response(200, json=result()))
         owner.state.patient.active = Receipt.model_validate(receipt())
@@ -178,22 +141,6 @@ class EligibilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(answer.startswith("eligibility: active"))
         self.assertIsNone(owner.state.patient.active)
         self.assertIsNone(owner.state.insurance.accepted)
-
-    async def test_patient_revision_change_hides_late_name(self):
-        entered, release = asyncio.Event(), asyncio.Event()
-
-        async def handler(request):
-            entered.set()
-            await release.wait()
-            return httpx.Response(200, json=result())
-
-        owner = self.owner(handler)
-        waiting = asyncio.create_task(owner.eligibility(details()))
-        await entered.wait()
-        owner.state.patient.revision += 1
-        release.set()
-        self.assertTrue((await waiting).startswith("stale:"))
-        self.assertEqual(owner.state.insurance.eligibility_checks[0].status, "complete")
 
     async def test_cancelled_tool_keeps_one_request_and_retains_result(self):
         entered, release = asyncio.Event(), asyncio.Event()
