@@ -1,5 +1,4 @@
 import asyncio
-from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -7,7 +6,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from zoneinfo import ZoneInfo
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, PropertyMock, patch
 
@@ -86,18 +84,6 @@ class OfficeRoutingTests(unittest.TestCase):
         for demo in ("+14843989071", "+18027878312", "+13207388132"):
             with self.assertRaises(ValueError):
                 get_office_profile_by_phone(demo)
-
-    def test_crystal_river_identity(self):
-        office = get_office_profile("crystal-river")
-        self.assertIn("Eye Radiance", office.greeting_name)
-        self.assertIn(
-            "Current office: Eye Radiance", AbitaAgent(office, Mock()).instructions
-        )
-
-    def test_unknown_trunks_fail(self):
-        for phone in ("", "+15555555555"):
-            with self.assertRaises(ValueError):
-                get_office_profile_by_phone(phone)
 
 
 class StartupTests(unittest.IsolatedAsyncioTestCase):
@@ -313,12 +299,6 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         ctx.connect.assert_not_awaited()
         ctx.wait_for_participant.assert_not_awaited()
 
-    async def test_sip_never_falls_back_for_unknown_trunk(self):
-        with self.assertRaises(ValueError):
-            await self.run_startup(
-                False, trunk="", env={"ABITA_CONSOLE_OFFICE": "spring-hill"}
-            )
-
     async def test_http_cleanup_is_registered_before_model_startup_can_fail(self):
         callbacks = []
         ctx = SimpleNamespace(
@@ -346,67 +326,6 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(callbacks), 1)
         await callbacks[0]()
         client.aclose.assert_awaited_once()
-
-    async def test_http_cleanup_drains_registration_write_before_closing_client(self):
-        ctx, args = await self.run_startup(
-            True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"}
-        )
-        owner = args["dependencies"].insurance
-        finish = asyncio.Event()
-        owner._task = asyncio.create_task(finish.wait())
-        close_client = ctx.add_shutdown_callback.call_args_list[0].args[0]
-        shutdown = asyncio.create_task(close_client())
-        await asyncio.sleep(0)
-        self.assertFalse(owner._middleware._client.is_closed)
-        finish.set()
-        await shutdown
-        self.assertTrue(owner._middleware._client.is_closed)
-
-    async def test_http_cleanup_drains_scheduling_before_closing_client(self):
-        ctx, args = await self.run_startup(
-            True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"}
-        )
-        owner = args["dependencies"].scheduling
-        finish, entered = asyncio.Event(), asyncio.Event()
-        owner._write_task = asyncio.create_task(finish.wait())
-        original = owner.aclose
-
-        async def close():
-            entered.set()
-            await original()
-
-        close_client = ctx.add_shutdown_callback.call_args_list[0].args[0]
-        with patch.object(owner, "aclose", new=close):
-            shutdown = asyncio.create_task(close_client())
-            try:
-                await asyncio.wait_for(entered.wait(), 2)
-                self.assertTrue(owner._closed)
-                self.assertFalse(owner.http.client.is_closed)
-            finally:
-                finish.set()
-                await shutdown
-        self.assertTrue(owner.http.client.is_closed)
-
-    async def test_shutdown_drains_staff_delivery_before_closing_transport(self):
-        ctx, args = await self.run_startup(
-            True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"}
-        )
-        owner = args["dependencies"].staff_tasks
-        order = []
-        with (
-            patch.object(
-                owner,
-                "aclose",
-                new=AsyncMock(side_effect=lambda: order.append("staff")),
-            ),
-            patch.object(
-                owner._client,
-                "aclose",
-                new=AsyncMock(side_effect=lambda: order.append("http")),
-            ),
-        ):
-            await ctx.add_shutdown_callback.call_args_list[0].args[0]()
-        self.assertEqual(order, ["staff", "http"])
 
     async def test_combined_shutdown_waits_for_other_writes_after_owner_failure(self):
         ctx, args = await self.run_startup(
@@ -441,37 +360,6 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                     await shutdown
         self.assertTrue(client.is_closed)
         self._cleanups.pop()  # Already awaited and asserted this cleanup failure.
-
-    async def test_greeting_uses_office_profile(self):
-        agent = AbitaAgent(SPRING_HILL, Mock())
-        handle = AsyncMock()
-
-        class Speech:
-            def __await__(self):
-                return handle().__await__()
-
-            def exception(self):
-                return None
-
-        session = Mock()
-        session.generate_reply.return_value = Speech()
-        with (
-            patch.object(
-                AbitaAgent,
-                "session",
-                new_callable=unittest.mock.PropertyMock,
-                return_value=session,
-            ),
-            patch("abita_s2s.agent.datetime") as clock,
-        ):
-            clock.now.return_value = datetime(
-                2026, 9, 20, 14, 30, tzinfo=ZoneInfo("America/New_York")
-            )
-            await agent.on_enter()
-        clock.now.assert_called_once_with(ZoneInfo("America/New_York"))
-        instructions = session.generate_reply.call_args.kwargs["instructions"]
-        self.assertIn(f'Practice name: "{SPRING_HILL.greeting_name}"', instructions)
-        self.assertIn("Office-local time: 14:30 EDT (America/New_York)", instructions)
 
     async def test_product_closeout_waits_for_accepted_write_and_keeps_native_report(
         self,

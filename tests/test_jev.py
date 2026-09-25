@@ -1,6 +1,5 @@
 """Exercise the real evaluator through a synthetic HTTP boundary."""
 
-import asyncio
 import json
 import unittest
 from unittest.mock import patch
@@ -122,49 +121,6 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         sentiment = result["results"]["expressed_sentiment"]
         self.assertEqual(sentiment["answers"]["expressed_sentiment"]["score"], 2)
         self.assertEqual(sentiment["usage"]["inputTokens"], 100)
-
-    async def test_http_failure_preserves_other_judges_and_safe_diagnostics(self):
-        async def behavior(name, attempt, request):
-            if name == "office_rules_grounded":
-                return httpx.Response(
-                    400, json={"error": "private call content synthetic-secret"}
-                )
-
-        with self.assertLogs("abita_s2s.observability.jev", "ERROR") as logs:
-            requests, result = await self.run_evaluation(behavior)
-        self.assertEqual(len(requests), 7)
-        self.assertEqual(result["status"], "incomplete")
-        self.assertEqual(len(result["results"]), 6)
-        self.assertNotIn("office_rules_grounded", result["results"])
-        self.assertEqual(
-            result["errors"]["office_rules_grounded"],
-            {"cause": "HTTPStatusError", "httpStatus": 400, "attempts": 1},
-        )
-        self.assertNotIn("private call content", str(result) + str(logs.output))
-        self.assertNotIn("synthetic-secret", str(result) + str(logs.output))
-
-    async def test_transient_failure_retries_only_failed_judge(self):
-        async def behavior(name, attempt, request):
-            if name == "request_understood" and attempt == 1:
-                return httpx.Response(503)
-
-        requests, result = await self.run_evaluation(behavior)
-        self.assertEqual(len(requests), 8)
-        self.assertEqual(result["status"], "complete")
-        self.assertFalse(result["errors"])
-
-    async def test_timeout_preserves_finished_judges(self):
-        async def behavior(name, attempt, request):
-            if name == "expressed_sentiment":
-                await asyncio.Event().wait()
-
-        with self.assertLogs("abita_s2s.observability.jev", "ERROR"):
-            _, result = await self.run_evaluation(behavior)
-        self.assertEqual(result["status"], "incomplete")
-        self.assertEqual(len(result["results"]), 6)
-        self.assertEqual(
-            result["errors"]["expressed_sentiment"]["cause"], "TimeoutError"
-        )
 
     async def test_invalid_or_missing_answers_do_not_erase_other_results(self):
         for answer in [

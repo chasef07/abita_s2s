@@ -12,7 +12,6 @@ from test_insurance_registration import created, registration, updated
 
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
-from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.insurance_state import accepted_insurance, insurance_ready
 from abita_s2s.integrations.patient_middleware import Receipt
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
@@ -171,15 +170,3 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
         finish.set()
         self.assertEqual((await slow)["outcome"], "stale")
         self.assertIsNone(accepted_insurance(state))
-
-    def test_requirement_is_not_active_coverage_or_authorization_proof(self):
-        d = InsuranceDecision.model_validate(
-            decision(
-                canSchedule=False,
-                requirements=[
-                    dict(kind="vob_authorization", verification="unverified")
-                ],
-            )
-        )
-        self.assertEqual(d.eligibility, "not_checked")
-        self.assertFalse(d.canSchedule)

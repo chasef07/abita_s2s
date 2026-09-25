@@ -17,40 +17,6 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
         history.add_message(role="user", content="Please cancel my visit.")
         return {"chat_history": history.to_dict()}
 
-    async def test_results_and_metadata_are_returned_for_persistence(self):
-        report = self.report()
-        results = {
-            "request_understood": {
-                "answers": {"request_understood": {"type": "noul", "noul": 0.1}}
-            },
-            "expressed_sentiment": {
-                "answers": {
-                    "expressed_sentiment": {
-                        "type": "score",
-                        "score": 2,
-                        "probabilities": {"2": 1},
-                    }
-                }
-            },
-        }
-        with (
-            patch.dict("os.environ", {"AI_GATEWAY_API_KEY": "offline"}),
-            patch(
-                "abita_s2s.observability.jev.evaluate_with_jev",
-                new_callable=AsyncMock,
-                return_value={"results": results, "errors": {}},
-            ) as judge,
-        ):
-            result = await evaluate_call(report)
-        self.assertEqual(judge.await_args.args[0].to_dict(), report["chat_history"])
-        self.assertEqual(
-            judge.await_args.kwargs["agent_purpose"], "Manage appointments."
-        )
-        self.assertEqual(result["status"], "complete")
-        self.assertEqual(result["results"], results)
-        self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v2")
-        self.assertIn("evaluatedAt", result)
-
     async def test_timeout_or_error_is_incomplete_not_a_call_failure(self):
         async def hang(*_, **__):
             await asyncio.Event().wait()

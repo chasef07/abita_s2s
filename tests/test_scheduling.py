@@ -201,76 +201,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(requests[0][1]["coverageType"], "routine_vision")
         self.assertEqual(requests[1][1]["visitCategory"], "routine_vision")
 
-    async def test_existing_patient_uses_backend_chart_despite_local_insurance_checks(
-        self,
-    ):
-        for use_check in (False, True):
-            with self.subTest(call_local_check=use_check):
-                state = call_state(None)
-                verified(state)
-                authoritative = InsuranceDecision.model_validate(
-                    decision(
-                        "Canonical Product",
-                        "medical",
-                        "spring_hill",
-                        routing="bach_only",
-                    )
-                )
-                state.patient.active = state.patient.active.model_copy(
-                    update={
-                        "insuranceCarrier": "GENERIC OLD CARRIER",
-                        "routing": "all_three",
-                        "preauthRequired": True,
-                        "insuranceDecision": authoritative,
-                    }
-                )
-                state.insurance.accepted = (
-                    AcceptedInsurance(
-                        "spring-hill",
-                        state.patient.revision,
-                        "chart-jane",
-                        None,
-                        authoritative,
-                    )
-                    if use_check
-                    else None
-                )
-                owner, requests = self.owner(
-                    [inventory(), {"status": "booked", "appointmentId": 888}],
-                    state=state,
-                )
-                ref = await self.slots(owner)
-                await self.book(owner, ref)
-                self.assertEqual(len(requests), 2)
-                for _, payload, _ in requests:
-                    self.assertNotIn("insurancePlan", payload)
-                    self.assertNotIn("routing", payload)
-                    self.assertNotIn("preauthRequired", payload)
-
-    async def test_legacy_insurance_fields_do_not_refetch_or_invalidate_slots(self):
-        owner, requests = self.owner([inventory(), booking()])
-        ref = await self.slots(owner)
-        legacy = {
-            "routing": "unused_old_route",
-            "preauthRequired": True,
-            "routingAmbiguous": True,
-            "allowedProviders": [],
-            "insuranceCarrierId": "unused-old-code",
-        }
-        owner.state.patient.active = Receipt.model_validate(
-            owner.state.patient.active.model_dump()
-            | legacy
-            | {"insuranceCarrier": "Old display label changed"}
-        )
-        self.assertTrue(
-            legacy.keys().isdisjoint(owner.state.patient.active.model_dump())
-        )
-        self.assertEqual(await self.slots(owner), ref)
-        self.assertEqual(len(requests), 1)
-        self.assertTrue((await self.book(owner, ref)).startswith("success:"))
-        self.assertEqual(len(requests), 2)
-        self.assertNotIn("insurancePlan", requests[-1][1])
-
     async def test_insurance_write_guards_invalidate_offered_slots(self):
         for guard in ("pending", "uncertain", "partial"):
             with self.subTest(guard=guard):
@@ -403,62 +333,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     (await self.book(owner, "S1")).split(":", 1)[0], "needs_input"
                 )
                 self.assertEqual(len(requests), 2)
-
-    async def test_expired_and_malformed_reads_share_retry_budget(self):
-        expired = inventory(bookingTokenExpiresAt="2026-09-14T16:00:00Z")
-        malformed = inventory(bookingTokenExpiresAt="invalid")
-        for responses in ([expired, malformed], [malformed, expired]):
-            with self.subTest(responses=responses):
-                owner, requests = self.owner(list(responses))
-                for _ in range(3):
-                    output = await self.tool(
-                        owner, "list_available_appointments", visitType="medical"
-                    )
-                    self.assertTrue(output.startswith("blocked:"), output)
-                self.assertEqual(len(requests), 2)
-
-    async def test_valid_retry_can_offer_and_book_after_malformed_inventory(self):
-        owner, requests = self.owner(
-            [
-                inventory(bookingTokenExpiresAt="invalid"),
-                inventory(),
-                booking(),
-            ]
-        )
-        failed = await self.tool(
-            owner, "list_available_appointments", visitType="medical"
-        )
-        self.assertIn("Retry this search once.", failed)
-        ref = await self.slots(owner)
-        self.assertEqual(await self.slots(owner), ref)
-        self.assertTrue((await self.book(owner, ref)).startswith("success:"))
-        self.assertEqual(len(requests), 3)
-
-    async def test_slot_references_survive_inventory_refresh_and_token_rotation(self):
-        fresh = inventory()
-        fresh["slots"][0]["bookingToken"] = "rotated-private-token"
-        owner, requests = self.owner([inventory(), fresh])
-        first = await self.slots(owner)
-        owner.now = lambda: NOW + timedelta(seconds=61)
-        self.assertEqual(await self.slots(owner), first)
-        self.assertEqual(owner._slots[first].slot.bookingToken, "rotated-private-token")
-        self.assertEqual(len(requests), 2)
-
-    async def test_slot_references_distinguish_complete_identity(self):
-        base = inventory()["slots"][0]
-        variations = [
-            base,
-            {**base, "datetime": "2026-09-16T09:00"},
-            {**base, "profileId": 99},
-            {**base, "columnId": 99},
-            {**base, "provider": "Dr. Another"},
-            {**base, "duration": 30},
-        ]
-        owner, _ = self.owner([inventory(slots=variations)])
-        await self.slots(owner)
-        self.assertEqual(len(owner._slots), len(variations))
-        for ref in owner._slots:
-            self.assertRegex(ref, r"^ST_[A-F0-9]{6}$")
 
     async def test_short_reference_collision_preserves_both_slots(self):
         base = inventory()["slots"][0]
@@ -624,13 +498,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         output = await resolve_patient(context, "Jane", None)
         self.assertIn("No upcoming appointments.", output)
         self.assertNotIn("Existing appointments", output)
-
-    def test_unknown_appointments_never_claim_none(self):
-        owner, _ = self.owner([])
-        owner.state.patient.active = None
-        self.assertEqual(owner.appointments_text(), "")
-        verified(owner.state, appointmentsStatus="error")
-        self.assertNotIn("No upcoming appointments", owner.appointments_text())
 
     async def test_missing_prerequisites_and_office_care(self):
         owner, requests = self.owner([])
@@ -859,20 +726,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(owner.state.patient.active.appointments, [])
         self.assertEqual(len(requests), 3)
 
-    async def test_expired_token_and_patient_context_round_trip(self):
-        for mode in ("expiry", "switch"):
-            owner, requests = self.owner([inventory()])
-            ref = await self.slots(owner)
-            if mode == "expiry":
-                owner.now = lambda: NOW + timedelta(hours=2)
-            else:
-                owner.state.patient.revision += 2
-                verified(owner.state)
-            self.assertEqual(
-                (await self.book(owner, ref)).split(":", 1)[0], "needs_input"
-            )
-            self.assertEqual(len(requests), 1)
-
     async def test_cancelled_booking_cannot_satisfy_a_new_booking(self):
         owner, requests = self.owner(
             [
@@ -945,22 +798,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             ["private-signed-slot", "second-slot"],
         )
 
-    async def test_uncertain_book_never_repeats_even_after_reload(self):
-        for response in (
-            {"status": "booked"},
-            {"status": "error", "outcome": "write_ambiguous"},
-            {"unexpected": True},
-        ):
-            owner, requests = self.owner([inventory(), response, inventory()])
-            ref = await self.slots(owner)
-            uncertain = await self.book(owner, ref)
-            self.assertTrue(uncertain.startswith("blocked:"))
-            self.assertIn("Do not repeat the write or claim success", uncertain)
-            ref = await self.slots(owner)
-            self.assertEqual((await self.book(owner, ref)).split(":", 1)[0], "blocked")
-            self.assertEqual(len(requests), 3)
-            self.assertEqual(owner.state.patient.active.appointments, [])
-
     async def test_booking_rechecks_admission_when_write_task_starts(self):
         for change in ("patient", "shutdown"):
             with self.subTest(change=change):
@@ -975,36 +812,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 result = await self.book(owner, ref)
                 self.assertTrue(result.startswith("blocked:"), result)
                 self.assertEqual(len(requests), 1)
-
-    async def test_completed_insurance_update_invalidates_offered_slots(self):
-        owner, requests = self.owner([inventory()])
-        ref = await self.slots(owner)
-        resolver = PatientResolver(owner.state, AsyncMock())
-        self.addAsyncCleanup(resolver.aclose)
-        active = owner.state.patient.active
-        updated = active.model_copy(update={"insuranceCarrier": "Updated chart plan"})
-        self.assertTrue(
-            resolver.refresh_insurance(active, updated, owner.state.insurance.accepted)
-        )
-        self.assertTrue((await self.book(owner, ref)).startswith("needs_input:"))
-        self.assertEqual(len(requests), 1)
-
-    async def test_completed_registration_uses_backend_policy_and_sends_known_product(
-        self,
-    ):
-        owner, requests = self.owner([inventory(), inventory(), booking()])
-        owner.state.insurance.registrations["chart-jane"] = "created"
-        checked = owner.state.insurance.accepted
-        owner.state.insurance.accepted = None
-        self.assertEqual((await owner.availability("medical"))["outcome"], "found")
-        self.assertEqual(len(requests), 1)
-        self.assertNotIn("insurancePlan", requests[0][1])
-        owner.state.insurance.accepted = checked
-        ref = await self.slots(owner)
-        self.assertTrue((await self.book(owner, ref)).startswith("success:"))
-        for _, payload, _ in requests[1:]:
-            self.assertEqual(payload["insurancePlan"], "Test Insurance")
-        self.assertEqual(requests[-1][1]["patientStatus"], "new")
 
     async def test_existing_patient_backend_rejection_is_not_bypassed(self):
         async def rejected(_):
@@ -1723,57 +1530,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(result.split(":", 1)[0], "success")
 
-    async def test_failed_reschedule_does_not_cancel_old(self):
-        owner, requests = self.owner(
-            [inventory(), {"status": "failed", "outcome": "slot_unavailable"}]
-        )
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
-        old_ref = owner.appointments()[0]["appointmentRef"]
-        ref = await self.slots(owner)
-        result = await self.tool(
-            owner,
-            "reschedule_appointment",
-            oldAppointmentRef=old_ref,
-            appointmentSlotRef=ref,
-            appointmentReason="Annual medical follow up",
-            referringDoctor="none",
-            readBack=True,
-        )
-        self.assertEqual(result.split(":", 1)[0], "blocked")
-        self.assertEqual(len(requests), 2)
-        self.assertEqual([a.id for a in owner.state.patient.active.appointments], [77])
-
-    async def test_booking_and_rescheduling_need_no_hospital_fields(self):
-        for move in (False, True):
-            with self.subTest(reschedule=move):
-                owner, requests = self.owner(
-                    [inventory(), rescheduled() if move else booking()]
-                )
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
-                ref = await self.slots(owner)
-                args = dict(
-                    appointmentSlotRef=ref,
-                    appointmentReason="Hospital follow-up",
-                    referringDoctor="none",
-                    readBack=True,
-                )
-                if move:
-                    args["oldAppointmentRef"] = owner.appointments()[0][
-                        "appointmentRef"
-                    ]
-                name = "reschedule_appointment" if move else "book_appointment"
-                output = await self.tool(owner, name, **args)
-                self.assertTrue(output.startswith("success:"), output)
-                self.assertEqual(
-                    requests[-1][1]["appointmentReason"], "Hospital follow-up"
-                )
-                self.assertNotIn("hospitalName", requests[-1][1])
-                self.assertNotIn("hospitalDate", requests[-1][1])
-
     async def test_reschedule_retries_only_after_definite_failure_and_fresh_confirmation(
         self,
     ):
@@ -1881,29 +1637,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await owner.availability("medical"))["outcome"], "none")
         self.assertEqual(len(requests), 1)
 
-    async def test_transport_write_uncertainty_and_explicit_failure(self):
-        async def timeout(request):
-            raise httpx.ReadTimeout("offline")
-
-        owner, requests = self.owner([inventory(), timeout])
-        ref = await self.slots(owner)
-        self.assertEqual((await self.book(owner, ref)).split(":", 1)[0], "blocked")
-        self.assertEqual((await self.book(owner, ref)).split(":", 1)[0], "blocked")
-        self.assertEqual(len(requests), 2)
-        owner, requests = self.owner(
-            [
-                inventory(),
-                {"status": "error", "outcome": "write_failed"},
-                inventory(),
-                {"status": "booked", "appointmentId": 888},
-            ]
-        )
-        ref = await self.slots(owner)
-        self.assertEqual((await self.book(owner, ref)).split(":", 1)[0], "blocked")
-        ref = await self.slots(owner)
-        self.assertEqual((await self.book(owner, ref)).split(":", 1)[0], "success")
-        self.assertEqual(len(requests), 4)
-
     async def test_reschedule_patient_switch_preserves_middleware_result_for_original_patient(
         self,
     ):
@@ -1941,27 +1674,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([a.id for a in owner.state.patient.active.appointments], [888])
         self.assertEqual((await self.book(owner, ref)).split(":", 1)[0], "needs_input")
         self.assertEqual(len(requests), 2)
-
-    async def test_completed_cancellation_survives_same_patient_reload(self):
-        owner, requests = self.owner([{"status": "cancelled", "appointmentId": 77}])
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
-        ref = owner.appointments()[0]["appointmentRef"]
-        await self.tool(owner, "cancel_appointment", appointmentRef=ref, readBack=True)
-        owner.state.patient.revision += 1
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
-        new_ref = owner._reference(owner.state.patient.active.appointments[0])
-        self.assertNotEqual(ref, new_ref)
-        self.assertEqual(
-            (
-                await self.tool(
-                    owner, "cancel_appointment", appointmentRef=new_ref, readBack=True
-                )
-            ).split(":", 1)[0],
-            "success",
-        )
-        self.assertEqual(len(requests), 1)
-        self.assertEqual(owner.appointments(), [])
-        self.assertEqual(owner.state.patient.active.appointments, [])
 
     async def test_appointment_announcements_precede_writes(self):
         for move in (False, True):

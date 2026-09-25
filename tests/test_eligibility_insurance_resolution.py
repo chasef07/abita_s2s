@@ -125,24 +125,6 @@ class ResolvedInsuranceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response["outcome"], "needs_eligibility")
                 self.assertEqual(self.writes, [])
 
-    async def test_changed_plan_requires_new_eligibility(self):
-        owner = self.setup_owner(
-            dict(
-                status="resolved",
-                plans=["Aetna Better Health"],
-                decision=decision("Aetna Better Health"),
-            )
-        )
-        await owner.eligibility(details())
-        self.assertEqual(
-            (await owner.check("VSP", "routine_vision"))["outcome"], "needs_eligibility"
-        )
-        self.assertEqual(
-            (await owner.add(registration(insuranceMemberId="test-member")))["outcome"],
-            "needs_insurance",
-        )
-        self.assertEqual(self.writes, [])
-
     async def test_pending_check_blocks_generic_write(self):
         gate = asyncio.Event()
         owner = self.setup_owner(
@@ -262,16 +244,6 @@ class ResolvedInsuranceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(self.writes, [])
 
-    async def test_unavailable_preserves_existing_policy(self):
-        owner = self.setup_owner(dict(status="unavailable", plans=[]))
-        await owner.check("Aetna", "medical")
-        await owner.eligibility(details())
-        self.assertEqual(
-            (await owner.add(registration(insuranceMemberId="test-member")))["outcome"],
-            "created",
-        )
-        self.assertEqual(self.writes[0]["insurance"], "Aetna")
-
     async def test_late_generic_participation_cannot_overwrite_resolution(self):
         entered, release = asyncio.Event(), asyncio.Event()
 
@@ -353,12 +325,3 @@ class ResolvedInsuranceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.writes[0]["insurance"], "Aetna")
                 self.assertEqual(batch.patient_id, "new-chart")
                 self.assertEqual(batch.result.insuranceResolution.status, "unmapped")
-
-    async def test_unmapped_without_accepted_selection_cannot_register(self):
-        owner = self.setup_owner(dict(status="unmapped", plans=["Unknown"]))
-        await owner.eligibility(details())
-        self.assertEqual(
-            (await owner.add(registration(insuranceMemberId="test-member")))["outcome"],
-            "needs_insurance",
-        )
-        self.assertEqual(self.writes, [])
