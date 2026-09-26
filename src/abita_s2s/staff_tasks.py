@@ -1,11 +1,12 @@
-"""One call's authenticated staff delivery, exact replay, and durable receipts."""
+"""Editable per-call staff requests, delivered once at call closeout."""
 
 import asyncio
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 from typing import Literal, get_args
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 
@@ -39,6 +40,12 @@ def _result(outcome: str, answer: str) -> dict:
     return {"outcome": outcome, "answer": answer}
 
 
+@dataclass(frozen=True, repr=False)
+class Draft:
+    payload: dict
+    call_id: str | None
+
+
 class StaffTasks:
     def __init__(
         self,
@@ -52,83 +59,108 @@ class StaffTasks:
         self._client = client
         self._url = config.staff_tasks_url
         self._secret = config.product_secret
-        self._deliveries: dict[str, asyncio.Task] = {}
+        self._drafts: dict[str, Draft] = {}
+        self._close_task: asyncio.Task | None = None
         self._closed = False
 
     def close_admission(self) -> None:
         self._closed = True
 
-    async def aclose(self) -> None:
-        self._closed = True
-        # A mutation already dispatched must finish and retain its receipt.
-        results = await asyncio.gather(
-            *self._deliveries.values(), return_exceptions=True
-        )
-        for result in results:
-            if isinstance(result, asyncio.CancelledError):
-                raise RuntimeError("An accepted staff delivery was cancelled")
-            if isinstance(result, BaseException):
-                raise result
-
-    async def submit(
+    def save(
         self,
         category: Category,
         urgency: Urgency,
         summary: str,
         message: str,
         *,
+        draft_id: str | None = None,
         call_id: str | None = None,
     ) -> dict:
         if self._closed:
-            return _result("failed", "This call has ended. No request was sent.")
+            return _result("failed", "This call has ended. No draft was saved.")
+        if draft_id is not None and draft_id not in self._drafts:
+            return _result("failed", "Unknown draft ID. No draft was saved.")
         try:
             payload = self._payload(category, urgency, summary, message)
         except ValueError as exc:
-            return _result("failed", str(exc))
+            return _result("failed", f"{exc} Existing drafts are unchanged.")
         patient = payload.get("patient")
-        # Product fingerprints exact fields, including urgency and patient context.
-        key = (
-            "staff_task_"
-            + hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
-        )
-        payload["idempotencyKey"] = key
-        task = self._deliveries.get(key)
-        replay = task is not None
-        previous = task.result() if task is not None and task.done() else None
-        if task is None or (
-            previous and previous["outcome"] in ("failed", "ambiguous")
-        ):
-            task = asyncio.create_task(
-                self._deliver(
-                    payload,
-                    call_id=call_id,
-                    uncertain=previous is not None
-                    and previous["outcome"] == "ambiguous",
+        if draft_id is not None:
+            if self._drafts[draft_id].payload.get("patient") != patient:
+                return _result(
+                    "failed",
+                    "Patient context changed. Existing draft is unchanged. "
+                    "For a different patient, create a separate draft; to correct "
+                    "the original patient's identity, discard that draft and save it again.",
                 )
-            )
-            self._deliveries[key] = task
-            replay = False
-        # Corrections/cancellation do not undo a submitted mutation or lose its receipt.
-        result = dict(await asyncio.shield(task))
-        result.pop("taskId", None)  # Keep the delivery receipt application-owned.
-        if replay and result["outcome"] == "created":
-            result.update(
-                _result(
-                    "duplicate", "This request was already sent to the team for review."
+        else:
+            draft_id = (
+                next(
+                    (
+                        key
+                        for key, draft in self._drafts.items()
+                        if draft.payload == payload
+                    ),
+                    None,
                 )
+                or uuid4().hex
             )
-        result["summary"] = payload["summary"]
-        result["patient"] = (
-            {"name": patient.get("name"), "verified": "id" in patient}
-            if patient
-            else None
+        self._drafts[draft_id] = Draft(payload, call_id)
+        return {
+            **_result(
+                "saved", "Draft saved for submission when the call ends. Not yet sent."
+            ),
+            "draftId": draft_id,
+            "summary": payload["summary"],
+            "patient": (
+                {"name": patient.get("name"), "verified": "id" in patient}
+                if patient
+                else None
+            ),
+        }
+
+    def discard(self, draft_id: str) -> dict:
+        if self._closed:
+            return _result(
+                "failed", "This call has ended. Drafts can no longer be changed."
+            )
+        if self._drafts.pop(draft_id, None) is None:
+            return _result("failed", "Unknown draft ID. No draft was removed.")
+        return _result("discarded", "Draft removed. This request will not be sent.")
+
+    async def aclose(self) -> None:
+        self._closed = True
+        if self._close_task is None:
+            self._close_task = asyncio.create_task(self._flush())
+        await asyncio.shield(self._close_task)
+
+    async def _flush(self) -> None:
+        # Freeze final payloads once; exact repeats and HTTP retries share a key.
+        deliveries = {}
+        for draft in self._drafts.values():
+            payload = dict(draft.payload)
+            key = (
+                "staff_task_"
+                + hashlib.sha256(
+                    json.dumps(payload, sort_keys=True).encode()
+                ).hexdigest()
+            )
+            payload["idempotencyKey"] = key
+            deliveries.setdefault(key, (payload, draft.call_id))
+        results = await asyncio.gather(
+            *(
+                self._deliver(payload, call_id=call_id)
+                for payload, call_id in deliveries.values()
+            ),
+            return_exceptions=True,
         )
-        if patient != self._resolver.staff_task_patient():
-            result["patientChanged"] = True
-            result["answer"] += (
-                " This receipt belongs to the previous patient context, not the current patient."
-            )
-        return result
+        for result in results:
+            if isinstance(result, asyncio.CancelledError):
+                raise RuntimeError("An accepted staff delivery was cancelled")
+            if isinstance(result, BaseException):
+                raise result
+            if result["outcome"] not in ("created", "duplicate"):
+                raise RuntimeError("Staff delivery was not confirmed")
 
     def _payload(
         self, category: Category, urgency: Urgency, summary: str, message: str
@@ -200,10 +232,8 @@ class StaffTasks:
         )
         return payload
 
-    async def _deliver(
-        self, payload: dict, *, uncertain: bool = False, call_id: str | None = None
-    ) -> dict:
-        result = await self._send(payload, uncertain=uncertain)
+    async def _deliver(self, payload: dict, *, call_id: str | None = None) -> dict:
+        result = await self._send(payload)
         if self.state.reporter:
             evidence = {
                 "outcome": result["outcome"],
@@ -215,7 +245,8 @@ class StaffTasks:
             self.state.reporter.record("staff_task", evidence, call_id=call_id)
         return result
 
-    async def _send(self, payload: dict, *, uncertain: bool = False) -> dict:
+    async def _send(self, payload: dict) -> dict:
+        uncertain = False
         for _ in range(2):
             try:
                 async with asyncio.timeout(10.0):
@@ -234,7 +265,7 @@ class StaffTasks:
                         break
                     return _result(
                         "failed",
-                        "Product rejected this request. Do not confirm submission; offer office help.",
+                        "Product rejected this request.",
                     )
                 receipt = response.json()
                 if (
@@ -261,5 +292,5 @@ class StaffTasks:
                 continue
         return _result(
             "ambiguous",
-            "Delivery could not be confirmed; the request may already have reached staff. Do not claim success or that nothing was sent. An identical retry can recover the receipt; do not change details just to retry.",
+            "Delivery could not be confirmed; the request may already have reached staff.",
         )

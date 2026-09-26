@@ -18,7 +18,7 @@ from abita_s2s.integrations.registration_middleware import RegistrationMiddlewar
 from abita_s2s.config import load_config
 from abita_s2s.offices import get_office_profile
 from abita_s2s.runtime.reporting import CallReporter, ReportingError
-from abita_s2s.staff_tasks import StaffTasks
+from abita_s2s.staff_tasks import Draft, StaffTasks
 from abita_s2s.identity import PatientResolver
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from test_patient_resolution import receipt
@@ -372,9 +372,10 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         for error in (RuntimeError("delivery failed"), asyncio.CancelledError()):
             with self.subTest(error=type(error).__name__):
                 owner = StaffTasks(call_state(), Mock(), Mock(), CONFIG)
-                delivery = asyncio.create_task(AsyncMock(side_effect=error)())
-                owner._deliveries["accepted"] = delivery
-                await asyncio.gather(delivery, return_exceptions=True)
+                owner._drafts["accepted"] = Draft(
+                    {"summary": "Synthetic request"}, None
+                )
+                owner._deliver = AsyncMock(side_effect=error)
                 reporter = self.reporter(drain=owner.aclose)
                 reporter.started = True
                 await reporter.finish(lambda: REPORT)
@@ -382,6 +383,41 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(
                     self.requests[-1]["closeoutPayload"]["mutationDrainFailed"]
                 )
+
+    async def test_final_staff_receipt_is_in_closeout_including_failed_delivery(self):
+        from test_staff_tasks import StaffTaskTests, NEED, receipt as task_receipt
+
+        for status in (201, 403):
+
+            async def receive(request, payload):
+                return httpx.Response(status, json=task_receipt(payload))
+
+            async with StaffTaskTests().setup_session(receive) as (
+                _,
+                _,
+                state,
+                owner,
+                requests,
+                _,
+            ):
+                reporter = self.reporter(drain=owner.aclose)
+                reporter.started = True
+                state.reporter = reporter
+                owner.save(**NEED, call_id="draft-save")
+                self.assertEqual(requests, [])
+                await reporter.finish(lambda: REPORT)
+                closeout = self.requests[-1]
+                self.assertEqual(
+                    closeout["status"], "COMPLETED" if status == 201 else "FAILED"
+                )
+                facts = closeout["closeoutPayload"]["domainOutcomes"]
+                self.assertEqual(len(facts), 1)
+                self.assertEqual(facts[0]["callId"], "draft-save")
+                self.assertEqual(
+                    facts[0]["outcome"],
+                    "staff_task_created" if status == 201 else "staff_task_failed",
+                )
+                self.assertEqual(len(requests), 1)
 
     async def test_verified_and_switched_patients_reach_product_classification(self):
         reporter = self.reporter()

@@ -91,8 +91,6 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
         state.reporter = Mock()
         # call_state from knowledge tests has no caller contact.
         if state.call.caller_phone is None:
-            from dataclasses import replace
-
             state.call = replace(state.call, caller_phone="+15555550101")
         requests = []
 
@@ -123,10 +121,11 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
                 try:
                     yield session, agent, state, owner, requests, middleware
                 finally:
-                    await owner.aclose()
+                    if owner._close_task is None or not owner._close_task.done():
+                        await owner.aclose()
                     await resolver.aclose()
 
-    async def invoke(self, session, agent, args=None, tool="create_staff_task"):
+    async def invoke(self, session, agent, args=None, tool="save_staff_task"):
         await asyncio.wait_for(
             session.run(
                 user_input=json.dumps(
@@ -138,22 +137,158 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
         outputs = [x for x in agent.chat_ctx.items if x.type == "function_call_output"]
         return outputs[-1].output
 
-    async def test_sweetwater_tasks_preserve_inbound_number_and_product_location(self):
+    async def test_pharmacy_details_update_one_draft_and_deliver_once(self):
+        async with self.setup_session() as (session, agent, state, owner, requests, _):
+            state.patient.active = patient()
+            first = await self.invoke(session, agent)
+            self.assertTrue(first.startswith("saved:"))
+            self.assertIn("Not yet sent", first)
+            self.assertIn("Patient: Jane (verified).", first)
+            draft_id = first.split("Draft ID: ")[1].splitlines()[0]
+            updated = NEED | {
+                "draft_id": draft_id,
+                "summary": "Eye drop prescription request",
+                "message": "Caller requests eye drops from Publix, 8245 Northwest 88th Avenue, Tamarac, Florida 33321.",
+            }
+            for _ in range(3):
+                result = await self.invoke(session, agent, updated)
+                self.assertIn(f"Draft ID: {draft_id}", result)
+            self.assertEqual(requests, [])
+            state.reporter.record.assert_not_called()
+            await asyncio.gather(owner.aclose(), owner.aclose())
+            await owner.aclose()
+            self.assertEqual(len(requests), 1)
+            self.assertEqual(requests[0]["message"], updated["message"])
+            self.assertEqual(requests[0]["summary"], updated["summary"])
+            self.assertEqual(requests[0]["patient"]["id"], "synthetic-1")
+            self.assertEqual(requests[0]["callerPhone"], "+15555550101")
+            self.assertNotIn(TASK_ID, result)
+            state.reporter.record.assert_called_once()
+            self.assertEqual(state.reporter.record.call_args.args[0], "staff_task")
+            self.assertEqual(state.reporter.record.call_args.args[1]["taskId"], TASK_ID)
+            self.assertTrue(state.reporter.record.call_args.kwargs["call_id"])
+
+    async def test_distinct_needs_in_same_category_remain_separate(self):
+        async with self.setup_session() as (session, agent, _, owner, requests, _):
+            await self.invoke(session, agent)
+            await self.invoke(
+                session,
+                agent,
+                NEED
+                | {
+                    "summary": "Separate medication authorization",
+                    "message": "Caller also requests authorization for another medication.",
+                },
+            )
+            self.assertEqual(requests, [])
+            await owner.aclose()
+            self.assertEqual(len(requests), 2)
+            self.assertEqual(len({r["idempotencyKey"] for r in requests}), 2)
+
+    async def test_identical_new_drafts_are_delivered_once(self):
+        async with self.setup_session() as (_, _, _, owner, requests, _):
+            first = owner.save(**NEED)
+            repeated = owner.save(**NEED)
+            self.assertEqual(first["draftId"], repeated["draftId"])
+            updated = NEED | {"message": NEED["message"] + " Pharmacy is Publix."}
+            owner.save(**updated, draft_id=repeated["draftId"])
+            await owner.aclose()
+            self.assertEqual(len(requests), 1)
+            self.assertEqual(requests[0]["message"], updated["message"])
+
+    async def test_withdrawn_request_is_not_sent(self):
+        async with self.setup_session() as (session, agent, _, owner, requests, _):
+            result = await self.invoke(session, agent)
+            draft_id = result.split("Draft ID: ")[1].splitlines()[0]
+            result = await self.invoke(
+                session, agent, {"draft_id": draft_id}, "discard_staff_task"
+            )
+            self.assertTrue(result.startswith("discarded:"))
+            self.assertEqual(owner.save(**NEED, draft_id=draft_id)["outcome"], "failed")
+            await owner.aclose()
+            self.assertEqual(requests, [])
+
+    async def test_patient_switch_cannot_reassign_existing_draft(self):
+        async with self.setup_session() as (_, _, state, owner, requests, _):
+            state.patient.active = patient()
+            draft = owner.save(**NEED)
+            state.patient.active = patient("Alex", "synthetic-2")
+            result = owner.save(**NEED, draft_id=draft["draftId"])
+            self.assertEqual(result["outcome"], "failed")
+            self.assertIn("Patient context changed", result["answer"])
+            owner.save(**NEED)
+            await owner.aclose()
+            self.assertEqual(
+                [r["patient"]["id"] for r in requests], ["synthetic-1", "synthetic-2"]
+            )
+
+    async def test_unresolved_patient_from_real_resolution_not_old_patient(self):
+        async with self.setup_session() as (
+            session,
+            agent,
+            state,
+            owner,
+            requests,
+            middleware,
+        ):
+            state.patient.active = patient()
+            middleware.resolve.return_value = Failure(reason="offline")
+            await self.invoke(
+                session, agent, {"firstName": "Alex", "dob": None}, "resolve_patient"
+            )
+            await self.invoke(session, agent)
+            await owner.aclose()
+            self.assertEqual(requests[0]["patient"], {"name": "Alex"})
+
+    async def test_invalid_update_preserves_draft_and_unknown_id_creates_nothing(self):
+        async with self.setup_session() as (_, _, _, owner, requests, _):
+            self.assertEqual(
+                owner.save(**NEED, draft_id="missing")["outcome"], "failed"
+            )
+            self.assertEqual(owner.discard("missing")["outcome"], "failed")
+            saved = owner.save(**NEED)
+            for changes in (
+                {"message": "x" * 2501},
+                {"category": "unsupported"},
+                {"urgency": "urgent"},
+            ):
+                self.assertEqual(
+                    owner.save(**(NEED | changes), draft_id=saved["draftId"])[
+                        "outcome"
+                    ],
+                    "failed",
+                )
+            owner.close_admission()
+            self.assertEqual(owner.save(**NEED)["outcome"], "failed")
+            self.assertEqual(owner.discard(saved["draftId"])["outcome"], "failed")
+            await owner.aclose()
+            self.assertEqual(len(requests), 1)
+            self.assertEqual(requests[0]["message"], NEED["message"])
+
+    async def test_missing_identity_allowed_missing_contact_rejected(self):
+        async with self.setup_session() as (_, _, state, owner, requests, _):
+            self.assertEqual(owner.save(**NEED)["outcome"], "saved")
+            state.call = replace(state.call, caller_phone=None)
+            self.assertEqual(owner.save(**NEED)["outcome"], "failed")
+            await owner.aclose()
+            self.assertNotIn("patient", requests[0])
+
+    async def test_sweetwater_preserves_inbound_number_and_product_location(self):
         office = get_office_profile("sweetwater")
         for phone in office.trunk_numbers:
             with self.subTest(phone=phone):
                 state = call_state(office)
                 state.call = replace(state.call, called_number=phone)
                 async with self.setup_session(state=state) as (
-                    session,
-                    agent,
                     _,
                     _,
+                    _,
+                    owner,
                     requests,
                     _,
                 ):
-                    result = await self.invoke(session, agent)
-                    self.assertEqual(result.split(":", 1)[0], "created")
+                    self.assertEqual(owner.save(**NEED)["outcome"], "saved")
+                    await owner.aclose()
                     self.assertEqual(len(requests), 1)
                     self.assertEqual(
                         requests[0]["officeKey"],
@@ -171,145 +306,21 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
         state = call_state(get_office_profile("sweetwater"))
         state.call = replace(state.call, called_number="+19542872010")
         async with self.setup_session(state=state) as (_, _, _, owner, requests, _):
-            with self.assertRaisesRegex(ValueError, "Inbound office does not match"):
-                owner._payload(**NEED)
+            self.assertEqual(owner.save(**NEED)["outcome"], "failed")
+            await owner.aclose()
             self.assertEqual(requests, [])
 
-    async def test_distinct_needs_duplicates_and_changed_details(self):
-        async with self.setup_session() as (session, agent, state, owner, requests, _):
-            state.patient.active = patient()
-            first = await self.invoke(session, agent)
-            self.assertEqual(first.split(":", 1)[0], "created")
-            self.assertNotIn("taskId", first)
-            self.assertNotIn(TASK_ID, first)
-            self.assertIn("Request: Refill requested", first)
-            self.assertIn("Patient: Jane (verified).", first)
-            self.assertTrue(state.reporter.record.call_args.kwargs["call_id"])
-            self.assertEqual(state.reporter.record.call_args.args[0], "staff_task")
-            self.assertEqual(state.reporter.record.call_args.args[1]["taskId"], TASK_ID)
-            self.assertEqual(
-                next(iter(owner._deliveries.values())).result()["taskId"], TASK_ID
-            )
-            self.assertEqual(
-                (await self.invoke(session, agent)).split(":", 1)[0], "duplicate"
-            )
-            for changes in (
-                {"message": "Also requests different medication."},
-                {"summary": "Corrected refill title"},
-                {"urgency": "high_priority"},
-            ):
-                self.assertEqual(
-                    (await self.invoke(session, agent, NEED | changes)).split(":", 1)[
-                        0
-                    ],
-                    "created",
-                )
-            state.patient.active = patient("Alex", "synthetic-2")
-            self.assertEqual(
-                (await self.invoke(session, agent)).split(":", 1)[0], "created"
-            )
-            self.assertEqual(len(requests), 5)
-            self.assertEqual(len({r["idempotencyKey"] for r in requests}), 5)
-            self.assertEqual(requests[0]["patient"]["id"], "synthetic-1")
-            self.assertEqual(requests[0]["callerPhone"], "+15555550101")
-            self.assertNotEqual(requests[0]["callerPhone"], patient().phone)
-
-    async def test_unresolved_patient_from_real_resolution_not_old_patient(self):
-        async with self.setup_session() as (
-            session,
-            agent,
-            state,
-            _owner,
-            requests,
-            middleware,
-        ):
-            state.patient.active = patient()
-            middleware.resolve.return_value = Failure(reason="offline")
-            await self.invoke(
-                session, agent, {"firstName": "Alex", "dob": None}, "resolve_patient"
-            )
-            self.assertEqual(
-                (await self.invoke(session, agent)).split(":", 1)[0], "created"
-            )
-            self.assertEqual(requests[-1]["patient"], {"name": "Alex"})
-
-    async def test_missing_identity_is_allowed_missing_contact_is_not(self):
-        from dataclasses import replace
-
-        async with self.setup_session() as (session, agent, state, _owner, requests, _):
-            self.assertEqual(
-                (await self.invoke(session, agent)).split(":", 1)[0], "created"
-            )
-            self.assertNotIn("patient", requests[0])
-            state.call = replace(state.call, caller_phone=None)
-            self.assertEqual(
-                (await self.invoke(session, agent)).split(":", 1)[0], "failed"
-            )
-            self.assertEqual(len(requests), 1)
-
-    async def test_insurance_and_surgical_tasks_are_delivered_and_replayed(self):
-        async with self.setup_session() as (session, agent, state, _, requests, _):
-            for category in ("insurance", "pre_op", "post_op"):
-                with self.subTest(category=category):
-                    need = NEED | {
-                        "category": category,
-                        "summary": f"Synthetic {category} follow-up",
-                        "message": f"Caller approved staff follow-up for {category}.",
-                    }
-                    self.assertEqual(
-                        (await self.invoke(session, agent, need)).split(":", 1)[0],
-                        "created",
-                    )
-                    self.assertEqual(requests[-1]["category"], category)
-                    self.assertEqual(
-                        state.reporter.record.call_args.args[1]["category"], category
-                    )
-                    self.assertEqual(
-                        (await self.invoke(session, agent, need)).split(":", 1)[0],
-                        "duplicate",
-                    )
-            self.assertEqual(len(requests), 3)
-
-    async def test_rejection_and_contract_categories(self):
-        async def forbidden(request, payload):
-            return httpx.Response(403)
-
-        async with self.setup_session(forbidden) as (
-            session,
-            agent,
-            _state,
-            owner,
-            requests,
-            _,
-        ):
-            self.assertEqual(
-                (await self.invoke(session, agent)).split(":", 1)[0], "failed"
-            )
-            self.assertEqual(len(requests), 1)
-            for category in ("unsupported", "billing"):
-                self.assertEqual(
-                    (await owner.submit(**(NEED | {"category": category})))["outcome"],
-                    "failed",
-                )
-            self.assertEqual(len(requests), 1)
-            self.assertEqual(
-                (
-                    await self.invoke(session, agent, NEED | {"message": "x" * 2501})
-                ).split(":", 1)[0],
-                "failed",
-            )
-            self.assertEqual(len(requests), 1)
-
     async def test_office_disabled_and_no_configuration(self):
-        from dataclasses import replace
-
         state = call_state()
         state.call = replace(state.call, called_office_key="crystal-river")
         async with self.setup_session(state=state) as (_, agent, _, owner, requests, _):
             self.assertNotIn(
-                "create_staff_task", [tool.info.name for tool in agent.tools]
+                "save_staff_task", [tool.info.name for tool in agent.tools]
             )
-            self.assertEqual((await owner.submit(**NEED))["outcome"], "failed")
+            self.assertNotIn(
+                "discard_staff_task", [tool.info.name for tool in agent.tools]
+            )
+            self.assertEqual(owner.save(**NEED)["outcome"], "failed")
             self.assertEqual(requests, [])
         async with self.setup_session(config=Config("offline")) as (
             session,
@@ -319,74 +330,89 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             requests,
             _,
         ):
-            self.assertEqual(
-                (await self.invoke(session, agent)).split(":", 1)[0], "failed"
-            )
+            self.assertTrue((await self.invoke(session, agent)).startswith("failed:"))
             self.assertEqual(requests, [])
 
-    async def test_timeout_recovers_duplicate_with_identical_payload(self):
-        count = 0
+    async def test_all_supported_categories_deliver_at_closeout(self):
+        async with self.setup_session() as (_, _, state, owner, requests, _):
+            for category in ("insurance", "pre_op", "post_op"):
+                self.assertEqual(
+                    owner.save(**(NEED | {"category": category}))["outcome"], "saved"
+                )
+            await owner.aclose()
+            self.assertEqual(
+                [r["category"] for r in requests], ["insurance", "pre_op", "post_op"]
+            )
+            self.assertEqual(state.reporter.record.call_count, 3)
 
-        async def timeout_then_duplicate(request, payload):
-            nonlocal count
-            count += 1
-            if count == 1:
-                raise httpx.ReadTimeout("synthetic timeout")
+    async def test_timeout_retries_identical_final_payload(self):
+        async def handler(request, payload):
+            if len(requests) == 1:
+                raise httpx.ReadTimeout("synthetic")
             return httpx.Response(200, json=receipt(payload, "duplicate"))
 
-        async with self.setup_session(timeout_then_duplicate) as (
-            session,
-            agent,
-            _,
-            _,
-            requests,
-            _,
-        ):
-            self.assertEqual(
-                (await self.invoke(session, agent)).split(":", 1)[0], "duplicate"
-            )
+        async with self.setup_session(handler) as (_, _, state, owner, requests, _):
+            owner.save(**NEED)
+            await owner.aclose()
+            self.assertEqual(len(requests), 2)
             self.assertEqual(requests[0], requests[1])
+            self.assertEqual(
+                state.reporter.record.call_args.args[1]["outcome"], "duplicate"
+            )
 
-    async def test_invalid_receipts_timeouts_and_partial_delivery_are_ambiguous(self):
+    async def test_failed_or_ambiguous_delivery_is_visible_and_not_resent_on_cleanup(
+        self,
+    ):
+        for statuses, expected in (
+            ([403], "failed"),
+            ([500, 403], "ambiguous"),
+            ([500, 503], "ambiguous"),
+        ):
+            with self.subTest(statuses=statuses):
+                remaining = list(statuses)
+
+                async def handler(request, payload):
+                    return httpx.Response(remaining.pop(0))
+
+                async with self.setup_session(handler) as (
+                    _,
+                    _,
+                    state,
+                    owner,
+                    requests,
+                    _,
+                ):
+                    owner.save(**NEED)
+                    for _ in range(2):
+                        with self.assertRaisesRegex(RuntimeError, "not confirmed"):
+                            await owner.aclose()
+                    self.assertEqual(len(requests), len(statuses))
+                    self.assertEqual(
+                        state.reporter.record.call_args.args[1]["outcome"], expected
+                    )
+                    self.assertTrue(all(r == requests[0] for r in requests))
+
+    async def test_invalid_receipts_are_ambiguous(self):
         for response in (
-            None,
             {},
             {"status": "created", "taskId": TASK_ID},
-            {
-                "status": "created",
-                "taskId": "bad",
-                "category": "medication",
-                "urgency": "normal",
-            },
-            {
-                "status": "created",
-                "taskId": TASK_ID,
-                "category": "other",
-                "urgency": "normal",
-            },
+            receipt(NEED) | {"taskId": "bad"},
+            receipt(NEED) | {"category": "other"},
         ):
 
-            async def invalid(request, payload, response=response):
-                if response is None:
-                    raise httpx.ReadTimeout("synthetic")
+            async def handler(request, payload):
                 return httpx.Response(201, json=response)
 
-            async with self.setup_session(invalid) as (
-                session,
-                agent,
-                _,
-                _,
-                requests,
-                _,
-            ):
-                result = await self.invoke(session, agent)
-                self.assertEqual(result.split(":", 1)[0], "ambiguous")
-                self.assertIn("may already have reached staff", result)
-                self.assertIn("do not change details just to retry", result)
-                self.assertEqual(requests[0], requests[1])
-                self.assertNotIn("taskId", result)
+            async with self.setup_session(handler) as (_, _, state, owner, requests, _):
+                owner.save(**NEED)
+                with self.assertRaisesRegex(RuntimeError, "not confirmed"):
+                    await owner.aclose()
+                self.assertEqual(len(requests), 2)
+                self.assertEqual(
+                    state.reporter.record.call_args.args[1]["outcome"], "ambiguous"
+                )
 
-    async def test_patient_switch_during_registered_write_keeps_old_receipt(self):
+    async def test_cancelled_close_waiter_does_not_cancel_delivery(self):
         started, release = asyncio.Event(), asyncio.Event()
 
         async def delayed(request, payload):
@@ -394,92 +420,32 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             await release.wait()
             return httpx.Response(201, json=receipt(payload))
 
-        async with self.setup_session(delayed) as (
-            session,
-            agent,
-            state,
-            _owner,
-            _requests,
-            _,
-        ):
-            state.patient.active = patient()
-            pending = asyncio.create_task(self.invoke(session, agent))
+        async with self.setup_session(delayed) as (_, _, state, owner, requests, _):
+            owner.save(**NEED)
+            closing = asyncio.create_task(owner.aclose())
             await asyncio.wait_for(started.wait(), 2)
-            state.patient.active = patient("Alex", "synthetic-2")
-            release.set()
-            result = await pending
-            self.assertIn("previous patient context, not the current patient", result)
-            self.assertIn("Patient: Jane (verified).", result)
-            self.assertIn("Request: Refill requested", result)
-            self.assertNotIn("synthetic-1", result)
-            self.assertEqual(result.split(":", 1)[0], "created")
-
-    async def test_cancellation_and_concurrent_duplicates_retain_mutation(self):
-        started, release = asyncio.Event(), asyncio.Event()
-
-        async def delayed(request, payload):
-            started.set()
-            await release.wait()
-            return httpx.Response(201, json=receipt(payload))
-
-        async with self.setup_session(delayed) as (_, _, _, owner, requests, _):
-            first = asyncio.create_task(owner.submit(**NEED))
-            await started.wait()
-            second = asyncio.create_task(owner.submit(**NEED))
-            first.cancel()
+            closing.cancel()
             with self.assertRaises(asyncio.CancelledError):
-                await first
+                await closing
             release.set()
-            self.assertEqual((await second)["outcome"], "duplicate")
-            self.assertEqual((await owner.submit(**NEED))["outcome"], "duplicate")
+            await owner.aclose()
             self.assertEqual(len(requests), 1)
-
-    async def test_uncertainty_survives_later_rejection_and_can_recover(self):
-        responses = [500, 503, 403, 200]
-
-        async def handler(request, payload):
-            status = responses.pop(0)
-            return httpx.Response(status, json=receipt(payload, "duplicate"))
-
-        async with self.setup_session(handler) as (session, agent, _, _, requests, _):
             self.assertEqual(
-                (await self.invoke(session, agent)).split(":", 1)[0], "ambiguous"
+                state.reporter.record.call_args.args[1]["outcome"], "created"
             )
-            self.assertEqual(
-                (await self.invoke(session, agent)).split(":", 1)[0], "ambiguous"
-            )
-            self.assertEqual(
-                (await self.invoke(session, agent)).split(":", 1)[0], "duplicate"
-            )
-            self.assertTrue(all(p == requests[0] for p in requests))
 
-    async def test_definite_rejection_can_be_retried(self):
-        statuses = [403, 201]
-
-        async def handler(request, payload):
-            return httpx.Response(statuses.pop(0), json=receipt(payload))
-
-        async with self.setup_session(handler) as (session, agent, _, _, requests, _):
-            self.assertEqual(
-                (await self.invoke(session, agent)).split(":", 1)[0], "failed"
-            )
-            self.assertEqual(
-                (await self.invoke(session, agent)).split(":", 1)[0], "created"
-            )
-            self.assertEqual(requests[0], requests[1])
-
-    async def test_registered_schema_preserves_policy_without_consent_input(self):
+    async def test_registered_schema_preserves_policy_and_draft_identity(self):
         from livekit.agents.llm.utils import build_strict_openai_schema
 
         async with self.setup_session() as (_, agent, _, _, _, _):
             schema = next(
                 build_strict_openai_schema(t)["function"]
                 for t in agent.tools
-                if t.info.name == "create_staff_task"
+                if t.info.name == "save_staff_task"
             )
             self.assertEqual(
                 set(schema["parameters"]["properties"]),
-                {"category", "urgency", "summary", "message"},
+                {"category", "urgency", "summary", "message", "draft_id"},
             )
             self.assertIn("caller-approved", schema["description"])
             self.assertEqual(
@@ -496,6 +462,7 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
                     "post_op",
                 },
             )
+            self.assertNotIn("create_staff_task", [t.info.name for t in agent.tools])
             self.assertNotIn("characters", json.dumps(schema))
 
     def test_product_configuration(self):
