@@ -23,13 +23,13 @@ class StaffTaskTools:
     ) -> str:
         """Save or update one caller-approved, non-urgent unresolved need for call-end delivery.
 
+        Drafts are sent automatically when the call ends, including a caller hangup.
+        Say the request is noted, not submitted; staff owns fulfillment and timing.
         Reuse draft_id for added details or corrections to the same request, including
         pharmacy details. Omit it only for a genuinely separate need, even in one category.
-        Nothing is sent yet; say the request is noted, never that it has been submitted.
-        For records, search office knowledge for intake/delivery rules; speak restrictions and missing
-        prerequisites even when approved. Collect details and list gaps if incomplete.
+        For records, search office knowledge for intake/delivery rules; speak restrictions
+        and missing prerequisites. Collect available details and list remaining gaps.
         Follow Human Transfer policy for urgent or clinical concerns.
-        Staff owns fulfillment and timing.
 
         Args:
             category: Optical includes glasses/contact prescriptions; medication includes
