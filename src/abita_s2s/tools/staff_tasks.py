@@ -32,11 +32,8 @@ class StaffTaskTools:
         Follow Human Transfer policy for urgent or clinical concerns.
 
         Args:
-            category: Optical includes glasses/contact prescriptions; medication includes
-                refills and medication authorizations; insurance includes copays, coverage,
-                referrals requirements and service authorizations; referrals means specialist
-                or imaging orders. pre_op/post_op are surgical preparation/aftercare.
-                Ask what prior authorization authorizes; if still unclear use other.
+            category: Follow the Staff task drafts routing rules. Classify the work
+                requested; ask one focused question if unclear before using other.
             urgency: high_priority for time-sensitive non-clinical work, normal for
                 standard follow-up, non_urgent without time sensitivity. Transfer clinical acuity.
             summary: Short staff inbox title for one unresolved need.
