@@ -19,6 +19,7 @@ class StaffTaskTools:
         summary: str,
         message: str,
         draft_id: str | None = None,
+        cancel: bool = False,
     ) -> str:
         """Save or update one caller-approved, non-urgent unresolved need for call-end delivery.
 
@@ -43,6 +44,8 @@ class StaffTaskTools:
                 authorization status and procedure timing when relevant. Preserve intake
                 and list missing details. When updating, include the full revised request.
             draft_id: ID returned by the previous save for this need; omit for a new need.
+            cancel: True with the draft ID if the request is withdrawn or resolved;
+                it will not be submitted. Other request fields are ignored when cancelling.
         """
         context.disallow_interruptions()
         if self._staff_tasks is None or self._staff_tasks.state is not context.userdata:
@@ -53,6 +56,7 @@ class StaffTaskTools:
             summary,
             message,
             draft_id=draft_id,
+            cancel=cancel,
             call_id=context.function_call.call_id,
         )
         answer = f"{result['outcome']}: {result['answer']}"
@@ -67,14 +71,3 @@ class StaffTaskTools:
                 else "\nPatient: not identified."
             )
         return answer
-
-    @function_tool
-    async def discard_staff_task(
-        self, context: RunContext[CallState], draft_id: str
-    ) -> str:
-        """Remove a saved draft when the caller withdraws the request or it is resolved."""
-        context.disallow_interruptions()
-        if self._staff_tasks is None or self._staff_tasks.state is not context.userdata:
-            return "failed: Staff delivery is unavailable. No draft was removed."
-        result = self._staff_tasks.discard(draft_id)
-        return f"{result['outcome']}: {result['answer']}"

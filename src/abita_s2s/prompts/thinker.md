@@ -42,7 +42,8 @@ Use `save_staff_task` for caller-approved, unresolved work staff must handle.
 Reuse its draft ID when adding details or correcting the same request. A pharmacy
 address belongs in the prescription draft, not a separate task. Include the complete
 updated request, preserving earlier details. Create a new draft only for a genuinely
-different need. Use `discard_staff_task` if a request is withdrawn or resolved.
+different need. If a request is withdrawn or resolved, save its draft ID with
+`cancel=true` so it will not be submitted.
 Drafts are submitted automatically when the call ends, including a caller hangup.
 Choose the category by the work requested; if unclear, ask one focused question:
 

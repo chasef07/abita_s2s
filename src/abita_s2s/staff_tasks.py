@@ -74,12 +74,18 @@ class StaffTasks:
         message: str,
         *,
         draft_id: str | None = None,
+        cancel: bool = False,
         call_id: str | None = None,
     ) -> dict:
         if self._closed:
             return _result("failed", "This call has ended. No draft was saved.")
         if draft_id is not None and draft_id not in self._drafts:
             return _result("failed", "Unknown draft ID. No draft was saved.")
+        if cancel:
+            if draft_id is None:
+                return _result("failed", "A draft ID is required to cancel a request.")
+            del self._drafts[draft_id]
+            return _result("cancelled", "Request cancelled. It will not be submitted.")
         try:
             payload = self._payload(category, urgency, summary, message)
         except ValueError as exc:
@@ -91,7 +97,7 @@ class StaffTasks:
                     "failed",
                     "Patient context changed. Existing draft is unchanged. "
                     "For a different patient, create a separate draft; to correct "
-                    "the original patient's identity, discard that draft and save it again.",
+                    "the original patient's identity, cancel that draft and save it again.",
                 )
         else:
             draft_id = (
@@ -118,15 +124,6 @@ class StaffTasks:
                 else None
             ),
         }
-
-    def discard(self, draft_id: str) -> dict:
-        if self._closed:
-            return _result(
-                "failed", "This call has ended. Drafts can no longer be changed."
-            )
-        if self._drafts.pop(draft_id, None) is None:
-            return _result("failed", "Unknown draft ID. No draft was removed.")
-        return _result("discarded", "Draft removed. This request will not be sent.")
 
     async def aclose(self) -> None:
         self._closed = True

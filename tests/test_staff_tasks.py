@@ -201,9 +201,9 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             result = await self.invoke(session, agent)
             draft_id = result.split("Draft ID: ")[1].splitlines()[0]
             result = await self.invoke(
-                session, agent, {"draft_id": draft_id}, "discard_staff_task"
+                session, agent, NEED | {"draft_id": draft_id, "cancel": True}
             )
-            self.assertTrue(result.startswith("discarded:"))
+            self.assertTrue(result.startswith("cancelled:"))
             self.assertEqual(owner.save(**NEED, draft_id=draft_id)["outcome"], "failed")
             await owner.aclose()
             self.assertEqual(requests, [])
@@ -245,7 +245,10 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 owner.save(**NEED, draft_id="missing")["outcome"], "failed"
             )
-            self.assertEqual(owner.discard("missing")["outcome"], "failed")
+            self.assertEqual(
+                owner.save(**NEED, draft_id="missing", cancel=True)["outcome"], "failed"
+            )
+            self.assertEqual(owner.save(**NEED, cancel=True)["outcome"], "failed")
             saved = owner.save(**NEED)
             for changes in (
                 {"message": "x" * 2501},
@@ -260,7 +263,10 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
                 )
             owner.close_admission()
             self.assertEqual(owner.save(**NEED)["outcome"], "failed")
-            self.assertEqual(owner.discard(saved["draftId"])["outcome"], "failed")
+            self.assertEqual(
+                owner.save(**NEED, draft_id=saved["draftId"], cancel=True)["outcome"],
+                "failed",
+            )
             await owner.aclose()
             self.assertEqual(len(requests), 1)
             self.assertEqual(requests[0]["message"], NEED["message"])
@@ -445,7 +451,7 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(
                 set(schema["parameters"]["properties"]),
-                {"category", "urgency", "summary", "message", "draft_id"},
+                {"category", "urgency", "summary", "message", "draft_id", "cancel"},
             )
             self.assertIn("caller-approved", schema["description"])
             self.assertEqual(
@@ -462,7 +468,10 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
                     "post_op",
                 },
             )
-            self.assertNotIn("create_staff_task", [t.info.name for t in agent.tools])
+            self.assertEqual(
+                [t.info.name for t in agent.tools if "staff_task" in t.info.name],
+                ["save_staff_task"],
+            )
             self.assertNotIn("characters", json.dumps(schema))
 
     def test_product_configuration(self):
