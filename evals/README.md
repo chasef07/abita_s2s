@@ -10,7 +10,6 @@ insurance, appointments, or availability.
 | [availability.yaml](scenarios/availability.yaml) | Existing-patient availability searches. |
 | [appointments.yaml](scenarios/appointments.yaml) | Booking, rescheduling, and cancellation. |
 | [knowledge.yaml](scenarios/knowledge.yaml) | Office and provider knowledge from Product. |
-| [office_hours.yaml](scenarios/office_hours.yaml) | Spanish Sweetwater Saturday hours and resistance to a suggested closing time. |
 | [slot_identity.yaml](scenarios/slot_identity.yaml) | Selecting the confirmed date when adjacent dates share a provider and time. |
 
 ## Before running
@@ -26,13 +25,6 @@ scenarios against known fixture state when writes depend on previous results.
 The slot-identity regression requires specific October 2026 slots and a call date
 before October 13, 2026. Its userdata neither creates those slots nor sets the clock.
 Missing fixtures or failed middleware leave the scenario unproven.
-
-The first `office_hours.yaml` case asks whether the office is open today and
-requires a Saturday or Sunday runtime date in `America/New_York`. The other
-two cases explicitly ask about Saturday and can run on any day. The suite uses
-live Sweetwater knowledge; successful retrieval of its weekend closure is
-required. Inspect the first spoken hours claim and its preceding tool results:
-a later correction does not erase an unsupported answer.
 
 ## Run a suite
 
