@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.4](https://github.com/chasef07/abita_s2s/compare/v0.9.3...v0.9.4) (2026-09-27)
+
+
+### Performance Improvements
+
+* drop uv from runtime image and skip redundant per-call work ([#87](https://github.com/chasef07/abita_s2s/issues/87)) ([84fc40d](https://github.com/chasef07/abita_s2s/commit/84fc40d8934d4a42e4cbe00c2623ecdbc9fd91e0))
+
 ## [0.9.3](https://github.com/chasef07/abita_s2s/compare/v0.9.2...v0.9.3) (2026-09-25)
 
 
