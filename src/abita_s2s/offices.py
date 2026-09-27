@@ -2,6 +2,10 @@
 
 import re
 from dataclasses import dataclass
+from zoneinfo import ZoneInfo
+
+# Every office is clinic-local to US Eastern time.
+EASTERN = ZoneInfo("America/New_York")
 
 
 @dataclass(frozen=True)
@@ -68,18 +72,31 @@ def get_office_profile(key: str) -> OfficeProfile:
     raise ValueError("Unsupported office key")
 
 
-def get_office_profile_by_phone(phone: str) -> OfficeProfile:
+def office_phone(key: str) -> str:
+    return get_office_profile(key).trunk_numbers[0]
+
+
+def same_office(office_id: str, key: str) -> bool:
+    # Middleware office IDs use underscores where office keys use hyphens.
+    return office_id.replace("_", "-") == key
+
+
+def e164(phone: str) -> str:
     digits = re.sub(r"\D", "", phone)
     if len(digits) == 10:
         digits = "1" + digits
+    return "+" + digits
+
+
+def get_office_profile_by_phone(phone: str) -> OfficeProfile:
     for office in OFFICES:
-        if "+" + digits in office.trunk_numbers:
+        if e164(phone) in office.trunk_numbers:
             return office
     raise ValueError("Missing or unsupported SIP trunk phone number")
 
 
 def get_product_office_key(phone: str) -> str:
     office = get_office_profile_by_phone(phone)
-    if re.sub(r"\D", "", phone) in ("17864657479", "7864657479"):
+    if e164(phone) == "+17864657479":
         return "sweetwater-optical"
     return office.key

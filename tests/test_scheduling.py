@@ -1152,7 +1152,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     "found", (owner.state.patient.active,)
                 )
                 resolver = PatientResolver(
-                    owner.state, PatientMiddleware(owner.http.client, CONFIG)
+                    owner.state, PatientMiddleware(owner.http._client, CONFIG)
                 )
                 self.addAsyncCleanup(resolver.aclose)
                 result = await resolver.resolve("Jane", "01/02/1980")

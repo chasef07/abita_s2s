@@ -6,7 +6,9 @@ from typing import Literal
 
 from livekit.agents import RunContext, ToolError, function_tool
 
-from abita_s2s.scheduling import EASTERN, Scheduling, VisitType
+from abita_s2s.insurance_contract import CoverageType
+from abita_s2s.offices import EASTERN
+from abita_s2s.scheduling import Scheduling
 from abita_s2s.state import CallState
 
 
@@ -39,7 +41,7 @@ class SchedulingTools:
     async def list_available_appointments(
         self,
         context: RunContext[CallState],
-        visitType: VisitType,
+        visitType: CoverageType,
         startDate: str | None = None,
         office: Literal["hollywood", "sweetwater"] | None = None,
     ) -> str:

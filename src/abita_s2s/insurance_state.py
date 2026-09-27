@@ -3,13 +3,12 @@
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-from abita_s2s.insurance_contract import InsuranceDecision
+from abita_s2s.insurance_contract import CoverageType, InsuranceDecision
+from abita_s2s.offices import same_office
 
 if TYPE_CHECKING:
     from abita_s2s.eligibility_contract import EligibilityCheck
     from abita_s2s.state import CallState, PatientAbsence
-
-CoverageType = Literal["medical", "routine_vision"]
 
 
 @dataclass(frozen=True, repr=False)
@@ -72,7 +71,7 @@ def registration_insurance(
         return None
     checked = accepted_insurance(state, coverage_type)
     decision = checked.decision if checked else None
-    if decision and decision.officeId.replace("_", "-") == state.call.called_office_key:
+    if decision and same_office(decision.officeId, state.call.called_office_key):
         return decision
     return None
 

@@ -10,8 +10,8 @@ from uuid import UUID
 import httpx
 
 from abita_s2s.config import Config
-from abita_s2s.identity import PatientResolver
-from abita_s2s.offices import get_office_profile, get_product_office_key
+from abita_s2s.identity import PatientResolver, reply
+from abita_s2s.offices import e164, get_office_profile, get_product_office_key
 from abita_s2s.state import CallState
 
 Category = Literal[
@@ -29,14 +29,8 @@ Urgency = Literal["high_priority", "normal", "non_urgent"]
 
 
 def _phone(value: str | None) -> str:
-    digits = re.sub(r"\D", "", value or "")
-    if len(digits) == 10:
-        digits = "1" + digits
-    return "+" + digits if re.fullmatch(r"[1-9][0-9]{7,14}", digits) else ""
-
-
-def _result(outcome: str, answer: str) -> dict:
-    return {"outcome": outcome, "answer": answer}
+    phone = e164(value or "")
+    return phone if re.fullmatch(r"\+[1-9][0-9]{7,14}", phone) else ""
 
 
 class StaffTasks:
@@ -80,11 +74,11 @@ class StaffTasks:
         call_id: str | None = None,
     ) -> dict:
         if self._closed:
-            return _result("failed", "This call has ended. No request was sent.")
+            return reply("failed", "This call has ended. No request was sent.")
         try:
             payload = self._payload(category, urgency, summary, message)
         except ValueError as exc:
-            return _result("failed", str(exc))
+            return reply("failed", str(exc))
         patient = payload.get("patient")
         # Product fingerprints exact fields, including urgency and patient context.
         key = (
@@ -113,7 +107,7 @@ class StaffTasks:
         result.pop("taskId", None)  # Keep the delivery receipt application-owned.
         if replay and result["outcome"] == "created":
             result.update(
-                _result(
+                reply(
                     "duplicate", "This request was already sent to the team for review."
                 )
             )
@@ -232,7 +226,7 @@ class StaffTasks:
                 if response.status_code not in (200, 201):
                     if uncertain:
                         break
-                    return _result(
+                    return reply(
                         "failed",
                         "Product rejected this request. Do not confirm submission; offer office help.",
                     )
@@ -248,7 +242,7 @@ class StaffTasks:
                     continue
                 UUID(receipt["taskId"])
                 return {
-                    **_result(
+                    **reply(
                         receipt["status"],
                         "The request was sent to the team for review."
                         if receipt["status"] == "created"
@@ -259,7 +253,7 @@ class StaffTasks:
             except (httpx.HTTPError, ValueError, TimeoutError):
                 uncertain = True
                 continue
-        return _result(
+        return reply(
             "ambiguous",
             "Delivery could not be confirmed; the request may already have reached staff. Do not claim success or that nothing was sent. An identical retry can recover the receipt; do not change details just to retry.",
         )

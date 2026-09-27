@@ -14,7 +14,8 @@ from pydantic import (
 )
 
 from abita_s2s.config import Config
-from abita_s2s.integrations.patient_middleware import Record, Text
+from abita_s2s.insurance_contract import CoverageType
+from abita_s2s.integrations.patient_middleware import Middleware, Record, Text
 
 
 class Slot(Record):
@@ -98,7 +99,7 @@ class WriteReceipt(Record):
     cancellationToken: str | None = None
     officeId: str | None = None
     office: str | None = None
-    visitType: Literal["medical", "routine_vision"] | None = None
+    visitType: CoverageType | None = None
     profileId: str | None = None
     providerName: str | None = None
     locationName: str | None = None
@@ -150,12 +151,9 @@ class SchedulingFailure(Record):
     uncertain: bool = False
 
 
-class SchedulingHTTP:
+class SchedulingHTTP(Middleware):
     def __init__(self, client: httpx.AsyncClient, config: Config, *, deadline=20):
-        self.client = client
-        self.url = config.middleware_url
-        self.token = config.middleware_token
-        self.deadline = deadline
+        super().__init__(client, config, deadline)
 
     async def availability(self, body: dict) -> Inventory | SchedulingFailure:
         return await self._post("/api/scheduler/slots", body, Inventory, write=False)
@@ -174,17 +172,11 @@ class SchedulingHTTP:
         )
 
     async def _post(self, path, body, record, *, write):
-        if not self.url or not self.token:
+        if not self._configured:
             return SchedulingFailure(reason="not_configured")
         try:
-            async with asyncio.timeout(self.deadline):
-                response = await self.client.post(
-                    self.url.rstrip("/") + path,
-                    headers={"Authorization": self.token},
-                    json=body,
-                    timeout=self.deadline,
-                    follow_redirects=False,
-                )
+            async with asyncio.timeout(self._deadline):
+                response = await self._send(path, body)
             if not response.is_success:
                 if not write:
                     result = record.model_validate(response.json())

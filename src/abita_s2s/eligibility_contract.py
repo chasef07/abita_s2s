@@ -8,7 +8,7 @@ from uuid import uuid4
 from pydantic import ConfigDict, JsonValue
 
 from abita_s2s.integrations.patient_middleware import Record, Text
-from abita_s2s.insurance_contract import InsuranceDecision
+from abita_s2s.insurance_contract import CoverageType, InsuranceDecision
 
 
 class InsuranceResolution(Record):
@@ -23,7 +23,7 @@ class EligibilityInput(Record):
     dob: Text
     memberId: Text
     plan: Text
-    coverageType: Literal["medical", "routine_vision"] = "medical"
+    coverageType: CoverageType = "medical"
 
 
 class IdentityEvidence(Record):
