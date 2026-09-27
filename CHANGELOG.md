@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.7](https://github.com/chasef07/abita_s2s/compare/v0.9.6...v0.9.7) (2026-09-27)
+
+
+### Bug Fixes
+
+* **prompts:** ground office answers and flag unsupported claims ([#100](https://github.com/chasef07/abita_s2s/issues/100)) ([8a13ad7](https://github.com/chasef07/abita_s2s/commit/8a13ad713850b5a29211ed0340cde1100479be31))
+
 ## [0.9.6](https://github.com/chasef07/abita_s2s/compare/v0.9.5...v0.9.6) (2026-09-27)
 
 
