@@ -29,6 +29,9 @@ from abita_s2s.integrations.scheduling_http import (
 from abita_s2s.state import CallState
 
 
+CHOOSE_LOADED_APPOINTMENT = "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed."
+
+
 def provider_name(name):
     for old, new in (
         ("Dr. Austin Bach (Overflow)", "Dr. Bach"),
@@ -84,7 +87,6 @@ class MutationReceipt:
 
 @dataclass(repr=False)
 class PendingRead:
-    key: AvailabilitySearch
     task: asyncio.Task
     waiters: int = 0
 
@@ -235,15 +237,16 @@ class Scheduling:
         if self._search_key != key:
             self._invalidate()
             self._search_key = key
-        if self._cache and self._cache[0] == key and self._cache[1] > self.now():
-            return self._cache[2]
+        # _invalidate() clears the cache and shared read whenever the key changes.
+        if self._cache and self._cache[0] > self.now():
+            return self._cache[1]
         failed = self._failures.get(key)
         if failed and (failed[0] >= 2 or not failed[1]):
             return reply(
                 "availability_failed",
                 "blocked: Availability could not be verified. Do not describe this as no openings or retry this search; ask staff for help.",
             )
-        if self._search and not self._search.task.done() and self._search.key == key:
+        if self._search and not self._search.task.done():
             pending = self._search
         else:
             p = self.state.patient.active
@@ -259,7 +262,7 @@ class Scheduling:
             if decision := registration_insurance(self.state, visit):
                 body["insurancePlan"] = decision.canonicalPlan
             task = asyncio.create_task(self._load(body, key, self._generation))
-            pending = self._search = PendingRead(key, task)
+            pending = self._search = PendingRead(task)
             self._read_tasks.add(task)
             task.add_done_callback(self._read_tasks.discard)
         pending.waiters += 1
@@ -311,8 +314,7 @@ class Scheduling:
             # Policy errors are not exhausted transport retries. Recheck after
             # the normal TTL so chart corrections can restore scheduling.
             self._failures.pop(key, None)
-            self._cache = (key, self.now() + timedelta(seconds=60), answer)
-            return answer
+            return self._remember(answer)
         if (
             isinstance(result, SchedulingFailure)
             or result.outcome == "availability_search_incomplete"
@@ -336,8 +338,7 @@ class Scheduling:
                 "unsupported",
                 "blocked: No providers are eligible for the selected office, visit type, and patient requirements. Confirm the office and visit type or ask staff for help; changing dates will not resolve this restriction.",
             )
-            self._cache = (key, self.now() + timedelta(seconds=60), answer)
-            return answer
+            return self._remember(answer)
         if result.outcome == "no_availability":
             answer = reply(
                 "none",
@@ -345,8 +346,7 @@ class Scheduling:
                 searchedFrom=first,
                 searchedThrough=through,
             )
-            self._cache = (key, self.now() + timedelta(seconds=60), answer)
-            return answer
+            return self._remember(answer)
         expiry = result.bookingTokenExpiresAt
         unique = {slot.key: slot for slot in result.slots}
         for slot in unique.values():
@@ -380,7 +380,11 @@ class Scheduling:
                 for ref, item in self._slots.items()
             ],
         )
-        self._cache = (key, min(expiry, self.now() + timedelta(seconds=60)), answer)
+        return self._remember(answer, expiry)
+
+    def _remember(self, answer, expires=None):
+        ttl = self.now() + timedelta(seconds=60)
+        self._cache = (ttl if expires is None else min(expires, ttl), answer)
         return answer
 
     @property
@@ -523,10 +527,7 @@ class Scheduling:
         if saved := self._receipts.get(receipt_key):
             return saved.result
         if old is None:
-            return reply(
-                "needs_input",
-                "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed.",
-            )
+            return reply("needs_input", CHOOSE_LOADED_APPOINTMENT)
         if not old.cancellationToken:
             self.state.patient.active = p.model_copy(
                 update={"appointmentsStatus": "error"}
@@ -547,25 +548,18 @@ class Scheduling:
                 SchedulingFailure(reason="pending", uncertain=True), "cancellation"
             )
         )
-        result = await self.http.cancel(self._cancel_body(p, old))
+        result = await self.http.cancel(
+            {"patientId": p.patientId, "cancellationToken": old.cancellationToken}
+        )
         outcome = self._cancel_result(result, old.id)
         self._report(
             p, cancellation_outcome=outcome["outcome"], old=old, call_id=call_id
         )
+        # Definite rejections invalidate the loaded appointment authority.
         if (
-            outcome["outcome"] != "cancelled"
-            and isinstance(result, WriteReceipt)
-            and result.status == "error"
-            and result.outcome
-            in (
-                "invalid_cancellation_token",
-                "provider_conflict",
-                "provider_rejected",
-                "ownership_mismatch",
-                "write_failed",
-            )
-            and self._context() == captured
-        ):
+            outcome["outcome"] == "rejected"
+            or (outcome["outcome"] == "failed" and isinstance(result, WriteReceipt))
+        ) and self._context() == captured:
             self.state.patient.active = p.model_copy(
                 update={"appointmentsStatus": "error"}
             )
@@ -839,10 +833,7 @@ class Scheduling:
                     )
                 return self._replay(p, saved)
         if old is None:
-            return reply(
-                "needs_input",
-                "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed.",
-            )
+            return reply("needs_input", CHOOSE_LOADED_APPOINTMENT)
         return await self._book(
             p,
             captured,
@@ -957,12 +948,6 @@ class Scheduling:
             }
         self._reconcile_receipts()
         return result
-
-    def _cancel_body(self, patient, appointment):
-        return {
-            "patientId": patient.patientId,
-            "cancellationToken": appointment.cancellationToken,
-        }
 
     @staticmethod
     def _cancel_result(result, appointment_id):

@@ -28,7 +28,11 @@ from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.offices import SPRING_HILL, get_office_profile
 from abita_s2s.tools.scheduling import SchedulingTools
 from abita_s2s.scheduling import MutationReceipt, Scheduling
-from abita_s2s.integrations.scheduling_http import SchedulingHTTP
+from abita_s2s.integrations.scheduling_http import (
+    SchedulingFailure,
+    SchedulingHTTP,
+    WriteReceipt,
+)
 
 NOW = datetime(2026, 9, 14, 17, tzinfo=UTC)
 
@@ -242,7 +246,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertEqual(requests[0][2]["authorization"], "test-auth")
-        self.assertNotIn("private-signed-slot", json.dumps(owner._cache[2]))
+        self.assertNotIn("private-signed-slot", json.dumps(owner._cache[1]))
 
     async def test_plain_text_preserves_empty_search_and_retry_boundaries(self):
         owner, requests = self.owner(
@@ -538,7 +542,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertNotIn("Searched", result)
             self.assertNotIn("other dates", result)
-            self.assertEqual(owner._cache[2]["outcome"], "unsupported")
+            self.assertEqual(owner._cache[1]["outcome"], "unsupported")
             self.assertEqual(requests[0][1]["visitType"], visit)
 
     async def test_eastern_date_and_correction_invalidates_slots(self):
@@ -1165,6 +1169,40 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(result.startswith("success:"), result)
                 self.assertEqual(len(requests), 3)
                 self.assertEqual(requests[-1][1]["cancellationToken"], "fresh-cancel")
+
+    async def test_only_definite_cancellation_rejections_mark_appointments_error(self):
+        cases = [
+            (WriteReceipt(status="error", outcome=outcome), "error")
+            for outcome in (
+                "invalid_cancellation_token",
+                "provider_conflict",
+                "provider_rejected",
+                "ownership_mismatch",
+                "write_failed",
+            )
+        ] + [
+            (WriteReceipt(status="cancelled", appointmentId=999), "found"),
+            (WriteReceipt(status="error", outcome="unexpected"), "found"),
+            (SchedulingFailure(reason="transport_error", uncertain=True), "found"),
+            (SchedulingFailure(reason="not_configured"), "found"),
+        ]
+        for response, expected in cases:
+            with self.subTest(response=response.model_dump()):
+                owner, _ = self.owner([])
+                owner.http.cancel = AsyncMock(return_value=response)
+                verified(
+                    owner.state,
+                    appointmentsStatus="found",
+                    appointments=[appointment()],
+                )
+                ref = owner.appointments()[0]["appointmentRef"]
+                await self.tool(
+                    owner, "cancel_appointment", appointmentRef=ref, readBack=True
+                )
+                owner.http.cancel.assert_awaited_once()
+                self.assertEqual(
+                    owner.state.patient.active.appointmentsStatus, expected
+                )
 
     async def test_cancellation_cancellation_receipt_must_identify_selected_appointment(
         self,
