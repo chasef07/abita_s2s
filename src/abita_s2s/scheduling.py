@@ -6,10 +6,11 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal
-from zoneinfo import ZoneInfo
 
 from livekit.agents import RunContext
 
+from abita_s2s.identity import reply
+from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.insurance_state import (
     AcceptedInsurance,
     appointment_eligibility,
@@ -17,7 +18,7 @@ from abita_s2s.insurance_state import (
     registration_insurance,
 )
 from abita_s2s.integrations.patient_middleware import Appointment, Receipt
-from abita_s2s.offices import get_office_profile
+from abita_s2s.offices import EASTERN, get_office_profile, same_office
 from abita_s2s.integrations.scheduling_http import (
     RescheduleReceipt,
     SchedulingFailure,
@@ -26,13 +27,6 @@ from abita_s2s.integrations.scheduling_http import (
     WriteReceipt,
 )
 from abita_s2s.state import CallState
-
-VisitType = Literal["medical", "routine_vision"]
-EASTERN = ZoneInfo("America/New_York")
-
-
-def reply(outcome, answer, **facts):
-    return {"outcome": outcome, "answer": answer, **facts}
 
 
 def provider_name(name):
@@ -62,7 +56,7 @@ class SchedulingContext:
 class AvailabilitySearch:
     context: SchedulingContext
     office: str
-    visit: VisitType
+    visit: CoverageType
     start: date
     today: date
 
@@ -72,7 +66,7 @@ class OfferedSlot:
     slot: Slot
     context: SchedulingContext
     office: str
-    visit: VisitType
+    visit: CoverageType
     expires: datetime
 
     @property
@@ -237,19 +231,6 @@ class Scheduling:
                 "in_progress",
                 "blocked: An appointment change is in progress. Wait for its result.",
             )
-        p = self.state.patient.active
-        decision = registration_insurance(self.state, visit)
-        body = {
-            "office": get_office_profile(selected).trunk_numbers[0],
-            "startDate": first.isoformat(),
-            "rangeDays": 14,
-            "patientId": p.patientId,
-            "coverageType": visit,
-            "visitType": visit,
-            "dob": p.dob,
-        }
-        if decision:
-            body["insurancePlan"] = decision.canonicalPlan
         key = AvailabilitySearch(context, selected, visit, first, today)
         if self._search_key != key:
             self._invalidate()
@@ -265,6 +246,18 @@ class Scheduling:
         if self._search and not self._search.task.done() and self._search.key == key:
             pending = self._search
         else:
+            p = self.state.patient.active
+            body = {
+                "office": get_office_profile(selected).trunk_numbers[0],
+                "startDate": first.isoformat(),
+                "rangeDays": 14,
+                "patientId": p.patientId,
+                "coverageType": visit,
+                "visitType": visit,
+                "dob": p.dob,
+            }
+            if decision := registration_insurance(self.state, visit):
+                body["insurancePlan"] = decision.canonicalPlan
             task = asyncio.create_task(self._load(body, key, self._generation))
             pending = self._search = PendingRead(key, task)
             self._read_tasks.add(task)
@@ -382,8 +375,6 @@ class Scheduling:
                 {
                     "appointmentSlotRef": ref,
                     "datetime": item.slot.datetime,
-                    "date": item.slot.date,
-                    "time": item.slot.time,
                     "provider": provider_name(item.slot.provider),
                 }
                 for ref, item in self._slots.items()
@@ -903,7 +894,7 @@ class Scheduling:
                     and booking.profileId is not None
                     and booking.profileId == str(slot.profileId)
                     and booking.officeId is not None
-                    and booking.officeId.replace("_", "-") == eligibility.office
+                    and same_office(booking.officeId, eligibility.office)
                     and booking.visitType == eligibility.request.coverageType
                 ):
                     evidence["bookingResult"]["eligibilityCheckId"] = eligibility.id

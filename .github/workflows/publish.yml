@@ -33,12 +33,17 @@ jobs:
         env:
           COMMIT: ${{ inputs.commit }}
       - run: uv sync --locked
-      - run: uv run --no-sync ruff check . && uv run --no-sync python -m unittest discover -s tests -q
+      # Release runs arrive only after verify-release ran the full Verify workflow on
+      # this exact commit; manual dispatches have no prior verification.
+      - if: github.event_name == 'workflow_dispatch'
+        run: uv run --no-sync ruff check . && uv run --no-sync python -m unittest discover -s tests -q
       - run: uv run --no-sync python scripts/release.py "$COMMIT"
         env:
           COMMIT: ${{ inputs.commit }}
-      - run: docker build -t abita-s2s:release .
-      - run: docker run --rm --network none --entrypoint /app/.venv/bin/python abita-s2s:release -m abita_s2s.release
+      - if: github.event_name == 'workflow_dispatch'
+        run: docker build -t abita-s2s:release .
+      - if: github.event_name == 'workflow_dispatch'
+        run: docker run --rm --network none --entrypoint /app/.venv/bin/python abita-s2s:release -m abita_s2s.release
       - run: uv run --no-sync python scripts/publish_release.py dist
         env:
           GH_TOKEN: ${{ github.token }}

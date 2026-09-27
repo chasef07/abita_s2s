@@ -33,8 +33,8 @@ def candidate_first_name(candidate: Candidate | Receipt) -> str:
     return names[0] if names else ""
 
 
-def reply(outcome: str, answer: str) -> dict:
-    return {"outcome": outcome, "answer": answer}
+def reply(outcome: str, answer: str, **facts) -> dict:
+    return {"outcome": outcome, "answer": answer, **facts}
 
 
 def failed() -> dict:

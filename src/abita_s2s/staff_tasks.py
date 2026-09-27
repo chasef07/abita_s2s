@@ -11,8 +11,8 @@ from uuid import UUID, uuid4
 import httpx
 
 from abita_s2s.config import Config
-from abita_s2s.identity import PatientResolver
-from abita_s2s.offices import get_office_profile, get_product_office_key
+from abita_s2s.identity import PatientResolver, reply
+from abita_s2s.offices import e164, get_office_profile, get_product_office_key
 from abita_s2s.state import CallState
 
 Category = Literal[
@@ -30,14 +30,8 @@ Urgency = Literal["high_priority", "normal", "non_urgent"]
 
 
 def _phone(value: str | None) -> str:
-    digits = re.sub(r"\D", "", value or "")
-    if len(digits) == 10:
-        digits = "1" + digits
-    return "+" + digits if re.fullmatch(r"[1-9][0-9]{7,14}", digits) else ""
-
-
-def _result(outcome: str, answer: str) -> dict:
-    return {"outcome": outcome, "answer": answer}
+    phone = e164(value or "")
+    return phone if re.fullmatch(r"\+[1-9][0-9]{7,14}", phone) else ""
 
 
 @dataclass(frozen=True, repr=False)
@@ -78,22 +72,22 @@ class StaffTasks:
         call_id: str | None = None,
     ) -> dict:
         if self._closed:
-            return _result("failed", "This call has ended. No draft was saved.")
+            return reply("failed", "This call has ended. No draft was saved.")
         if draft_id is not None and draft_id not in self._drafts:
-            return _result("failed", "Unknown draft ID. No draft was saved.")
+            return reply("failed", "Unknown draft ID. No draft was saved.")
         if cancel:
             if draft_id is None:
-                return _result("failed", "A draft ID is required to cancel a request.")
+                return reply("failed", "A draft ID is required to cancel a request.")
             del self._drafts[draft_id]
-            return _result("cancelled", "Request cancelled. It will not be submitted.")
+            return reply("cancelled", "Request cancelled. It will not be submitted.")
         try:
             payload = self._payload(category, urgency, summary, message)
         except ValueError as exc:
-            return _result("failed", f"{exc} Existing drafts are unchanged.")
+            return reply("failed", f"{exc} Existing drafts are unchanged.")
         patient = payload.get("patient")
         if draft_id is not None:
             if self._drafts[draft_id].payload.get("patient") != patient:
-                return _result(
+                return reply(
                     "failed",
                     "Patient context changed. Existing draft is unchanged. "
                     "For a different patient, create a separate draft; to correct "
@@ -113,7 +107,7 @@ class StaffTasks:
             )
         self._drafts[draft_id] = Draft(payload, call_id)
         return {
-            **_result(
+            **reply(
                 "saved", "Draft saved for submission when the call ends. Not yet sent."
             ),
             "draftId": draft_id,
@@ -260,7 +254,7 @@ class StaffTasks:
                 if response.status_code not in (200, 201):
                     if uncertain:
                         break
-                    return _result(
+                    return reply(
                         "failed",
                         "Product rejected this request.",
                     )
@@ -276,7 +270,7 @@ class StaffTasks:
                     continue
                 UUID(receipt["taskId"])
                 return {
-                    **_result(
+                    **reply(
                         receipt["status"],
                         "The request was sent to the team for review."
                         if receipt["status"] == "created"
@@ -287,7 +281,7 @@ class StaffTasks:
             except (httpx.HTTPError, ValueError, TimeoutError):
                 uncertain = True
                 continue
-        return _result(
+        return reply(
             "ambiguous",
             "Delivery could not be confirmed; the request may already have reached staff.",
         )

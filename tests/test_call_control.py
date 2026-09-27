@@ -488,24 +488,23 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.sip.transfer_sip_participant.assert_not_awaited()
         self.assertEqual(speech.wait_for_playout.await_count, 2)
 
-    async def test_direct_admission_uses_original_trunk(self):
+    async def test_admission_uses_original_trunk(self):
         self.state.call = replace(
             self.state.call,
             called_office_key="spring-hill",
             called_number="+18135484830",
         )
         requests = []
-        target = "sip:office~ah1~" + "a" * 43 + "@handoff.example"
+        target = "sip:acuity-handoff@product.example"
 
         def handler(request):
             requests.append(request)
             return httpx.Response(
-                200,
+                201,
                 json={
-                    "type": "DIRECT",
-                    "handoffId": "handoff-test",
+                    "id": "00000000-0000-4000-8000-000000000002",
                     "expiresAt": (datetime.now(UTC) + timedelta(minutes=2)).isoformat(),
-                    "sipUri": target,
+                    "sipDestination": target,
                 },
             )
 
@@ -517,8 +516,9 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             "os.environ",
             {
                 "OPENAI_API_KEY": "offline",
-                "ACUITY_HANDOFF_URL": "https://handoff.example/admit",
-                "ACUITY_HANDOFF_SECRET": "offline",
+                "ACUITY_PRODUCT_HANDOFF_URL": "https://product.example/v1/handoffs",
+                "ABITA_EYE_GROUP_PRODUCT_PRACTICE_ID": "00000000-0000-4000-8000-000000000001",
+                "ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET": "offline",
             },
             clear=True,
         ):
@@ -526,10 +526,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 (await self.run_tool("transfer_call")).split(":", 1)[0], "accepted"
             )
-        self.assertEqual(
-            json.loads(requests[0].content)["routePhoneNumber"], "+18135484830"
-        )
-        self.assertTrue(requests[0].headers["Idempotency-Key"])
+        self.assertEqual(json.loads(requests[0].content)["officeKey"], "spring-hill")
         self.assertEqual(
             self.sip.transfer_sip_participant.call_args.args[0].transfer_to, target
         )
@@ -545,11 +542,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.control.admission.client.post = AsyncMock()
         with patch.dict(
             "os.environ",
-            {
-                "OPENAI_API_KEY": "offline",
-                "ACUITY_HANDOFF_URL": "https://[invalid",
-                "ACUITY_HANDOFF_SECRET": "offline",
-            },
+            {"OPENAI_API_KEY": "offline"},
             clear=True,
         ):
             self.control.admission.config = load_config().handoff
@@ -573,8 +566,9 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             "os.environ",
             {
                 "OPENAI_API_KEY": "offline",
-                "ACUITY_HANDOFF_URL": "https://handoff.example/admit",
-                "ACUITY_HANDOFF_SECRET": "offline",
+                "ACUITY_PRODUCT_HANDOFF_URL": "https://product.example/v1/handoffs",
+                "ABITA_EYE_GROUP_PRODUCT_PRACTICE_ID": "00000000-0000-4000-8000-000000000001",
+                "ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET": "offline",
             },
             clear=True,
         ):

@@ -15,6 +15,7 @@ from abita_s2s.insurance_state import (
 )
 from abita_s2s.integrations.patient_middleware import Receipt, Record
 from abita_s2s.name_matcher import dob_matches, exact_name, parse_dob
+from abita_s2s.offices import same_office
 from abita_s2s.integrations.registration_middleware import (
     CreationReceipt,
     RegistrationMiddleware,
@@ -184,7 +185,7 @@ class InsuranceRegistration:
         if (
             resolution.status != "resolved"
             or decision is None
-            or decision.officeId.replace("_", "-") != check.office
+            or not same_office(decision.officeId, check.office)
             or decision.coverageType != check.request.coverageType
             or decision.selfPay
         ):

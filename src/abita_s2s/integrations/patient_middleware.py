@@ -14,8 +14,8 @@ from pydantic import (
 )
 
 from abita_s2s.config import Config
-from abita_s2s.insurance_contract import InsuranceDecision
-from abita_s2s.offices import get_office_profile
+from abita_s2s.insurance_contract import CoverageType, InsuranceDecision
+from abita_s2s.offices import office_phone
 
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -35,7 +35,7 @@ class Appointment(Record):
     provider: str = ""
     type: str = ""
     facility: str = ""
-    visitType: Literal["medical", "routine_vision"] | None = None
+    visitType: CoverageType | None = None
     officeId: str | None = None
     office: str | None = None
     confirmed: bool = False
@@ -89,30 +89,46 @@ Result = Receipt | Multiple | NotFound | Unresolved | Failure
 RESULT = TypeAdapter(Annotated[Result, Field(discriminator="status")])
 
 
-class PatientMiddleware:
+class Middleware:
+    """Authenticated middleware POSTs; subclasses own deadlines, retries, and errors."""
+
+    def __init__(self, client: httpx.AsyncClient, config: Config, deadline: float):
+        self._client = client
+        self._config = config
+        self._deadline = deadline
+
+    @property
+    def _configured(self) -> bool:
+        return bool(self._config.middleware_url and self._config.middleware_token)
+
+    def _send(self, path: str, body: dict, deadline: float | None = None):
+        deadline = self._deadline if deadline is None else deadline
+        return self._client.post(
+            self._config.middleware_url.rstrip("/") + path,
+            headers={"Authorization": self._config.middleware_token},
+            json=body,
+            timeout=deadline,
+            follow_redirects=False,
+        )
+
+
+class PatientMiddleware(Middleware):
     def __init__(
         self, client: httpx.AsyncClient, config: Config, *, deadline: float = 10
     ):
-        self._client = client
-        self._url = config.middleware_url
-        self._token = config.middleware_token
-        self._deadline = deadline
+        super().__init__(client, config, deadline)
 
     async def resolve(self, office_key: str, identity: dict[str, str]) -> Result:
         # Routing is application-owned; aliases always select the canonical office.
-        office = get_office_profile(office_key)
-        if not self._url or not self._token:
+        office = office_phone(office_key)
+        if not self._configured:
             return Failure(reason="not_configured")
         try:
             async with asyncio.timeout(self._deadline):
                 for attempt in range(2):
                     try:
-                        response = await self._client.post(
-                            self._url.rstrip("/") + "/api/patient/resolve",
-                            headers={"Authorization": self._token},
-                            json={**identity, "office": office.trunk_numbers[0]},
-                            timeout=self._deadline,
-                            follow_redirects=False,
+                        response = await self._send(
+                            "/api/patient/resolve", {**identity, "office": office}
                         )
                     except httpx.TransportError:
                         if attempt == 0:

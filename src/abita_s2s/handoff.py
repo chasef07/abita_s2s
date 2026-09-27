@@ -50,43 +50,30 @@ class HandoffAdmission:
             )
         if self.config is None:
             raise AdmissionRejected("Handoff configuration is incomplete")
-        url = self.config.url
-        secret = self.config.secret
-        practice = self.config.practice_id
-        product = practice is not None
         if self._payload is None:
-            if product:
-                identity = {
-                    "practiceId": practice,
-                    "officeKey": get_product_office_key(
-                        call.called_number or office.trunk_numbers[0]
-                    ),
-                    "sourceCallId": call.call_id,
-                }
-                contact = {
-                    "phone": call.caller_phone or "",
-                    "phoneSource": "livekit.sip.callerPhoneNumber",
-                }
-                self._payload = {
-                    **identity,
-                    "contact": contact,
-                    "idempotencyKey": hashlib.sha256(
-                        json.dumps(identity, separators=(",", ":")).encode()
-                    ).hexdigest(),
-                }
-            else:
-                self._payload = {
-                    "sourceCallId": call.call_id,
-                    "routePhoneNumber": call.called_number,
-                    "callerPhone": call.caller_phone,
-                }
-        headers = {"Authorization": f"Bearer {secret}"}
-        if not product:
-            headers["Idempotency-Key"] = hashlib.sha256(
-                json.dumps(self._payload, separators=(",", ":")).encode()
-            ).hexdigest()
+            identity = {
+                "practiceId": self.config.practice_id,
+                "officeKey": get_product_office_key(
+                    call.called_number or office.trunk_numbers[0]
+                ),
+                "sourceCallId": call.call_id,
+            }
+            contact = {
+                "phone": call.caller_phone or "",
+                "phoneSource": "livekit.sip.callerPhoneNumber",
+            }
+            self._payload = {
+                **identity,
+                "contact": contact,
+                "idempotencyKey": hashlib.sha256(
+                    json.dumps(identity, separators=(",", ":")).encode()
+                ).hexdigest(),
+            }
         response = await self.client.post(
-            url, json=self._payload, headers=headers, timeout=2
+            self.config.url,
+            json=self._payload,
+            headers={"Authorization": f"Bearer {self.config.secret}"},
+            timeout=2,
         )
         # An explicit rejection permits a bounded retry; conflict, timeout, server
         # errors, and malformed success can represent a committed admission.
@@ -98,9 +85,9 @@ class HandoffAdmission:
         body = response.json()
         expires = datetime.fromisoformat(body["expiresAt"])
         remaining = (expires - datetime.now(UTC)).total_seconds()
-        if remaining <= 0 or (product and remaining > 300):
+        if remaining <= 0 or remaining > 300:
             raise ValueError("Invalid handoff expiration")
-        target = body["sipDestination" if product else "sipUri"]
+        target = body["sipDestination"]
         # Destination comes only from the authenticated office admission endpoint.
         if (
             not isinstance(target, str)
@@ -109,10 +96,7 @@ class HandoffAdmission:
             or any(c.isspace() for c in target)
         ):
             raise ValueError("Invalid SIP destination")
-        if product:
-            UUID(body["id"])
-            if target[4:].split("@", 1)[0] != "acuity-handoff":
-                raise ValueError("Invalid Product destination")
-        elif body.get("type") != "DIRECT" or not body.get("handoffId"):
-            raise ValueError("Invalid direct admission")
+        UUID(body["id"])
+        if target[4:].split("@", 1)[0] != "acuity-handoff":
+            raise ValueError("Invalid Product destination")
         return HandoffTarget(target, {}, admitted=True)
