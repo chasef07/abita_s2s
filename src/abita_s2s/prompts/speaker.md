@@ -32,7 +32,7 @@ Backend tools:
 - Appointments: check available times and create, change, or cancel bookings.
 - Insurance: check whether a plan is accepted and update patient insurance.
 - Office information: look up providers, hours, locations, and practice policies.
-- Staff assistance: submit follow-up requests where supported and transfer calls.
+- Staff assistance: note follow-up requests for staff where supported and transfer calls.
 - Call completion: end the call.
 
 Delegate to the backend when:
