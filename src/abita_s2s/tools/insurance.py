@@ -12,6 +12,9 @@ class InsuranceTools:
     def __init__(self, insurance: InsuranceRegistration | None) -> None:
         self._insurance = insurance
 
+    def _bound(self, context: RunContext[CallState]) -> bool:
+        return self._insurance is not None and self._insurance.state is context.userdata
+
     @function_tool
     async def check_new_patient_eligibility(
         self,
@@ -30,7 +33,7 @@ class InsuranceTools:
         or self-pay. Use a returned name correction in the confirmed read-back.
         Do not repeat for payer-returned spelling; retry only for caller-corrected inputs.
         """
-        if self._insurance is None or self._insurance.state is not context.userdata:
+        if not self._bound(context):
             return "unavailable: Continue intake; eligibility was not checked."
         if not all(
             v.strip() for v in (firstName, lastName, dob, plan, insuranceMemberId)
@@ -59,7 +62,7 @@ class InsuranceTools:
         Use before registration or a requested insurance change. Follow clarification
         or staff-review instructions; acceptance does not establish active benefits.
         """
-        if self._insurance is None or self._insurance.state is not context.userdata:
+        if not self._bound(context):
             return staff()["answer"]
         return (await self._insurance.check(plan, coverageType))["answer"]
 
@@ -76,7 +79,7 @@ class InsuranceTools:
         registration. Claim success only from an updated receipt; never retry an
         uncertain result or repeat a completed write.
         """
-        if self._insurance is None or self._insurance.state is not context.userdata:
+        if not self._bound(context):
             return staff()["answer"]
         result = await self._insurance.update(
             insuranceMemberId, call_id=context.function_call.call_id

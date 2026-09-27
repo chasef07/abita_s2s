@@ -39,13 +39,29 @@ TRANSPORT_CLOSE_SECONDS = 5
 SHUTDOWN_PROCESS_SECONDS = 90
 
 
-async def wait_for_sip(ctx):
+def _disconnect_signal():
+    """Return a future and an idempotent event handler that resolves it."""
     disconnected = asyncio.get_running_loop().create_future()
 
     def on_disconnect(*_):
         if not disconnected.done():
             disconnected.set_result(None)
 
+    return disconnected, on_disconnect
+
+
+async def _gather_raising(*steps, cancelled: str | None = None):
+    """Await every step to completion, then re-raise the first failure."""
+    results = await asyncio.gather(*steps, return_exceptions=True)
+    for result in results:
+        if cancelled and isinstance(result, asyncio.CancelledError):
+            raise RuntimeError(cancelled)
+        if isinstance(result, BaseException):
+            raise result
+
+
+async def wait_for_sip(ctx):
+    disconnected, on_disconnect = _disconnect_signal()
     ctx.room.on("disconnected", on_disconnect)
     participant = asyncio.create_task(
         ctx.wait_for_participant(kind=rtc.ParticipantKind.PARTICIPANT_KIND_SIP)
@@ -66,11 +82,7 @@ async def wait_for_sip(ctx):
 
 
 async def start_session(session, ctx, room_options, agent):
-    disconnected = asyncio.get_running_loop().create_future()
-
-    def on_disconnect(*_):
-        if not disconnected.done():
-            disconnected.set_result(None)
+    disconnected, on_disconnect = _disconnect_signal()
 
     def on_participant_disconnect(participant):
         if participant.identity == room_options.participant_identity:
@@ -196,16 +208,10 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         for owner in owners:
             owner.close_admission()
         async with asyncio.timeout(CLEANUP_SECONDS):
-            results = await asyncio.gather(
-                *(o.aclose() for o in owners), return_exceptions=True
+            await _gather_raising(
+                *(o.aclose() for o in owners),
+                cancelled="An accepted mutation was cancelled during shutdown",
             )
-            for result in results:
-                if isinstance(result, asyncio.CancelledError):
-                    raise RuntimeError(
-                        "An accepted mutation was cancelled during shutdown"
-                    )
-                if isinstance(result, BaseException):
-                    raise result
 
     async def drain_writes():
         nonlocal drain_task
@@ -227,14 +233,9 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         finally:
             # A failed owner must not skip either transport.
             async with asyncio.timeout(TRANSPORT_CLOSE_SECONDS):
-                results = await asyncio.gather(
-                    client.aclose(),
-                    *([sip_api.aclose()] if sip_api else []),
-                    return_exceptions=True,
+                await _gather_raising(
+                    client.aclose(), *([sip_api.aclose()] if sip_api else [])
                 )
-                for result in results:
-                    if isinstance(result, BaseException):
-                        raise result
 
     async def close_client():
         nonlocal cleanup_task

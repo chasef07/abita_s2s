@@ -14,7 +14,7 @@ from abita_s2s.insurance_state import (
     accepted_insurance,
 )
 from abita_s2s.integrations.patient_middleware import Receipt, Record
-from abita_s2s.name_matcher import dob_matches, exact_name, parse_dob
+from abita_s2s.name_matcher import dob_matches, exact_name, member_key, parse_dob
 from abita_s2s.offices import same_office
 from abita_s2s.integrations.registration_middleware import (
     CreationReceipt,
@@ -29,10 +29,19 @@ def normalize(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.casefold().replace("&", " and ")).strip()
 
 
+def full_name(person) -> str:
+    return exact_name(f"{person.firstName} {person.lastName}")
+
+
+def matches_plan(plan: str, accepted: AcceptedInsurance) -> bool:
+    return normalize(plan) in {
+        normalize(accepted.requested_plan),
+        normalize(accepted.decision.canonicalPlan),
+    }
+
+
 class Registration(Record):
-    model_config = ConfigDict(
-        strict=True, frozen=True, extra="forbid", str_strip_whitespace=True
-    )
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     firstName: str
     lastName: str
     dob: str
@@ -88,6 +97,16 @@ class InsuranceRegistration:
         if self._task:
             await asyncio.shield(self._task)
 
+    def _current_check(self) -> EligibilityCheck | None:
+        current = self.state.insurance.current_eligibility
+        if current and current[0] == self.state.patient.revision:
+            return current[1]
+        return None
+
+    def _invalidate_acceptance(self) -> None:
+        self.state.insurance.accepted = None
+        self.state.insurance.check_revision += 1
+
     def _start_eligibility(self, details: EligibilityInput) -> EligibilityCheck | str:
         if self._closed:
             return "unavailable: Call is closing."
@@ -132,16 +151,12 @@ class InsuranceRegistration:
         insurance = self.state.insurance
         revision = self.state.patient.revision
         accepted = accepted_insurance(self.state, details.coverageType)
-        if accepted and normalize(details.plan) in {
-            normalize(accepted.requested_plan),
-            normalize(accepted.decision.canonicalPlan),
-        }:
+        if accepted and matches_plan(details.plan, accepted):
             check.canonical_plan = accepted.decision.canonicalPlan
         current = insurance.current_eligibility
         if current is None or current[0] != revision or current[1] is not check:
-            if current and current[1].result and current[1].result.insuranceResolution:
-                insurance.accepted = None
-                insurance.check_revision += 1
+            if current and current[1].resolution:
+                self._invalidate_acceptance()
             current = insurance.current_eligibility = (revision, check)
         if check.task is not None:
             await asyncio.shield(check.task)
@@ -167,20 +182,15 @@ class InsuranceRegistration:
         plan_note = (
             f" Registration plan: {check.canonical_plan}." if plan_answer else ""
         )
-        if (
-            result.insuranceResolution
-            and result.insuranceResolution.status == "unmapped"
-        ):
+        if check.resolution and check.resolution.status == "unmapped":
             plan_note = " Returned plan has no mapping; use the accepted check_insurance selection for registration. Payer evidence remains available for staff review."
         return f"eligibility: {result.status}. Review reason: {result.reviewReason or 'none'}.{plan_note} Continue intake; do not infer visit coverage."
 
     def _apply_eligibility_insurance(self, check: EligibilityCheck) -> dict | None:
-        resolution = check.result.insuranceResolution if check.result else None
+        resolution = check.resolution
         if resolution is None or resolution.status in ("unavailable", "unmapped"):
             return None
-        insurance = self.state.insurance
-        insurance.accepted = None
-        insurance.check_revision += 1
+        self._invalidate_acceptance()
         decision = resolution.decision
         if (
             resolution.status != "resolved"
@@ -195,7 +205,7 @@ class InsuranceRegistration:
             )
         if decision.participation == "accepted":
             patient = self.state.patient
-            insurance.accepted = AcceptedInsurance(
+            self.state.insurance.accepted = AcceptedInsurance(
                 check.office,
                 patient.revision,
                 None,
@@ -209,21 +219,15 @@ class InsuranceRegistration:
     def _registration_eligibility(
         self, r: Registration, checked: AcceptedInsurance
     ) -> EligibilityCheck | None:
-        current = self.state.insurance.current_eligibility
-        if current is None or current[0] != self.state.patient.revision:
+        check = self._current_check()
+        if check is None:
             return None
-        check = current[1]
         if (
             check.office != self.state.call.called_office_key
             or check.request.coverageType != checked.decision.coverageType
             or not dob_matches(check.request.dob, r.dob)
-            or normalize(check.canonical_plan or check.request.plan)
-            not in {
-                normalize(checked.requested_plan),
-                normalize(checked.decision.canonicalPlan),
-            }
-            or "".join(check.request.memberId.split()).upper()
-            != "".join(r.insuranceMemberId.split()).upper()
+            or not matches_plan(check.canonical_plan or check.request.plan, checked)
+            or member_key(check.request.memberId) != member_key(r.insuranceMemberId)
         ):
             return None
         return check
@@ -234,12 +238,12 @@ class InsuranceRegistration:
         check = self._registration_eligibility(r, checked)
         if check is None:
             return None
-        person = check.result.name_correction if check.result else None
+        person = check.name_correction
         if person is None:
             return None
-        original = exact_name(f"{check.request.firstName} {check.request.lastName}")
-        corrected = exact_name(f"{person.firstName} {person.lastName}")
-        supplied = exact_name(f"{r.firstName} {r.lastName}")
+        original = full_name(check.request)
+        corrected = full_name(person)
+        supplied = full_name(r)
         if supplied not in (original, corrected):
             return None
         if supplied != corrected or (
@@ -255,13 +259,9 @@ class InsuranceRegistration:
 
     async def check(self, plan: str, coverage_type: CoverageType) -> dict:
         current = self.state.insurance.current_eligibility
-        if (
-            current
-            and current[0] == self.state.patient.revision
-            and self.state.patient.active is None
-        ):
-            check = current[1]
-            resolution = check.result.insuranceResolution if check.result else None
+        check = self._current_check()
+        if check and self.state.patient.active is None:
+            resolution = check.resolution
             if resolution and resolution.status not in ("unavailable", "unmapped"):
                 if coverage_type != check.request.coverageType or normalize(
                     plan
@@ -272,8 +272,7 @@ class InsuranceRegistration:
                 }:
                     # Keep the evidence, but invalidate a waiter still applying it.
                     self.state.insurance.current_eligibility = (current[0], check)
-                    self.state.insurance.accepted = None
-                    self.state.insurance.check_revision += 1
+                    self._invalidate_acceptance()
                     return reply(
                         "needs_eligibility",
                         "needs_input: Insurance changed after eligibility. Check eligibility for the new plan and member ID before registration.",
@@ -288,8 +287,7 @@ class InsuranceRegistration:
             }
         ):
             self.state.insurance.current_eligibility = None
-        self.state.insurance.accepted = None
-        self.state.insurance.check_revision += 1
+        self._invalidate_acceptance()
         check_revision = self.state.insurance.check_revision
         patient = self.state.patient
         revision, active, absence = patient.revision, patient.active, patient.absence
@@ -385,29 +383,21 @@ class InsuranceRegistration:
                 "blocked: A verified patient is already active. Do not create another chart for the same patient. For a different new patient, provide their first name and valid DOB.",
             )
         checked = accepted_insurance(self.state)
-        current = self.state.insurance.current_eligibility
-        if current and current[0] == self.state.patient.revision:
-            check = current[1]
+        if check := self._current_check():
             if check.status == "pending":
                 return reply(
                     "eligibility_pending",
                     "needs_input: Finish the existing eligibility check before registration.",
                 )
-            resolution = check.result.insuranceResolution if check.result else None
+            resolution = check.resolution
             if resolution and resolution.status != "unavailable":
-                person = check.result.name_correction or check.request
+                person = check.name_correction or check.request
                 if (
                     check.office != self.state.call.called_office_key
                     or not dob_matches(check.request.dob, r.dob)
-                    or "".join(check.request.memberId.split()).upper()
-                    != "".join(r.insuranceMemberId.split()).upper()
-                    or exact_name(f"{r.firstName} {r.lastName}")
-                    not in {
-                        exact_name(
-                            f"{check.request.firstName} {check.request.lastName}"
-                        ),
-                        exact_name(f"{person.firstName} {person.lastName}"),
-                    }
+                    or member_key(check.request.memberId)
+                    != member_key(r.insuranceMemberId)
+                    or full_name(r) not in {full_name(check.request), full_name(person)}
                 ):
                     return reply(
                         "needs_eligibility",
@@ -545,10 +535,7 @@ class InsuranceRegistration:
         self, result: CreationReceipt, r: Registration, checked, eligibility=None
     ) -> dict:
         # Validate both complete names without inventing backend identifier formats.
-        expected = {
-            exact_name(f"{r.firstName} {r.lastName}"),
-            exact_name(f"{r.lastName} {r.firstName}"),
-        }
+        expected = {full_name(r), exact_name(f"{r.lastName} {r.firstName}")}
         if exact_name(result.name) not in expected or not dob_matches(
             result.dob, r.dob
         ):
@@ -574,12 +561,8 @@ class InsuranceRegistration:
         self.state.insurance.registrations[result.patientId] = result.status
         activated = self._resolver.activate_created(checked, patient)
         if activated and result.status == "created" and eligibility is not None:
-            person = (
-                eligibility.result.name_correction if eligibility.result else None
-            ) or eligibility.request
-            if exact_name(f"{person.firstName} {person.lastName}") == exact_name(
-                f"{r.firstName} {r.lastName}"
-            ):
+            person = eligibility.name_correction or eligibility.request
+            if full_name(person) == full_name(r):
                 eligibility.patient_id = result.patientId
                 eligibility.canonical_plan = checked.decision.canonicalPlan
         status = "success" if result.status == "created" and activated else "blocked"
