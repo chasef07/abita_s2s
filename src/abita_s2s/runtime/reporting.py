@@ -17,6 +17,7 @@ from abita_s2s.state import CallContext
 from abita_s2s.insurance_state import InsuranceState
 
 logger = logging.getLogger(__name__)
+AGENT_VERSION = version("abita-s2s")
 
 
 class ReportingError(RuntimeError):
@@ -209,7 +210,7 @@ class CallReporter:
                 "status": status,
                 "endedAt": ended_at.isoformat(),
                 "closeoutPayload": {
-                    "agentVersion": version("abita-s2s"),
+                    "agentVersion": AGENT_VERSION,
                     "closeReason": close.get("reason", "startup_or_report_failure"),
                     "mutationDrainFailed": drain_failed,
                     "transferStatus": self.transfer_status,
