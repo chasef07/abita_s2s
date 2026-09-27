@@ -237,19 +237,6 @@ class Scheduling:
                 "in_progress",
                 "blocked: An appointment change is in progress. Wait for its result.",
             )
-        p = self.state.patient.active
-        decision = registration_insurance(self.state, visit)
-        body = {
-            "office": get_office_profile(selected).trunk_numbers[0],
-            "startDate": first.isoformat(),
-            "rangeDays": 14,
-            "patientId": p.patientId,
-            "coverageType": visit,
-            "visitType": visit,
-            "dob": p.dob,
-        }
-        if decision:
-            body["insurancePlan"] = decision.canonicalPlan
         key = AvailabilitySearch(context, selected, visit, first, today)
         if self._search_key != key:
             self._invalidate()
@@ -265,6 +252,18 @@ class Scheduling:
         if self._search and not self._search.task.done() and self._search.key == key:
             pending = self._search
         else:
+            p = self.state.patient.active
+            body = {
+                "office": get_office_profile(selected).trunk_numbers[0],
+                "startDate": first.isoformat(),
+                "rangeDays": 14,
+                "patientId": p.patientId,
+                "coverageType": visit,
+                "visitType": visit,
+                "dob": p.dob,
+            }
+            if decision := registration_insurance(self.state, visit):
+                body["insurancePlan"] = decision.canonicalPlan
             task = asyncio.create_task(self._load(body, key, self._generation))
             pending = self._search = PendingRead(key, task)
             self._read_tasks.add(task)
@@ -382,8 +381,6 @@ class Scheduling:
                 {
                     "appointmentSlotRef": ref,
                     "datetime": item.slot.datetime,
-                    "date": item.slot.date,
-                    "time": item.slot.time,
                     "provider": provider_name(item.slot.provider),
                 }
                 for ref, item in self._slots.items()

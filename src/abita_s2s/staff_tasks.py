@@ -124,7 +124,6 @@ class StaffTasks:
             else None
         )
         if patient != self._resolver.staff_task_patient():
-            result["patientChanged"] = True
             result["answer"] += (
                 " This receipt belongs to the previous patient context, not the current patient."
             )
