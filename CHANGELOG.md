@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.6](https://github.com/chasef07/abita_s2s/compare/v0.9.5...v0.9.6) (2026-09-27)
+
+
+### Bug Fixes
+
+* **prompts:** ground office answers in backend results ([#98](https://github.com/chasef07/abita_s2s/issues/98)) ([ce750d6](https://github.com/chasef07/abita_s2s/commit/ce750d68715efcb9cf9c91d8be77fa8b0a22aa85))
+
 ## [0.9.5](https://github.com/chasef07/abita_s2s/compare/v0.9.4...v0.9.5) (2026-09-27)
 
 
