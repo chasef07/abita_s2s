@@ -42,6 +42,10 @@ def phone_name_matches(left: str, right: str) -> bool:
     )
 
 
+def member_key(value: str) -> str:
+    return "".join(value.split()).upper()
+
+
 def parse_dob(value: str) -> date | None:
     if not re.fullmatch(r"\d{1,2}/\d{1,2}/\d{4}", value):
         return None
