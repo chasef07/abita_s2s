@@ -183,26 +183,19 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
                 read_cancelled.set()
 
         resolver._precall = asyncio.create_task(private_read())
-        caller = asyncio.create_task(owner.submit(**NEED))
-        await entered.wait()
-
-        async def sdk_session_close():
-            caller.cancel()
-            await asyncio.gather(caller, return_exceptions=True)
-
+        owner.save(**NEED)
+        self.assertFalse(entered.is_set())
         app_close = ctx.add_shutdown_callback.call_args.args[0]
-        closing = asyncio.gather(app_close(), sdk_session_close(), app_close())
+        closing = asyncio.gather(app_close(), app_close())
+        await asyncio.wait_for(entered.wait(), 1)
         await asyncio.wait_for(read_cancelled.wait(), 1)
         self.assertTrue(owner._closed)
         self.assertFalse(client.is_closed)
-        self.assertEqual((await owner.submit(**NEED))["outcome"], "failed")
+        self.assertEqual(owner.save(**NEED)["outcome"], "failed")
         finish.set()
         await closing
         self.assertEqual(order, ["write"])
         self.assertTrue(client.is_closed)
-        self.assertEqual(
-            next(iter(owner._deliveries.values())).result()["outcome"], "created"
-        )
 
     async def test_cleanup_budget_expires_visibly_and_closes_transport(self):
         ctx, args = await existing.StartupTests.run_startup(

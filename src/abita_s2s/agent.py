@@ -38,7 +38,7 @@ class AbitaAgent(Agent):
         office_knowledge = KnowledgeTools(knowledge)
         tools = list(SchedulingTools(scheduling).tools) if scheduling else []
         if office.staff_tasks_enabled:
-            tools.append(StaffTaskTools(staff_tasks).create_staff_task)
+            tools.append(StaffTaskTools(staff_tasks).save_staff_task)
         if call_control:
             tools.append(call_control)
         # Preserve the original tool order, including Agent's former method discovery.
