@@ -8,8 +8,8 @@ import httpx
 from abita_s2s.config import Config
 from abita_s2s.eligibility_contract import EligibilityInput, EligibilityResult
 from abita_s2s.insurance_contract import InsuranceDecision
-from abita_s2s.integrations.patient_middleware import Record, Text
-from abita_s2s.offices import get_office_profile
+from abita_s2s.integrations.patient_middleware import Middleware, Record, Text
+from abita_s2s.offices import office_phone, same_office
 from abita_s2s.name_matcher import parse_dob
 
 
@@ -34,7 +34,7 @@ class WriteFailure(Record):
     reason: str
 
 
-class RegistrationMiddleware:
+class RegistrationMiddleware(Middleware):
     def __init__(
         self,
         client: httpx.AsyncClient,
@@ -43,32 +43,25 @@ class RegistrationMiddleware:
         deadline: float = 20,
         eligibility_deadline: float = 30,
     ):
-        self._client = client
-        self._config = config
-        self._deadline = deadline
+        super().__init__(client, config, deadline)
         # Middleware allows Stedi 25 seconds; leave time for transport and decoding.
         self._eligibility_deadline = eligibility_deadline
 
     async def eligibility(
         self, office: str, details: EligibilityInput
     ) -> EligibilityResult | None:
-        if not self._config.middleware_url or not self._config.middleware_token:
+        if not self._configured:
             return None
         try:
             async with asyncio.timeout(self._eligibility_deadline):
-                response = await self._client.post(
-                    self._config.middleware_url.rstrip("/") + "/api/eligibility/check",
-                    headers={"Authorization": self._config.middleware_token},
-                    json={
-                        **details.model_dump(),
-                        "office": get_office_profile(office).trunk_numbers[0],
-                    },
-                    timeout=self._eligibility_deadline,
-                    follow_redirects=False,
+                response = await self._send(
+                    "/api/eligibility/check",
+                    {**details.model_dump(), "office": office_phone(office)},
+                    self._eligibility_deadline,
                 )
                 response.raise_for_status()
                 result = EligibilityResult.model_validate(response.json())
-                if result.officeId.replace("_", "-") != office:
+                if not same_office(result.officeId, office):
                     return None
                 if result.status in ("active", "inactive") and (
                     result.identity is None
@@ -100,26 +93,23 @@ class RegistrationMiddleware:
     async def check(
         self, office: str, plan: str, coverage: str, dob: str = ""
     ) -> InsuranceDecision | None:
-        if not self._config.middleware_url or not self._config.middleware_token:
+        if not self._configured:
             return None
         try:
             async with asyncio.timeout(self._deadline):
-                response = await self._client.post(
-                    self._config.middleware_url.rstrip("/") + "/api/insurance/decision",
-                    headers={"Authorization": self._config.middleware_token},
-                    json={
-                        "office": get_office_profile(office).trunk_numbers[0],
+                response = await self._send(
+                    "/api/insurance/decision",
+                    {
+                        "office": office_phone(office),
                         "plan": plan,
                         "coverageType": coverage,
                         "dob": dob,
                     },
-                    timeout=self._deadline,
-                    follow_redirects=False,
                 )
                 response.raise_for_status()
                 decision = InsuranceDecision.model_validate(response.json())
                 if (
-                    decision.officeId.replace("_", "-") != office
+                    not same_office(decision.officeId, office)
                     or decision.coverageType != coverage
                 ):
                     return None
@@ -138,19 +128,12 @@ class RegistrationMiddleware:
         )
 
     async def _write(self, path, office, payload, receipt):
-        if not self._config.middleware_url or not self._config.middleware_token:
+        if not self._configured:
             return WriteFailure(status="failed", reason="not_configured")
         try:
             async with asyncio.timeout(self._deadline):
-                response = await self._client.post(
-                    self._config.middleware_url.rstrip("/") + path,
-                    headers={"Authorization": self._config.middleware_token},
-                    json={
-                        **payload,
-                        "office": get_office_profile(office).trunk_numbers[0],
-                    },
-                    timeout=self._deadline,
-                    follow_redirects=False,
+                response = await self._send(
+                    path, {**payload, "office": office_phone(office)}
                 )
             body = response.json()
             if (
@@ -190,7 +173,7 @@ class RegistrationMiddleware:
             result = receipt.model_validate(body)
             decision = result.insuranceDecision
             if decision is not None and (
-                decision.officeId.replace("_", "-") != office
+                not same_office(decision.officeId, office)
                 or decision.coverageType != payload.get("coverageType", "medical")
                 or decision.canonicalPlan != payload["insurance"]
             ):

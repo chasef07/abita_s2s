@@ -1,11 +1,11 @@
 """Own GPT-Live voice and delegated reasoning configuration."""
 
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from abita_s2s.runtime.observability import ObservedGPTLiveModel as GPTLiveModel
 
 from abita_s2s.config import Config
+from abita_s2s.offices import EASTERN
 from abita_s2s.prompt import load_prompt
 
 
@@ -14,7 +14,7 @@ THINKER_MODEL = "gpt-6-luna"
 
 
 def create_model(config: Config, *, call_id: str = "") -> GPTLiveModel:
-    now = datetime.now(ZoneInfo("America/New_York"))
+    now = datetime.now(EASTERN)
     return GPTLiveModel(
         call_id=call_id,
         api_key=config.openai_api_key,

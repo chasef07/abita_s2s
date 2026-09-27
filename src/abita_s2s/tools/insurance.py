@@ -1,10 +1,9 @@
 """Model-facing insurance tools."""
 
-from typing import Literal
-
 from livekit.agents import RunContext, function_tool
 
 from abita_s2s.eligibility_contract import EligibilityInput
+from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.insurance import InsuranceRegistration, staff
 from abita_s2s.state import CallState
 
@@ -22,7 +21,7 @@ class InsuranceTools:
         dob: str,
         plan: str,
         insuranceMemberId: str,
-        coverageType: Literal["medical", "routine_vision"],
+        coverageType: CoverageType,
     ) -> str:
         """Check eligibility and return supported name corrections for new-patient intake.
 
@@ -53,7 +52,7 @@ class InsuranceTools:
         self,
         context: RunContext[CallState],
         plan: str,
-        coverageType: Literal["medical", "routine_vision"],
+        coverageType: CoverageType,
     ) -> str:
         """Check office participation for the caller's plan and triaged visit type.
 

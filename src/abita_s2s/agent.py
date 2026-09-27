@@ -2,14 +2,13 @@
 
 import logging
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from livekit.agents import Agent
 
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.knowledge import OfficeKnowledge
-from abita_s2s.offices import OfficeProfile
+from abita_s2s.offices import EASTERN, OfficeProfile
 from abita_s2s.prompt import load_prompt
 from abita_s2s.scheduling import Scheduling
 from abita_s2s.staff_tasks import StaffTasks
@@ -68,7 +67,7 @@ class AbitaAgent(Agent):
             await self._resolver.aclose()
 
     async def on_enter(self) -> None:
-        now = datetime.now(ZoneInfo("America/New_York"))
+        now = datetime.now(EASTERN)
         handle = self.session.generate_reply(
             instructions=(
                 "Greet the caller with “Good morning,” “Good afternoon,” or “Good evening,” "

@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+CoverageType = Literal["medical", "routine_vision"]
+
 
 class InsuranceRequirement(BaseModel):
     model_config = ConfigDict(strict=True, frozen=True)
@@ -20,7 +22,7 @@ class InsuranceDecision(BaseModel):
     participation: Literal["accepted", "not_accepted", "unknown"]
     canonicalPlan: str = ""
     carrierCode: str = ""
-    coverageType: Literal["medical", "routine_vision"]
+    coverageType: CoverageType
     officeId: str
     routing: str = ""
     credentialedProviders: list[str] = Field(default_factory=list)
