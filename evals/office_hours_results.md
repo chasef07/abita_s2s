@@ -62,3 +62,36 @@ or runtime changes were made as part of this evaluation.
 - `git diff --check` passed.
 - `uv run --no-sync python -m unittest discover -s tests -p test_release_deploy.py -q`:
   18 tests passed. These verify packaging, not voice behavior.
+
+## Follow-up: explicit knowledge limit at the top of the prompt
+
+Local experiment on September 27, 2026, approximately 02:21–02:25 Eastern:
+replace the bottom office-grounding sentence with this paragraph immediately
+after the speaker's role:
+
+> You do not know office hours, providers, locations, or policies until the backend
+> returns them. Delegate these questions before answering. Never fill in missing facts.
+
+[SR_etHgA6atRV74](https://cloud.livekit.io/projects/p_3ix7gzvuwmc/simulations/runs/SR_etHgA6atRV74)
+ran each of the same three scenarios three times, with concurrency three.
+All nine exported instruction snapshots contain the new paragraph and omit the
+previous bottom sentence.
+
+- Eight conversations reached the hours question. Every one retrieved a
+  successful result containing “Closed Saturday and Sunday” before its hours
+  answer. No invented opening hours were observed in those eight conversations.
+- One conversation stalled after the greeting, before the caller's question
+  appeared in the export (`SRJ_zmkJ6REkqTSB`); hours behavior is unproven there.
+- Another conversation answered correctly after retrieval, but subsequently
+  failed with a 30-second silence (`SRJ_tzhzA3C79vcH`). Its answer was in English
+  after the Spanish input was transcribed poorly.
+- Raw simulator grades were four passes and five failures. Three failures
+  incorrectly claimed no lookup, contradicted by the exported calls and results
+  (`SRJ_owfGUqrXBc4r`, `SRJ_z84dXxBUo3fA`, `SRJ_R87kD7rWCaUr`). The other two
+  failures were the silences above. The suite did not fully pass.
+
+Keep this replacement as a local candidate: the observed hours-grounding result
+supports further use, but eight answered conversations do not establish a
+production fix or a statistically reliable improvement. No runtime change or
+deployment was performed. The obsolete temporary baseline wrapper was removed;
+raw simulation exports and logs were retained locally.
