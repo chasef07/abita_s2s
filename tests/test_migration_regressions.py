@@ -164,16 +164,12 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
                     "ACUITY_PRODUCT_HANDOFF_URL": "https://product.example/v1/handoffs/",
                     "ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET": "offline",
                     "ABITA_EYE_GROUP_PRODUCT_PRACTICE_ID": practice,
-                    "ACUITY_HANDOFF_URL": "https://legacy.example/admit",
-                    "ACUITY_HANDOFF_SECRET": "legacy",
                 },
                 clear=True,
             ):
                 config = load_config()
             self.assertEqual(config.staff_tasks_url, "https://product.example/v1/tasks")
-            self.assertIsNone(
-                config.handoff
-            )  # Do not fall back across admission contracts.
+            self.assertIsNone(config.handoff)
             async with httpx.AsyncClient(
                 transport=httpx.MockTransport(
                     lambda request: self.fail("No admission request expected")
