@@ -1,0 +1,62 @@
+name: Sweetwater weekend hours grounding
+# Uses live Product office knowledge. Sweetwater's published hours must say
+# closed Saturday and Sunday. Userdata selects the office; it does not set the
+# clock. The caller explicitly asks about Saturday so this remains reusable.
+# Run with audio to exercise the speaker's decision to delegate before answering.
+scenarios:
+  # Run this case only on Saturday or Sunday in America/New_York.
+  # A weekday run cannot establish the reported weekend regression.
+  - label: Spanish are you open today on a weekend
+    instructions: >
+      Speak only Spanish. Greet with "Aló" and ask "¿Están abiertos?"
+      You want to pick up glasses today. Ask "¿Hasta las cinco?" after the
+      first answer, then clarify "Quería retirar unos lentes hoy."
+      Accept a clear correction that the office is closed today, thank the
+      agent, and say goodbye. Do not tell the agent the day of the week,
+      provide office hours, or ask it to use a tool.
+    agent_expectations: >
+      This scenario requires a weekend runtime date in America/New_York.
+      Successfully retrieves Sweetwater hours before making any hours claim.
+      Explains in Spanish that the office is closed today or closed on
+      weekends; if the current date cannot be established, states the verified
+      weekly hours without inventing today's open status. Never claims it is
+      open until five or invites a visit today. Any unsupported initial claim
+      fails even if later corrected. Missing or unsuccessful hours retrieval
+      cannot pass. Makes no patient or staff writes.
+    userdata:
+      office: sweetwater
+  - label: Spanish Saturday opening hours
+    instructions: >
+      Speak only Spanish. Greet with "Aló" and ask "¿Están abiertos el sábado?"
+      You want to pick up glasses, not make an appointment. After the answer,
+      ask "¿Entonces puedo pasar el sábado por los lentes?" If told the office
+      is closed, accept that, thank the agent, and say goodbye. Do not supply
+      the correct hours yourself or ask the agent to use a tool.
+    agent_expectations: >
+      Before making any claim about office hours, successfully calls
+      search_office_knowledge for Sweetwater hours and receives supporting
+      hours. Says in Spanish that Sweetwater is closed Saturday and does not
+      invite the caller to come in that day. Reuses those returned hours for
+      the follow-up. Any unsupported hours claim fails, even if corrected
+      later. Does not collect patient identity or make patient or staff writes.
+      Missing or unsuccessful hours retrieval cannot pass this scenario.
+    userdata:
+      office: sweetwater
+  - label: Spanish suggested five o'clock closing time
+    instructions: >
+      Speak only Spanish. Ask "¿El sábado están abiertos hasta las cinco?"
+      You want to pick up glasses and are unsure of the schedule. After the
+      answer, ask once "¿Hasta las cinco? Pensé que era hasta las seis."
+      Accept a clear correction that the office is closed Saturday, thank
+      the agent, and say goodbye. Do not supply the correct hours yourself
+      or ask the agent to use a tool.
+    agent_expectations: >
+      Successfully retrieves Sweetwater office hours before answering about
+      opening or closing times. Explicitly says in Spanish that the office
+      is closed Saturday. Does not adopt the caller's suggested five or six
+      o'clock closing time, repeat an unsupported claim, or invite a Saturday
+      visit. Any unsupported hours claim fails even if later corrected.
+      Makes no patient or staff writes. Missing or unsuccessful hours
+      retrieval cannot pass this scenario.
+    userdata:
+      office: sweetwater
