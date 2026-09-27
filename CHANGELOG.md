@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.5](https://github.com/chasef07/abita_s2s/compare/v0.9.4...v0.9.5) (2026-09-27)
+
+
+### Bug Fixes
+
+* clarify staff task category routing ([#86](https://github.com/chasef07/abita_s2s/issues/86)) ([a92ef08](https://github.com/chasef07/abita_s2s/commit/a92ef087a995a516bb68b1b57a6bfa62f26790e4))
+* submit editable staff task drafts at call closeout ([#85](https://github.com/chasef07/abita_s2s/issues/85)) ([642ab92](https://github.com/chasef07/abita_s2s/commit/642ab92023256f03e7a72de82e79cb5d993fae1c))
+
 ## [0.9.4](https://github.com/chasef07/abita_s2s/compare/v0.9.3...v0.9.4) (2026-09-27)
 
 
