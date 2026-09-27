@@ -44,6 +44,18 @@ def failed() -> dict:
     )
 
 
+def superseded() -> dict:
+    return reply(
+        "superseded", "blocked: Patient details changed; use the latest resolution."
+    )
+
+
+def _matches(record: Receipt, name: str, dob: str | None, matcher=names_match) -> bool:
+    return any(matcher(name, n) for n in first_names(record.name)) and (
+        not dob or dob_matches(dob, record.dob)
+    )
+
+
 def ambiguous(dob: str | None) -> dict:
     return reply(
         "multiple_matches",
@@ -169,7 +181,7 @@ class PatientResolver:
             self.state.patient.active = None
             self.state.patient.revision += 1
         token = self._begin_lookup()
-        if self._task is not None and not self._task.done():
+        if self._task is not None:
             self._task.cancel()
 
         async def lookup():
@@ -178,10 +190,7 @@ class PatientResolver:
                 if self._precall is not None:
                     candidates = await asyncio.shield(self._precall)
                     if not self._current(token):
-                        return reply(
-                            "superseded",
-                            "blocked: Patient details changed; use the latest resolution.",
-                        )
+                        return superseded()
                     self.state.patient.lookup = candidates
                 return await self._resolve(first_name, dob, token, call_id=call_id)
             except asyncio.CancelledError:
@@ -230,11 +239,7 @@ class PatientResolver:
                 selected[0], name, dob, token, phone=True, call_id=call_id
             )
         active = self.state.patient.active
-        if (
-            active
-            and any(names_match(name, n) for n in first_names(active.name))
-            and (not dob or dob_matches(dob, active.dob))
-        ):
+        if active and _matches(active, name, dob):
             if active.appointmentsStatus != "error":
                 self._pending = (None, None)
                 return self._facts(active, "verified", call_id=call_id)
@@ -249,10 +254,7 @@ class PatientResolver:
             self.state.call.called_office_key, {"firstName": name, "dob": dob}
         )
         if not self._current(token):
-            return reply(
-                "superseded",
-                "blocked: Patient details changed; use the latest resolution.",
-            )
+            return superseded()
         if isinstance(result, NotFound):
             self.state.patient.absence = PatientAbsence(
                 name, dob, self.state.call.called_office_key
@@ -280,10 +282,7 @@ class PatientResolver:
         call_id: str | None = None,
     ) -> dict:
         if not self._current(token):
-            return reply(
-                "superseded",
-                "blocked: Patient details changed; use the latest resolution.",
-            )
+            return superseded()
         active = self.state.patient.active
         receipt = (
             active
@@ -297,18 +296,14 @@ class PatientResolver:
                 self.state.call.called_office_key, {"patientId": candidate.patientId}
             )
         if not self._current(token):
-            return reply(
-                "superseded",
-                "blocked: Patient details changed; use the latest resolution.",
-            )
+            return superseded()
         matcher = (
             phone_name_matches if phone else lambda a, b: exact_name(a) == exact_name(b)
         )
         if (
             not isinstance(receipt, Receipt)
             or receipt.patientId != candidate.patientId
-            or not any(matcher(name, n) for n in first_names(receipt.name))
-            or (dob and not dob_matches(dob, receipt.dob))
+            or not _matches(receipt, name, dob, matcher)
         ):
             return failed()
         previous = self.state.patient.active
@@ -361,11 +356,7 @@ class PatientResolver:
             self._closed
             or not exact_name(first_name)
             or not parse_dob(dob)
-            or (
-                active
-                and any(names_match(first_name, n) for n in first_names(active.name))
-                and dob_matches(dob, active.dob)
-            )
+            or (active and _matches(active, first_name, dob))
         ):
             return False
         self._token = None
@@ -408,22 +399,12 @@ class PatientResolver:
         self, receipt: Receipt, outcome: str, *, call_id: str | None = None
     ) -> dict:
         if self.state.reporter:
-            self.state.reporter.record(
-                "patient",
-                {
-                    "outcome": outcome,
-                    "externalPatientId": receipt.patientId,
-                },
-                call_id=call_id,
-            )
             # Resolving a chart created in this call must not label it existing.
-            if receipt.patientId in self.state.insurance.registrations:
+            created = receipt.patientId in self.state.insurance.registrations
+            for recorded in (outcome, "created") if created else (outcome,):
                 self.state.reporter.record(
                     "patient",
-                    {
-                        "outcome": "created",
-                        "externalPatientId": receipt.patientId,
-                    },
+                    {"outcome": recorded, "externalPatientId": receipt.patientId},
                     call_id=call_id,
                 )
         result = reply(
