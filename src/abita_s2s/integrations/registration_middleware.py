@@ -10,7 +10,7 @@ from abita_s2s.eligibility_contract import EligibilityInput, EligibilityResult
 from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.integrations.patient_middleware import Middleware, Record, Text
 from abita_s2s.offices import office_phone, same_office
-from abita_s2s.name_matcher import parse_dob
+from abita_s2s.name_matcher import member_key, parse_dob
 
 
 class CreationReceipt(Record):
@@ -82,8 +82,7 @@ class RegistrationMiddleware(Middleware):
                         or requested_dob is None
                         or requested_dob.strftime("%Y%m%d") != matched.dateOfBirth
                         or not matched.memberId
-                        or "".join(details.memberId.split()).upper()
-                        != "".join(matched.memberId.split()).upper()
+                        or member_key(details.memberId) != member_key(matched.memberId)
                     ):
                         return None
                 return result

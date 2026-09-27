@@ -27,14 +27,14 @@ class EligibilityInput(Record):
 
 
 class IdentityEvidence(Record):
-    model_config = ConfigDict(strict=True, frozen=True, extra="allow")
+    model_config = ConfigDict(extra="allow")
     status: Text
     reviewRequired: bool
     reasons: list[str] | None = None
 
 
 class MatchedPatient(Record):
-    model_config = ConfigDict(strict=True, frozen=True, extra="allow")
+    model_config = ConfigDict(extra="allow")
     firstName: Text
     lastName: Text
     dateOfBirth: Text
@@ -42,7 +42,7 @@ class MatchedPatient(Record):
 
 
 class EligibilityProvider(Record):
-    model_config = ConfigDict(strict=True, frozen=True, extra="allow")
+    model_config = ConfigDict(extra="allow")
     profileId: Text
     name: Text
     firstName: Text
@@ -52,7 +52,7 @@ class EligibilityProvider(Record):
 
 class EligibilityResult(Record):
     # Preserve future middleware fields as well as opaque payer evidence.
-    model_config = ConfigDict(strict=True, frozen=True, extra="allow")
+    model_config = ConfigDict(extra="allow")
     insuranceResolution: InsuranceResolution | None = None
     provider: EligibilityProvider | None = None
     providerResults: list["EligibilityResult"] | None = None
@@ -92,3 +92,11 @@ class EligibilityCheck:
     result: EligibilityResult | None = None
     failure_reason: str | None = None
     task: asyncio.Task | None = field(default=None, repr=False)
+
+    @property
+    def resolution(self) -> InsuranceResolution | None:
+        return self.result.insuranceResolution if self.result else None
+
+    @property
+    def name_correction(self) -> MatchedPatient | None:
+        return self.result.name_correction if self.result else None
