@@ -15,6 +15,7 @@ from abita_s2s.handoff import AdmissionRejected, HandoffAdmission
 from abita_s2s.state import CallState
 
 logger = logging.getLogger(__name__)
+AMBIGUOUS = "ambiguous: Transfer may be in progress. Do not retry or end the call."
 
 
 class CallControl(EndCallTool):
@@ -65,6 +66,14 @@ class CallControl(EndCallTool):
             and participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP
         )
 
+    def _retry_status(self) -> str:
+        return "retryable" if self.attempts < 2 else "failed"
+
+    def _not_sent(self) -> str:
+        if self.status == "retryable":
+            return "failed: No SIP transfer was sent. You may try once more."
+        return "failed: No SIP transfer was sent. Do not retry."
+
     @function_tool
     async def transfer_call(self, ctx: RunContext[CallState]) -> str:
         """Transfer to human staff when office policy requires it, including emergencies or named staff.
@@ -92,13 +101,8 @@ class CallControl(EndCallTool):
             # Cancellation already fenced retries according to the active phase.
             logger.warning("Transfer deadline expired status=%s", self.status)
             if self.status == "ambiguous":
-                return "ambiguous: Transfer may be in progress. Do not retry or end the call."
-            retry = (
-                " You may try once more."
-                if self.status == "retryable"
-                else " Do not retry."
-            )
-            return "failed: No SIP transfer was sent." + retry
+                return AMBIGUOUS
+            return self._not_sent()
 
     async def _perform_transfer(self, ctx):
         if os.environ.get("LIVEKIT_AGENT_DEPLOYMENT", "").strip():
@@ -156,11 +160,7 @@ class CallControl(EndCallTool):
                 return "failed: Provider reported transfer failure. Do not retry. Continue helping the caller."
             self.status = "ambiguous"
         except asyncio.CancelledError:
-            self.status = (
-                ("retryable" if self.attempts < 2 else "failed")
-                if phase == "preparing"
-                else "ambiguous"
-            )
+            self.status = self._retry_status() if phase == "preparing" else "ambiguous"
             raise
         except Exception as error:  # noqa: BLE001 - every provider failure must fence retries
             logger.warning(
@@ -169,18 +169,13 @@ class CallControl(EndCallTool):
             if phase == "preparing" or (
                 phase == "admitting" and isinstance(error, AdmissionRejected)
             ):
-                self.status = "retryable" if self.attempts < 2 else "failed"
-                retry = (
-                    " You may try once more."
-                    if self.status == "retryable"
-                    else " Do not retry."
-                )
-                return "failed: No SIP transfer was sent." + retry
+                self.status = self._retry_status()
+                return self._not_sent()
             self.status = "ambiguous"
         finally:
             if self.state.reporter:
                 self.state.reporter.transfer_status = self.status
-        return "ambiguous: Transfer may be in progress. Do not retry or end the call."
+        return AMBIGUOUS
 
     async def _end_call(self, ctx: RunContext):
         if self.status in ("pending", "accepted", "ambiguous"):

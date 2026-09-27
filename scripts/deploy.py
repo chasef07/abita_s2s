@@ -5,7 +5,6 @@ secret upload, image upload or implicit production selection is implemented here
 """
 
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -14,7 +13,7 @@ import subprocess
 import time
 import tomllib
 
-from release import component_version, component_files
+from release import component_version, component_files, digest
 
 from abita_s2s.release import COMPONENTS, checksums, content_digest
 
@@ -59,7 +58,7 @@ def validate_release(directory: Path, commit: str):
         checked.add(name)
         if Path(name).name != name:
             raise ValueError("Invalid release asset path")
-        if hashlib.sha256((directory / name).read_bytes()).hexdigest() != sha:
+        if digest(directory / name) != sha:
             raise ValueError("Release checksum mismatch: " + name)
     manifest = json.loads((directory / "release.json").read_text())
     if manifest["git_commit"] != commit or run("git", "rev-parse", "HEAD") != commit:
@@ -89,10 +88,8 @@ def validate_release(directory: Path, commit: str):
             or checksums(Path(directory), files) != files
         ):
             raise ValueError("Component version or content does not match release")
-    if (
-        manifest["agent_version"] != version
-        or manifest["uv_lock_sha256"]
-        != hashlib.sha256(Path("uv.lock").read_bytes()).hexdigest()
+    if manifest["agent_version"] != version or (
+        manifest["uv_lock_sha256"] != digest(Path("uv.lock"))
     ):
         raise ValueError("Release version or lock mismatch")
     return manifest
@@ -112,6 +109,12 @@ class LiveKit:
         return json.loads(self.command("versions", "--id", self.agent, "--json"))[
             "versions"
         ]
+
+    def attributes_mismatch(self, version, manifest):
+        versions = [v for v in self.versions() if v["version"] == version]
+        return len(versions) != 1 or any(
+            versions[0].get("attributes", {}).get(k) != manifest[k] for k in KEYS
+        )
 
     def observe(self, deployment, manifest, expected=None):
         status = json.loads(self.command("status", "--id", self.agent, "--json"))
@@ -133,10 +136,7 @@ class LiveKit:
         version = ids.pop()
         if expected and version != expected:
             raise ValueError("Deployment changed since validation")
-        versions = [v for v in self.versions() if v["version"] == version]
-        if len(versions) != 1 or any(
-            versions[0].get("attributes", {}).get(k) != manifest[k] for k in KEYS
-        ):
+        if self.attributes_mismatch(version, manifest):
             raise ValueError("Observed release attributes mismatch")
         return version
 
@@ -183,10 +183,7 @@ class LiveKit:
             self.observe("staging", manifest, expected)
             self.command("promote", "--id", self.agent, "--deployment", "staging")
         elif action == "rollback":
-            versions = [v for v in self.versions() if v["version"] == expected]
-            if len(versions) != 1 or any(
-                versions[0].get("attributes", {}).get(k) != manifest[k] for k in KEYS
-            ):
+            if self.attributes_mismatch(expected, manifest):
                 raise ValueError("Rollback version does not match selected release")
             self.command("rollback", "--id", self.agent, "--version", expected)
         else:
