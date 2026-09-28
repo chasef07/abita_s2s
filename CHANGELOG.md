@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.8](https://github.com/chasef07/abita_s2s/compare/v0.9.7...v0.9.8) (2026-09-28)
+
+
+### Bug Fixes
+
+* **evaluation:** scope appointment checks and split judge definitions ([#102](https://github.com/chasef07/abita_s2s/issues/102)) ([e413eb9](https://github.com/chasef07/abita_s2s/commit/e413eb98df42772df5a67d4de86bc005917db3a1))
+
 ## [0.9.7](https://github.com/chasef07/abita_s2s/compare/v0.9.6...v0.9.7) (2026-09-27)
 
 
