@@ -8,6 +8,7 @@ from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration, Registration, staff
 from abita_s2s.scheduling import Scheduling
 from abita_s2s.state import CallState
+from abita_s2s.tools.context import bound
 
 
 class PatientTools:
@@ -39,7 +40,7 @@ class PatientTools:
             firstName: First name of the patient receiving care; null if unknown.
             dob: Patient date of birth in MM/DD/YYYY; null if unknown.
         """
-        if self._resolver is None or self._resolver.state is not context.userdata:
+        if not bound(self._resolver, context):
             return "blocked: Patient lookup is unavailable. Ask office staff for help."
         result = await self._resolver.resolve(
             firstName, dob, call_id=context.function_call.call_id
@@ -92,7 +93,7 @@ class PatientTools:
             insuranceMemberId: Member ID on the insurance card; use "self pay" for self-pay.
             readBack: True only after the caller confirms the complete final read-back; otherwise null.
         """
-        if self._insurance is None or self._insurance.state is not context.userdata:
+        if not bound(self._insurance, context):
             return staff()["answer"]
         registration = Registration(
             firstName=firstName,

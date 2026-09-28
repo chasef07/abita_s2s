@@ -14,7 +14,6 @@ from test_new_patient_eligibility import details, result
 class ResolvedInsuranceTests(unittest.IsolatedAsyncioTestCase):
     owner = fixtures.EligibilityTests.owner
 
-    # Reuse the real owner/HTTP fixture without inheriting its test cases.
     def setup_owner(self, resolution, *, gate=None):
         self.writes = []
 
@@ -226,7 +225,6 @@ class ResolvedInsuranceTests(unittest.IsolatedAsyncioTestCase):
         await owner.check("Aetna", "medical")
         check = owner._start_eligibility(details())
         changed = []
-        # Queue the coverage change before the eligibility waiter resumes.
         check.task.add_done_callback(
             lambda _: changed.append(
                 asyncio.create_task(owner.check("Aetna", "routine_vision"))
@@ -285,7 +283,6 @@ class ResolvedInsuranceTests(unittest.IsolatedAsyncioTestCase):
         )
         await owner.eligibility(details())
 
-        # A failed second check must not leave the first member's accepted plan.
         async def unavailable(*args):
             return None
 

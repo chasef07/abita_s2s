@@ -203,6 +203,14 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         )
         return ctx, args
 
+    async def test_named_deployment_sandboxes_call_control(self):
+        for deployment, sandbox in ((None, False), ("staging", True)):
+            with self.subTest(deployment=deployment):
+                _, args = await self.run_startup(
+                    False, config=Config("offline", deployment=deployment)
+                )
+                self.assertIs(args["dependencies"].call_control.sandbox, sandbox)
+
     async def test_simulation_uses_sandbox_and_non_sip_participant(self):
         sim = SimpleNamespace(
             userdata=lambda: {"office": "spring-hill"},
@@ -359,7 +367,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaisesRegex(RuntimeError, "write failed"):
                     await shutdown
         self.assertTrue(client.is_closed)
-        self._cleanups.pop()  # Already awaited and asserted this cleanup failure.
+        self._cleanups.pop()
 
     async def test_product_closeout_waits_for_accepted_write_and_keeps_native_report(
         self,

@@ -679,7 +679,6 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                         else:
                             await owner.check("VSP", "routine_vision")
 
-                    # The write owner queues its shielded task after this correction.
                     writing = asyncio.create_task(
                         owner.add(registration())
                         if operation == "create"
@@ -696,7 +695,6 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                     self.assertFalse(state.insurance.write_uncertain)
 
                     if correction == "plan":
-                        # An undispatched attempt must not consume the write receipt.
                         await owner.check("Aetna", "medical")
                         retried = (
                             await owner.add(registration())

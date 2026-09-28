@@ -14,7 +14,8 @@ from livekit.agents import AgentSession, llm
 from test_patient_resolution import call_state, receipt
 
 from abita_s2s.agent import AbitaAgent
-from abita_s2s.tools.call_control import CallControl
+from abita_s2s.call_control import CallControl
+from abita_s2s.tools.call_control import CallControlTools
 from abita_s2s.config import HandoffConfig, load_config
 from abita_s2s.handoff import HandoffAdmission
 from abita_s2s.integrations.patient_middleware import Receipt
@@ -137,6 +138,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         )
         self.addAsyncCleanup(self.client.aclose)
         self.control = CallControl(self.state, self.client, self.room, self.sip)
+        self.tools = CallControlTools(self.control)
         self.model = Model()
         self.session = AgentSession(llm=self.model, userdata=self.state)
         self.addAsyncCleanup(self.session.aclose)
@@ -152,7 +154,6 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         speech = SimpleNamespace(
             wait_for_playout=playout, interrupted=False, exception=lambda: None
         )
-        # Replace speech only; tool selection, RunContext and execution are LiveKit's.
         original = self.session.generate_reply
 
         def generate(**kwargs):
@@ -213,19 +214,19 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.state.reporter = SimpleNamespace(transfer_status="idle")
         timeout = asyncio.timeout
         with patch(
-            "abita_s2s.tools.call_control.asyncio.timeout",
+            "abita_s2s.call_control.asyncio.timeout",
             side_effect=lambda seconds: timeout(0.01 if seconds == 40 else seconds),
         ):
-            first = await self.control.transfer_call(ctx)
+            first = await self.tools.transfer_call(ctx)
             self.assertEqual(
                 first, "failed: No SIP transfer was sent. You may try once more."
             )
             self.assertEqual(self.state.reporter.transfer_status, "retryable")
-            second = await self.control.transfer_call(ctx)
+            second = await self.tools.transfer_call(ctx)
             self.assertEqual(second, "failed: No SIP transfer was sent. Do not retry.")
             self.assertEqual(self.state.reporter.transfer_status, "failed")
             self.assertTrue(
-                (await self.control.transfer_call(ctx)).startswith("blocked:")
+                (await self.tools.transfer_call(ctx)).startswith("blocked:")
             )
         self.sip.transfer_sip_participant.assert_not_awaited()
         await self.control.aclose()
@@ -248,19 +249,17 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.state.reporter = SimpleNamespace(transfer_status="idle")
         timeout = asyncio.timeout
         with patch(
-            "abita_s2s.tools.call_control.asyncio.timeout",
+            "abita_s2s.call_control.asyncio.timeout",
             side_effect=lambda seconds: timeout(0.01 if seconds == 40 else seconds),
         ):
-            result = await self.control.transfer_call(ctx)
+            result = await self.tools.transfer_call(ctx)
         self.assertEqual(
             result,
             "ambiguous: Transfer may be in progress. Do not retry or end the call.",
         )
         self.assertEqual(self.state.reporter.transfer_status, "ambiguous")
-        self.assertTrue(
-            (await self.control.transfer_call(ctx)).startswith("ambiguous:")
-        )
-        self.assertTrue((await self.control._end_call(ctx)).startswith("blocked:"))
+        self.assertTrue((await self.tools.transfer_call(ctx)).startswith("ambiguous:"))
+        self.assertTrue((await self.tools._end_call(ctx)).startswith("blocked:"))
         self.sip.transfer_sip_participant.assert_awaited_once()
         await self.control.aclose()
 
@@ -463,11 +462,23 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
                 )
             self.sip.transfer_sip_participant.assert_not_awaited()
 
+    async def test_toolset_close_stops_new_transfers(self):
+        await self.tools.aclose()
+        self.assertEqual(
+            await self.tools.transfer_call(Mock()), "blocked: This call has ended."
+        )
+        self.sip.transfer_sip_participant.assert_not_awaited()
+
     async def test_sandbox_blocks_before_speech(self):
-        with patch.dict("os.environ", {"LIVEKIT_AGENT_DEPLOYMENT": "preview"}):
-            self.assertEqual(
-                (await self.run_tool("transfer_call")).split(":", 1)[0], "blocked"
-            )
+        with patch.dict(
+            "os.environ",
+            {"OPENAI_API_KEY": "offline", "LIVEKIT_AGENT_DEPLOYMENT": "production"},
+        ):
+            self.assertEqual(load_config().deployment, "production")
+        self.control.sandbox = True
+        self.assertEqual(
+            (await self.run_tool("transfer_call")).split(":", 1)[0], "blocked"
+        )
         self.assertEqual(self.events, [])
 
     async def test_announcement_failure_never_sends_refer_and_retry_is_bounded(self):

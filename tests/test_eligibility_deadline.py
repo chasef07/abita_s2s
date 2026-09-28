@@ -28,7 +28,6 @@ class EligibilityDeadlineTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(checked.status, "active")
                 self.assertEqual(timeout.call_args.args, (30,))
                 self.assertEqual(requests[-1].extensions["timeout"]["read"], 30)
-                # An invalid write receipt still exercises the actual write transport.
                 await middleware.create("spring-hill", {})
                 self.assertEqual(timeout.call_args.args, (20,))
                 self.assertEqual(requests[-1].extensions["timeout"]["read"], 20)

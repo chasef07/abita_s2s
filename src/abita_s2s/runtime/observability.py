@@ -26,8 +26,6 @@ class OpenAITimeline:
         self.audio: dict[str, tuple[int, int, int]] = {}
 
     def record(self, direction: str, event: dict) -> None:
-        # Observability must not interrupt provider event dispatch. Report failures
-        # without dumping exception text or raw payloads containing patient data.
         try:
             self._record(direction, event)
         except Exception as error:
@@ -37,8 +35,6 @@ class OpenAITimeline:
         kind = event.get("type", "")
         now = time.time_ns()
         if kind in ("session.input_audio.append", "session.output_audio.delta"):
-            # Continuous full-duplex audio includes silence. These are transport
-            # activity windows, never evidence that speech was heard.
             count, start, end = self.audio.get(kind, (0, now, now))
             if now - start >= 1_000_000_000:
                 self._audio_span(kind, count, start, end)
@@ -66,7 +62,6 @@ class OpenAITimeline:
 
         inner = event.get("event", {}) if kind == "response.event" else event
         inner_kind = inner.get("type", kind)
-        # Token deltas are replaced by completed items; do not capture reasoning.
         if kind == "response.event" and inner_kind not in (
             "response.created",
             "response.in_progress",
@@ -190,7 +185,6 @@ class OpenAITimeline:
                             output_messages=[{"role": "assistant", "parts": parts}],
                         )
                     elif item.get("type") == "function_call":
-                        # This is the provider's proposed call, not proof of dispatch.
                         content["arguments"] = item.get("arguments")
                 if content:
                     span.set_attribute("lk.pii.openai_content", json.dumps(content))
@@ -242,8 +236,6 @@ class OpenAITimeline:
 class ObservedGPTLiveSession(GPTLiveSession):
     def __init__(self, model: GPTLiveModel, call_id: str):
         super().__init__(model)
-        # GPTLiveSession schedules connection work; attach synchronously before
-        # yielding so the initial session.start and session.started are observed.
         self.timeline = OpenAITimeline(call_id)
         self.on(
             "openai_server_event_received",

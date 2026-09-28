@@ -11,8 +11,9 @@ from uuid import UUID, uuid4
 import httpx
 
 from abita_s2s.config import Config
-from abita_s2s.identity import PatientResolver, reply
+from abita_s2s.identity import PatientResolver
 from abita_s2s.offices import e164, get_office_profile, get_product_office_key
+from abita_s2s.results import reply
 from abita_s2s.state import CallState
 
 Category = Literal[
@@ -126,7 +127,6 @@ class StaffTasks:
         await asyncio.shield(self._close_task)
 
     async def _flush(self) -> None:
-        # Freeze final payloads once; exact repeats and HTTP retries share a key.
         deliveries = {}
         for draft in self._drafts.values():
             payload = dict(draft.payload)

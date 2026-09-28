@@ -13,9 +13,9 @@ from pydantic import (
     model_validator,
 )
 
-from abita_s2s.config import Config
 from abita_s2s.insurance_contract import CoverageType
-from abita_s2s.integrations.patient_middleware import Middleware, Record, Text
+from abita_s2s.integrations.middleware import Middleware
+from abita_s2s.records import Record, Text
 
 
 class Slot(Record):
@@ -33,7 +33,6 @@ class Slot(Record):
         if "T" not in value:
             raise ValueError("Expected a slot date and time")
         datetime.fromisoformat(value)
-        # Slots use clinic-local ISO timestamps, including a calendar date.
         date.fromisoformat(value.split("T", 1)[0])
         return value
 
@@ -152,9 +151,6 @@ class SchedulingFailure(Record):
 
 
 class SchedulingHTTP(Middleware):
-    def __init__(self, client: httpx.AsyncClient, config: Config, *, deadline=20):
-        super().__init__(client, config, deadline)
-
     async def availability(self, body: dict) -> Inventory | SchedulingFailure:
         return await self._post("/api/scheduler/slots", body, Inventory, write=False)
 

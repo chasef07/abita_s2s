@@ -64,7 +64,6 @@ class KnowledgeTests(unittest.IsolatedAsyncioTestCase):
         knowledge = self.knowledge(handler)
         for office in OFFICES:
             with self.subTest(office=office.key):
-                # Deliberately use a different greeting profile: routing belongs to call state.
                 agent = AbitaAgent(SPRING_HILL, knowledge)
                 search = ToolContext(agent.tools).function_tools[
                     "search_office_knowledge"

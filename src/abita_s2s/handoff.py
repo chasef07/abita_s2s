@@ -75,8 +75,6 @@ class HandoffAdmission:
             headers={"Authorization": f"Bearer {self.config.secret}"},
             timeout=2,
         )
-        # An explicit rejection permits a bounded retry; conflict, timeout, server
-        # errors, and malformed success can represent a committed admission.
         if 400 <= response.status_code < 500 and response.status_code not in (408, 409):
             raise AdmissionRejected(
                 f"Handoff admission rejected: {response.status_code}"
@@ -88,7 +86,6 @@ class HandoffAdmission:
         if remaining <= 0 or remaining > 300:
             raise ValueError("Invalid handoff expiration")
         target = body["sipDestination"]
-        # Destination comes only from the authenticated office admission endpoint.
         if (
             not isinstance(target, str)
             or not target.startswith("sip:")

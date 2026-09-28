@@ -65,8 +65,6 @@ class GoogleCloudTracingTests(unittest.TestCase):
             )
             provider = install.call_args.args[0]
             try:
-                # The SDK adds its own exporter to the same provider; no replacement
-                # or shutdown at job completion may remove this second destination.
                 provider.add_span_processor(SimpleSpanProcessor(livekit))
                 with tracer.start_as_current_span("gpt_live.protocol") as span:
                     span.set_attribute("lk.session_id", "live_test")

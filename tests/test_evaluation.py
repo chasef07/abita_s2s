@@ -57,6 +57,9 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 str(request.url), "https://ai-gateway.vercel.sh/typesafe/v1/systemone"
             )
+            self.assertEqual(
+                request.headers["Authorization"], "Bearer synthetic-secret"
+            )
             payload = json.loads(request.content)
             requests.append(payload)
             name, question = next(iter(payload["questions"].items()))
@@ -79,7 +82,6 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
 
         client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
         with (
-            patch.dict("os.environ", {"AI_GATEWAY_API_KEY": "synthetic-secret"}),
             patch(
                 "abita_s2s.observability.evaluation.httpx.AsyncClient",
                 return_value=client,
@@ -87,7 +89,9 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             patch("abita_s2s.observability.evaluation.EVALUATION_SECONDS", 0.1),
             patch("abita_s2s.observability.evaluation.RETRY_SECONDS", 0),
         ):
-            result = await evaluate_call({"chat_history": history.to_dict()})
+            result = await evaluate_call(
+                {"chat_history": history.to_dict()}, "synthetic-secret"
+            )
         return requests, result
 
     async def test_datetime_judge_requires_a_returned_appointment_action(self):

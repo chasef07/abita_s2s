@@ -200,15 +200,12 @@ class ProviderEligibilityLinkageTests(unittest.IsolatedAsyncioTestCase):
         available = await h.scheduler.availability("medical")
         self.assertEqual(available["outcome"], "found", available)
         ref = available["slots"][0]["appointmentSlotRef"]
-        context = SimpleNamespace(
-            userdata=h.state, function_call=SimpleNamespace(call_id="synthetic-booking")
-        )
         return await h.scheduler.book(
-            context,
             slot_ref=ref,
             reason="Eye irritation",
             referrer="none",
             confirmed=True,
+            call_id="synthetic-booking",
         )
 
     async def closeout(self, h):
@@ -355,17 +352,13 @@ class ProviderEligibilityLinkageTests(unittest.IsolatedAsyncioTestCase):
         old_ref = h.scheduler.appointments()[0]["appointmentRef"]
         replacement = await h.scheduler.availability("medical", start="2026-09-16")
         self.assertEqual(replacement["outcome"], "found")
-        context = SimpleNamespace(
-            userdata=h.state,
-            function_call=SimpleNamespace(call_id="synthetic-reschedule"),
-        )
         result = await h.scheduler.reschedule(
-            context,
             old_ref=old_ref,
             slot_ref=replacement["slots"][0]["appointmentSlotRef"],
             reason="Eye irritation",
             referrer="none",
             confirmed=True,
+            call_id="synthetic-reschedule",
         )
         self.assertIn("success:", result)
         closeout = await self.closeout(h)

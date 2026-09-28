@@ -7,15 +7,18 @@ from typing import Literal
 from pydantic import ConfigDict
 
 from abita_s2s.eligibility_contract import EligibilityCheck, EligibilityInput
-from abita_s2s.identity import PatientResolver, reply
+from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance_state import (
     AcceptedInsurance,
     CoverageType,
     accepted_insurance,
+    clear_acceptance,
 )
-from abita_s2s.integrations.patient_middleware import Receipt, Record
+from abita_s2s.integrations.patient_middleware import Receipt
 from abita_s2s.name_matcher import dob_matches, exact_name, member_key, parse_dob
 from abita_s2s.offices import same_office
+from abita_s2s.records import Record
+from abita_s2s.results import reply
 from abita_s2s.integrations.registration_middleware import (
     CreationReceipt,
     RegistrationMiddleware,
@@ -76,7 +79,6 @@ class InsuranceRegistration:
         self.state = state
         self._resolver = resolver
         self._middleware = middleware
-        # Call-local receipts survive switches and repeat calls; never model-visible IDs.
         self._creations: list[tuple[tuple, dict]] = []
         self._updates: list[tuple[tuple, dict]] = []
         self._task: asyncio.Task | None = None
@@ -102,10 +104,6 @@ class InsuranceRegistration:
         if current and current[0] == self.state.patient.revision:
             return current[1]
         return None
-
-    def _invalidate_acceptance(self) -> None:
-        self.state.insurance.accepted = None
-        self.state.insurance.check_revision += 1
 
     def _start_eligibility(self, details: EligibilityInput) -> EligibilityCheck | str:
         if self._closed:
@@ -156,7 +154,7 @@ class InsuranceRegistration:
         current = insurance.current_eligibility
         if current is None or current[0] != revision or current[1] is not check:
             if current and current[1].resolution:
-                self._invalidate_acceptance()
+                clear_acceptance(self.state)
             current = insurance.current_eligibility = (revision, check)
         if check.task is not None:
             await asyncio.shield(check.task)
@@ -190,7 +188,7 @@ class InsuranceRegistration:
         resolution = check.resolution
         if resolution is None or resolution.status in ("unavailable", "unmapped"):
             return None
-        self._invalidate_acceptance()
+        clear_acceptance(self.state)
         decision = resolution.decision
         if (
             resolution.status != "resolved"
@@ -270,9 +268,8 @@ class InsuranceRegistration:
                     normalize(check.canonical_plan or ""),
                     *(normalize(p) for p in resolution.plans),
                 }:
-                    # Keep the evidence, but invalidate a waiter still applying it.
                     self.state.insurance.current_eligibility = (current[0], check)
-                    self._invalidate_acceptance()
+                    clear_acceptance(self.state)
                     return reply(
                         "needs_eligibility",
                         "needs_input: Insurance changed after eligibility. Check eligibility for the new plan and member ID before registration.",
@@ -287,7 +284,7 @@ class InsuranceRegistration:
             }
         ):
             self.state.insurance.current_eligibility = None
-        self._invalidate_acceptance()
+        clear_acceptance(self.state)
         check_revision = self.state.insurance.check_revision
         patient = self.state.patient
         revision, active, absence = patient.revision, patient.active, patient.absence
@@ -403,7 +400,6 @@ class InsuranceRegistration:
                         "needs_eligibility",
                         "needs_input: Registration details differ from the eligibility check. Check eligibility for this patient and member ID before registration.",
                     )
-                # Do not recreate acceptance here: a later plan change clears it.
                 if resolution.status != "unmapped" and (
                     resolution.status != "resolved"
                     or not resolution.decision
@@ -534,7 +530,6 @@ class InsuranceRegistration:
     def _created(
         self, result: CreationReceipt, r: Registration, checked, eligibility=None
     ) -> dict:
-        # Validate both complete names without inventing backend identifier formats.
         expected = {full_name(r), exact_name(f"{r.lastName} {r.firstName}")}
         if exact_name(result.name) not in expected or not dob_matches(
             result.dob, r.dob
@@ -550,8 +545,6 @@ class InsuranceRegistration:
             insuranceCarrier=checked.decision.canonicalPlan
             if result.status == "created"
             else None,
-            # A complete creation confirms attachment of the accepted plan sent
-            # with this write; the receipt need not repeat its decision.
             insuranceDecision=(result.insuranceDecision or checked.decision)
             if result.status == "created"
             else None,
@@ -618,8 +611,6 @@ class InsuranceRegistration:
                 break
 
         async def update():
-            # An attempted insurance replacement invalidates future appointment
-            # links even if a later plan label returns to the old value.
             for check in self.state.insurance.eligibility_checks:
                 if check.patient_id == active.patientId:
                     check.invalidated = True

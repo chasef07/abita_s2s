@@ -4,6 +4,7 @@ import asyncio
 import os
 import logging
 import re
+from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -12,8 +13,8 @@ from livekit import api, rtc
 from livekit.agents import AgentSession, JobContext, room_io
 
 from abita_s2s.agent import AbitaAgent
-from abita_s2s.tools.call_control import CallControl
-from abita_s2s.config import Config, load_config
+from abita_s2s.call_control import CallControl
+from abita_s2s.config import load_config
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.knowledge import OfficeKnowledge
@@ -32,10 +33,8 @@ from abita_s2s.state import CallContext, CallState
 
 logger = logging.getLogger(__name__)
 SIP_WAIT_SECONDS = 20
-# Rescheduling can book then cancel: two 20s HTTP deadlines. Allow 10s margin.
 CLEANUP_SECONDS = 50
 TRANSPORT_CLOSE_SECONDS = 5
-# Include post-call evaluation and report delivery after draining accepted writes.
 SHUTDOWN_PROCESS_SECONDS = 90
 
 
@@ -135,13 +134,13 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             raise ValueError(
                 "Simulations require SANDBOX_AMD_API_URL and SANDBOX_AMD_API_TOKEN"
             )
-        config = Config(
-            openai_api_key=config.openai_api_key,
-            voice=config.voice,
-            knowledge_url=config.knowledge_url,
-            product_secret=config.product_secret,
+        config = replace(
+            config,
             middleware_url=sandbox_url,
             middleware_token=sandbox_token,
+            staff_tasks_url=None,
+            interaction_url=None,
+            handoff=None,
         )
         data = simulation.userdata()
         office = get_office_profile(data["office"])
@@ -231,7 +230,6 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             else:
                 await drain_writes()
         finally:
-            # A failed owner must not skip either transport.
             async with asyncio.timeout(TRANSPORT_CLOSE_SECONDS):
                 await _gather_raising(
                     client.aclose(), *([sip_api.aclose()] if sip_api else [])
@@ -278,6 +276,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             ctx.room,
             sip_api.sip if sip_api else None,
             handoff=config.handoff,
+            sandbox=config.deployment is not None,
         )
 
         resolver.start_phone_lookup()
@@ -316,6 +315,6 @@ async def finish_voice_call(ctx: JobContext) -> None:
     try:
         state = ctx.primary_session.userdata
     except RuntimeError:
-        return  # Startup cleanup owns the failed closeout before session registration.
+        return
     if state.reporter:
         await state.reporter.finish(lambda: ctx.make_session_report().to_dict())

@@ -24,6 +24,8 @@ class Config:
     staff_tasks_url: str | None = None
     interaction_url: str | None = None
     handoff: HandoffConfig | None = None
+    deployment: str | None = None
+    ai_gateway_key: str | None = field(default=None, repr=False)
 
 
 def _is_service_url(url: SplitResult) -> bool:
@@ -46,7 +48,6 @@ def load_config() -> Config:
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise ValueError("Missing required environment variable: OPENAI_API_KEY")
-    # LiveKit CLI validates its URL, API key, and secret in room modes.
     voice = os.environ.get("GPT_LIVE_VOICE", "gleam").strip()
     if not voice:
         raise ValueError("GPT_LIVE_VOICE must not be empty")
@@ -115,9 +116,8 @@ def load_config() -> Config:
         url = urlsplit(middleware_url)
         if not _is_service_url(url) or url.query or url.fragment:
             raise ValueError("AMD_API_URL must use HTTPS (HTTP only on loopback)")
-    # Match the existing agent: named deployments never write simulated calls to Product.
     interaction_url = None
-    if not os.environ.get("LIVEKIT_AGENT_DEPLOYMENT", "").strip():
+    if not deployment:
         interaction_url = (
             os.environ.get("ACUITY_PRODUCT_INTERACTION_URL", "").strip() or None
         )
@@ -136,8 +136,6 @@ def load_config() -> Config:
             raise ValueError(
                 "ACUITY_PRODUCT_INTERACTION_URL requires ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET"
             )
-    # Admission is optional: a missing practice must not block staff tasks,
-    # knowledge, or offices with direct transfer destinations.
     practice = os.environ.get("ABITA_EYE_GROUP_PRODUCT_PRACTICE_ID", "").strip()
     handoff = None
     if handoff_url and product_secret:
@@ -157,4 +155,6 @@ def load_config() -> Config:
         staff_tasks_url,
         interaction_url,
         handoff,
+        deployment or None,
+        os.environ.get("AI_GATEWAY_API_KEY", "").strip() or None,
     )

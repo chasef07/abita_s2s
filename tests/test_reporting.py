@@ -41,7 +41,13 @@ OUTCOME = {
 
 class ReportingTests(unittest.IsolatedAsyncioTestCase):
     def reporter(
-        self, handler=None, drain=None, evaluate=None, insurance=None, call=None
+        self,
+        handler=None,
+        drain=None,
+        evaluate=None,
+        insurance=None,
+        call=None,
+        gateway_key=None,
     ):
         self.requests = []
         if evaluate is not None:
@@ -67,6 +73,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                 CONFIG,
                 interaction_url="https://product.test/v1/ai/interactions",
                 product_secret="offline-secret",
+                ai_gateway_key=gateway_key,
             ),
             drain or AsyncMock(),
             insurance=insurance,
@@ -283,7 +290,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         async def drain():
             events.append("drain")
 
-        async def evaluate(report):
+        async def evaluate(report, api_key):
             self.assertEqual(report, REPORT)
             events.append("evaluate")
             return evidence
@@ -301,7 +308,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         history.items.append(llm.AgentConfigUpdate(instructions="Manage appointments."))
         history.add_message(role="user", content="Please help with an appointment.")
         report = {**REPORT, "chat_history": history.to_dict()}
-        reporter = self.reporter()
+        reporter = self.reporter(gateway_key="offline")
         reporter.started = True
 
         def respond(request):
@@ -318,7 +325,6 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
 
         client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
         with (
-            patch.dict("os.environ", {"AI_GATEWAY_API_KEY": "offline"}),
             patch(
                 "abita_s2s.observability.evaluation.httpx.AsyncClient",
                 return_value=client,
@@ -355,10 +361,9 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             (hang, "TimeoutError"),
             (ValueError("private"), "ValueError"),
         ]:
-            reporter = self.reporter()
+            reporter = self.reporter(gateway_key="offline")
             reporter.started = True
             with (
-                patch.dict("os.environ", {"AI_GATEWAY_API_KEY": "offline"}),
                 patch(
                     "abita_s2s.observability.evaluation.evaluate_judges",
                     side_effect=failure,
@@ -371,6 +376,18 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             evaluation = self.requests[-1]["closeoutPayload"]["evaluation"]
             self.assertEqual(evaluation["status"], "incomplete")
             self.assertEqual(evaluation["reason"], reason)
+
+    async def test_closeout_evaluates_with_configured_gateway_key(self):
+        keys = []
+
+        async def evaluate(report, api_key):
+            keys.append(api_key)
+            return {}
+
+        reporter = self.reporter(evaluate=evaluate, gateway_key="config-key")
+        reporter.started = True
+        await reporter.finish(lambda: REPORT)
+        self.assertEqual(keys, ["config-key"])
 
     async def test_staff_delivery_exception_or_cancellation_fails_closeout(self):
         for error in (RuntimeError("delivery failed"), asyncio.CancelledError()):
@@ -454,7 +471,6 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         reporter = self.reporter()
         state = call_state(None)
         state.reporter = reporter
-        # Creation finished after identity moved on without activating another chart.
         state.insurance.registrations["chart-jane"] = "created"
         reporter.record(
             "patient",

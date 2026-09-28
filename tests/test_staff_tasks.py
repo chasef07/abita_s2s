@@ -89,7 +89,6 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
     async def setup_session(self, handler=None, state=None, config=CONFIG):
         state = state or call_state()
         state.reporter = Mock()
-        # call_state from knowledge tests has no caller contact.
         if state.call.caller_phone is None:
             state.call = replace(state.call, caller_phone="+15555550101")
         requests = []

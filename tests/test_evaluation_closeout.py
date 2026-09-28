@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 from livekit.agents import ChatContext
 from livekit.agents.llm import AgentConfigUpdate
 
+from abita_s2s.config import load_config
 from abita_s2s.observability.evaluation import evaluate_call
 
 
@@ -24,7 +25,6 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
         for failure in (hang, ValueError("private API body")):
             report = self.report()
             with (
-                patch.dict("os.environ", {"AI_GATEWAY_API_KEY": "offline"}),
                 patch(
                     "abita_s2s.observability.evaluation.evaluate_judges",
                     new_callable=AsyncMock,
@@ -33,7 +33,7 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
                 patch("abita_s2s.observability.evaluation.EVALUATION_SECONDS", 0.01),
                 self.assertLogs("abita_s2s.observability.evaluation", "ERROR") as logs,
             ):
-                result = await evaluate_call(report)
+                result = await evaluate_call(report, "offline")
             self.assertEqual(result["status"], "incomplete")
             self.assertNotIn("private API body", str(result) + str(logs.output))
 
@@ -45,19 +45,23 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
             report = self.report()
             if not instructions:
                 report["chat_history"]["items"].pop(0)
-            with (
-                patch.dict("os.environ", {"AI_GATEWAY_API_KEY": key}),
-                patch("abita_s2s.observability.evaluation.evaluate_judges") as judge,
-            ):
-                result = await evaluate_call(report)
+            with patch("abita_s2s.observability.evaluation.evaluate_judges") as judge:
+                result = await evaluate_call(report, key)
             judge.assert_not_called()
             self.assertEqual(result["reason"], expected)
 
     async def test_no_caller_or_missing_report(self):
         report = self.report()
         report["chat_history"] = ChatContext().to_dict()
-        result = await evaluate_call(report)
+        result = await evaluate_call(report, "offline")
         self.assertEqual(result["status"], "skipped")
         with self.assertLogs("abita_s2s.observability.evaluation", "ERROR"):
-            result = await evaluate_call({})
+            result = await evaluate_call({}, "offline")
         self.assertEqual(result["status"], "incomplete")
+
+    def test_gateway_key_is_loaded_with_config(self):
+        env = {"OPENAI_API_KEY": "offline", "AI_GATEWAY_API_KEY": " offline-key "}
+        with patch.dict("os.environ", env):
+            self.assertEqual(load_config().ai_gateway_key, "offline-key")
+        with patch.dict("os.environ", {**env, "AI_GATEWAY_API_KEY": ""}):
+            self.assertIsNone(load_config().ai_gateway_key)

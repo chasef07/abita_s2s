@@ -4,6 +4,7 @@ from livekit.agents import RunContext, function_tool
 
 from abita_s2s.staff_tasks import Category, StaffTasks, Urgency
 from abita_s2s.state import CallState
+from abita_s2s.tools.context import bound
 
 
 class StaffTaskTools:
@@ -45,7 +46,7 @@ class StaffTaskTools:
                 it will not be submitted. Other request fields are ignored when cancelling.
         """
         context.disallow_interruptions()
-        if self._staff_tasks is None or self._staff_tasks.state is not context.userdata:
+        if not bound(self._staff_tasks, context):
             return "failed: Staff delivery is unavailable. No request was sent."
         result = self._staff_tasks.save(
             category,

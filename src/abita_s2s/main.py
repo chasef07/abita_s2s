@@ -24,7 +24,6 @@ server = AgentServer(shutdown_process_timeout=SHUTDOWN_PROCESS_SECONDS)
 
 
 def prewarm(proc: JobProcess) -> None:
-    # Load AnyIO's lazy socket types before a call can block on their import.
     importlib.import_module("anyio.abc._sockets")
     proc.userdata["google_cloud_trace_processor"] = setup_google_cloud_tracing()
 

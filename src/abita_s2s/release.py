@@ -43,7 +43,6 @@ def identity() -> dict:
             or content_digest(files) != data[f"{component}_sha256"]
         ):
             raise ValueError("Installed component version or checksum mismatch")
-        # Evals ship as a separate archive; the other folders are installed code/data.
         if directory.startswith("src/abita_s2s/"):
             installed = PACKAGE / directory.removeprefix("src/abita_s2s/")
             if checksums(installed, files) != files:
