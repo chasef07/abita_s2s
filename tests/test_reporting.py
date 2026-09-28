@@ -319,15 +319,18 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
         with (
             patch.dict("os.environ", {"AI_GATEWAY_API_KEY": "offline"}),
-            patch("abita_s2s.observability.jev.httpx.AsyncClient", return_value=client),
-            self.assertLogs("abita_s2s.observability.jev", "ERROR"),
+            patch(
+                "abita_s2s.observability.evaluation.httpx.AsyncClient",
+                return_value=client,
+            ),
+            self.assertLogs("abita_s2s.observability.evaluation", "ERROR"),
         ):
             await reporter.finish(lambda: report)
         closeout = self.requests[-1]
         self.assertEqual(closeout["status"], "COMPLETED")
         evaluation = closeout["closeoutPayload"]["evaluation"]
         self.assertEqual(evaluation["status"], "incomplete")
-        self.assertEqual(len(evaluation["results"]), 6)
+        self.assertEqual(len(evaluation["results"]), 5)
         self.assertEqual(
             evaluation["results"]["conversation_responsive"]["answers"][
                 "conversation_responsive"
@@ -357,10 +360,11 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             with (
                 patch.dict("os.environ", {"AI_GATEWAY_API_KEY": "offline"}),
                 patch(
-                    "abita_s2s.observability.jev.evaluate_with_jev", side_effect=failure
+                    "abita_s2s.observability.evaluation.evaluate_judges",
+                    side_effect=failure,
                 ),
-                patch("abita_s2s.observability.jev.EVALUATION_SECONDS", 0.01),
-                self.assertLogs("abita_s2s.observability.jev", "ERROR"),
+                patch("abita_s2s.observability.evaluation.EVALUATION_SECONDS", 0.01),
+                self.assertLogs("abita_s2s.observability.evaluation", "ERROR"),
             ):
                 await reporter.finish(lambda: report)
             self.assertEqual(self.requests[-1]["status"], "COMPLETED")
