@@ -8,11 +8,18 @@ import httpx
 from livekit.agents import ChatContext
 from livekit.agents.llm import AgentConfigUpdate, FunctionCall, FunctionCallOutput
 
-from abita_s2s.observability.jev import evaluate_call
+from abita_s2s.observability.evaluation import evaluate_call
 
 
 class JevTests(unittest.IsolatedAsyncioTestCase):
-    async def run_evaluation(self, behavior=None, values=None):
+    async def run_evaluation(
+        self,
+        behavior=None,
+        values=None,
+        *,
+        tool="reschedule_appointment",
+        returned=True,
+    ):
         history = ChatContext()
         history.items.append(
             AgentConfigUpdate(
@@ -26,17 +33,19 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             [
                 FunctionCall(
                     call_id="move-1",
-                    name="reschedule_appt",
+                    name=tool,
                     arguments='{"time":"10:00"}',
                 ),
                 FunctionCallOutput(
                     call_id="move-1",
-                    name="reschedule_appt",
+                    name=tool,
                     output="Timed out",
                     is_error=True,
                 ),
             ]
         )
+        if not returned:
+            history.items.pop()
         history.add_message(role="assistant", content="It is rescheduled.")
         history.add_message(
             role="user", content="This is frustrating. Please get a person."
@@ -71,21 +80,61 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
         with (
             patch.dict("os.environ", {"AI_GATEWAY_API_KEY": "synthetic-secret"}),
-            patch("abita_s2s.observability.jev.httpx.AsyncClient", return_value=client),
-            patch("abita_s2s.observability.jev.EVALUATION_SECONDS", 0.1),
-            patch("abita_s2s.observability.jev.RETRY_SECONDS", 0),
+            patch(
+                "abita_s2s.observability.evaluation.httpx.AsyncClient",
+                return_value=client,
+            ),
+            patch("abita_s2s.observability.evaluation.EVALUATION_SECONDS", 0.1),
+            patch("abita_s2s.observability.evaluation.RETRY_SECONDS", 0),
         ):
             result = await evaluate_call({"chat_history": history.to_dict()})
         return requests, result
 
-    async def test_seven_judges_receive_full_history_and_return_decisions(self):
+    async def test_datetime_judge_requires_a_returned_appointment_action(self):
+        for tool in (
+            "book_appointment",
+            "reschedule_appointment",
+            "cancel_appointment",
+            "list_available_appointments",
+            "resolve_patient",
+            "confirm_appointment",
+        ):
+            for returned in (False, True):
+                with self.subTest(tool=tool, returned=returned):
+                    requests, result = await self.run_evaluation(
+                        tool=tool, returned=returned
+                    )
+                    applies = returned and tool in {
+                        "book_appointment",
+                        "reschedule_appointment",
+                        "cancel_appointment",
+                    }
+                    self.assertEqual(
+                        any(
+                            "appointment_datetime_correct" in r["questions"]
+                            for r in requests
+                        ),
+                        applies,
+                    )
+                    self.assertEqual(len(requests), 6 if applies else 5)
+                    self.assertEqual(result["status"], "complete")
+                    if not applies:
+                        self.assertEqual(
+                            result["results"]["appointment_datetime_correct"],
+                            {
+                                "status": "not_applicable",
+                                "reason": "no_appointment_action_result",
+                            },
+                        )
+
+    async def test_six_judges_receive_full_history_and_return_decisions(self):
         requests, result = await self.run_evaluation(
             values={
                 "appointment_datetime_correct": 0.1,
                 "conversation_responsive": 0.05,
             }
         )
-        self.assertEqual(len(requests), 7)
+        self.assertEqual(len(requests), 6)
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v2")
         self.assertEqual(
@@ -95,7 +144,6 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 "appointment_datetime_correct",
                 "office_rules_grounded",
                 "results_reported_truthfully",
-                "resolved_or_handed_off",
                 "conversation_responsive",
                 "expressed_sentiment",
             },
@@ -139,10 +187,10 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
 
             with (
                 self.subTest(answer=answer),
-                self.assertLogs("abita_s2s.observability.jev", "ERROR"),
+                self.assertLogs("abita_s2s.observability.evaluation", "ERROR"),
             ):
                 _, result = await self.run_evaluation(behavior)
-                self.assertEqual(len(result["results"]), 6)
+                self.assertEqual(len(result["results"]), 5)
                 self.assertNotIn("request_understood", result["results"])
                 self.assertEqual(
                     result["errors"]["request_understood"]["cause"], "ValueError"
@@ -153,11 +201,11 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             if name == "request_understood":
                 return httpx.Response(429, headers={"Retry-After": "60"})
 
-        with self.assertLogs("abita_s2s.observability.jev", "ERROR"):
+        with self.assertLogs("abita_s2s.observability.evaluation", "ERROR"):
             requests, result = await self.run_evaluation(behavior)
-        self.assertEqual(len(requests), 7)
+        self.assertEqual(len(requests), 6)
         self.assertEqual(result["errors"]["request_understood"]["httpStatus"], 429)
-        self.assertEqual(len(result["results"]), 6)
+        self.assertEqual(len(result["results"]), 5)
 
     async def test_exhausted_http_and_transport_retries_remain_visible(self):
         for transport_failure in (False, True):
@@ -172,11 +220,11 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
 
             with (
                 self.subTest(transport=transport_failure),
-                self.assertLogs("abita_s2s.observability.jev", "ERROR") as logs,
+                self.assertLogs("abita_s2s.observability.evaluation", "ERROR") as logs,
             ):
                 requests, result = await self.run_evaluation(behavior)
-            self.assertEqual(len(requests), 8)
-            self.assertEqual(len(result["results"]), 6)
+            self.assertEqual(len(requests), 7)
+            self.assertEqual(len(result["results"]), 5)
             error = result["errors"]["request_understood"]
             self.assertEqual(error["attempts"], 2)
             self.assertEqual(
@@ -185,7 +233,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertNotIn("synthetic-secret", str(result) + str(logs.output))
 
-    async def test_invalid_sentiment_preserves_all_six_checks(self):
+    async def test_invalid_sentiment_preserves_all_five_checks(self):
         for answer in [
             {"type": "score", "score": 5, "probabilities": {"2": 1}},
             {"type": "score", "score": True, "probabilities": {"2": 1}},
@@ -199,10 +247,10 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
 
             with (
                 self.subTest(answer=answer),
-                self.assertLogs("abita_s2s.observability.jev", "ERROR"),
+                self.assertLogs("abita_s2s.observability.evaluation", "ERROR"),
             ):
                 _, result = await self.run_evaluation(behavior)
-            self.assertEqual(len(result["results"]), 6)
+            self.assertEqual(len(result["results"]), 5)
             self.assertEqual(
                 result["errors"]["expressed_sentiment"]["cause"], "ValueError"
             )

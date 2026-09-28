@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 from livekit.agents import ChatContext
 from livekit.agents.llm import AgentConfigUpdate
 
-from abita_s2s.observability.jev import evaluate_call
+from abita_s2s.observability.evaluation import evaluate_call
 
 
 class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
@@ -26,12 +26,12 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
             with (
                 patch.dict("os.environ", {"AI_GATEWAY_API_KEY": "offline"}),
                 patch(
-                    "abita_s2s.observability.jev.evaluate_with_jev",
+                    "abita_s2s.observability.evaluation.evaluate_judges",
                     new_callable=AsyncMock,
                     side_effect=failure,
                 ),
-                patch("abita_s2s.observability.jev.EVALUATION_SECONDS", 0.01),
-                self.assertLogs("abita_s2s.observability.jev", "ERROR") as logs,
+                patch("abita_s2s.observability.evaluation.EVALUATION_SECONDS", 0.01),
+                self.assertLogs("abita_s2s.observability.evaluation", "ERROR") as logs,
             ):
                 result = await evaluate_call(report)
             self.assertEqual(result["status"], "incomplete")
@@ -47,7 +47,7 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
                 report["chat_history"]["items"].pop(0)
             with (
                 patch.dict("os.environ", {"AI_GATEWAY_API_KEY": key}),
-                patch("abita_s2s.observability.jev.evaluate_with_jev") as judge,
+                patch("abita_s2s.observability.evaluation.evaluate_judges") as judge,
             ):
                 result = await evaluate_call(report)
             judge.assert_not_called()
@@ -58,6 +58,6 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
         report["chat_history"] = ChatContext().to_dict()
         result = await evaluate_call(report)
         self.assertEqual(result["status"], "skipped")
-        with self.assertLogs("abita_s2s.observability.jev", "ERROR"):
+        with self.assertLogs("abita_s2s.observability.evaluation", "ERROR"):
             result = await evaluate_call({})
         self.assertEqual(result["status"], "incomplete")
