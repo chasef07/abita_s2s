@@ -48,8 +48,12 @@ Each judge owns its definition in [observability/judges](src/abita_s2s/observabi
 The appointment date/time judge also owns its tool-result applicability check.
 Shared execution in [evaluation.py](src/abita_s2s/observability/evaluation.py) uses the
 [TypeSafe-compatible API](https://vercel.com/docs/ai-gateway/sdks-and-apis/typesafe)
-at `POST /typesafe/v1/systemone`. Evaluator version `typesafe-scorecard-v2`
-includes five `noul` checks:
+at `POST /typesafe/v1/systemone`. Evaluator version `typesafe-scorecard-v3`
+includes five `noul` checks. Version 3 adds explicit appointment-check
+applicability and removes the resolved-or-handed-off judge; older records keep
+their original evaluator version.
+
+The checks are:
 
 - `request_understood`: understood the caller's request and corrections.
 - `appointment_datetime_correct`: tool results match the final agreed date/time

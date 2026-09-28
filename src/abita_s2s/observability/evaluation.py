@@ -15,7 +15,7 @@ from abita_s2s.observability.judges import QUESTIONS, appointment_datetime_corre
 logger = logging.getLogger(__name__)
 EVALUATION_SECONDS = 20
 RETRY_SECONDS = 0.25
-EVALUATOR_VERSION = "typesafe-scorecard-v2"
+EVALUATOR_VERSION = "typesafe-scorecard-v3"
 
 
 def validate_answer(name: str, result: dict) -> None:

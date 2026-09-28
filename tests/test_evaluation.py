@@ -136,7 +136,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(len(requests), 6)
         self.assertEqual(result["status"], "complete")
-        self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v2")
+        self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v3")
         self.assertEqual(
             set(result["results"]),
             {
