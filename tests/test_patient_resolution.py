@@ -179,7 +179,6 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         )
         await self.preload(r)
         await r.resolve("Jane", "01/02/1980")
-        # No DOB cannot silently choose the already-active member of this family.
         self.assertEqual((await r.resolve("Jane", None))["outcome"], "multiple_matches")
         self.assertEqual((await r.resolve("Jane", "02/03/1982"))["outcome"], "switched")
         self.assertEqual(r.state.patient.active.patientId, "other")

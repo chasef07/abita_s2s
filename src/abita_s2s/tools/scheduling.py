@@ -7,20 +7,18 @@ from typing import Literal
 from livekit.agents import RunContext, ToolError, function_tool
 
 from abita_s2s.insurance_contract import CoverageType
-from abita_s2s.offices import EASTERN
-from abita_s2s.scheduling import Scheduling
+from abita_s2s.offices import EASTERN, SharedSchedulingOffice
+from abita_s2s.scheduling import UNAVAILABLE, Scheduling
 from abita_s2s.state import CallState
+from abita_s2s.tools.context import bound, say_only
 
 
 async def _announce(context: RunContext[CallState], action: str) -> None:
     async with asyncio.timeout(15):
-        await context.wait_for_playout()
-        speech = context.session.generate_reply(
-            instructions=f"Say only: One moment while I {action} your appointment. Use the caller's language.",
-            tool_choice="none",
+        spoken = await say_only(
+            context, f"One moment while I {action} your appointment."
         )
-        await speech.wait_for_playout()
-    if speech.interrupted or speech.exception() is not None:
+    if not spoken:
         raise ToolError("Announcement did not complete. No appointment was changed.")
 
 
@@ -43,7 +41,7 @@ class SchedulingTools:
         context: RunContext[CallState],
         visitType: CoverageType,
         startDate: str | None = None,
-        office: Literal["hollywood", "sweetwater"] | None = None,
+        office: SharedSchedulingOffice | None = None,
     ) -> str:
         """Find eligible slots for the active patient in a 14-day Eastern-time window.
 
@@ -56,8 +54,8 @@ class SchedulingTools:
             office: Required caller-selected office for Hollywood/Sweetwater calls;
                 omit for other offices.
         """
-        if context.userdata is not self._scheduling.state or self._scheduling.closed:
-            return "blocked: Scheduling is unavailable."
+        if not bound(self._scheduling, context) or self._scheduling.closed:
+            return UNAVAILABLE
         result = await self._scheduling.availability(visitType, startDate, office)
         lines = [result["answer"]]
         if "searchedFrom" in result:
@@ -117,14 +115,16 @@ class SchedulingTools:
                 no referring doctor. Do not ask whether to put or mark none, or
                 narrate the internal value.
         """
+        if not bound(self._scheduling, context):
+            return UNAVAILABLE
         if readBack is True:
             await _announce(context, "book")
         return await self._scheduling.book(
-            context,
             slot_ref=appointmentSlotRef,
             reason=appointmentReason,
             referrer=referringDoctor,
             confirmed=readBack,
+            call_id=context.function_call.call_id,
         )
 
     @function_tool
@@ -140,8 +140,12 @@ class SchedulingTools:
         the exact date, time, provider and intent to cancel.
         Claim success only from the result; never retry uncertain cancellation.
         """
+        if not bound(self._scheduling, context):
+            return UNAVAILABLE
         return await self._scheduling.cancel(
-            context, confirmed=readBack, old_ref=appointmentRef
+            confirmed=readBack,
+            old_ref=appointmentRef,
+            call_id=context.function_call.call_id,
         )
 
     @function_tool
@@ -167,13 +171,15 @@ class SchedulingTools:
                 no referring doctor. Do not ask whether to put or mark none, or
                 narrate the internal value.
         """
+        if not bound(self._scheduling, context):
+            return UNAVAILABLE
         if readBack is True:
             await _announce(context, "reschedule")
         return await self._scheduling.reschedule(
-            context,
             slot_ref=appointmentSlotRef,
             reason=appointmentReason,
             referrer=referringDoctor,
             confirmed=readBack,
             old_ref=oldAppointmentRef,
+            call_id=context.function_call.call_id,
         )

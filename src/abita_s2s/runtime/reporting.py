@@ -37,6 +37,7 @@ class CallReporter:
         self._client = client
         self._url = config.interaction_url
         self._secret = config.product_secret
+        self._gateway_key = config.ai_gateway_key
         self._drain = drain
         self._insurance = insurance
         office = get_office_profile(call.called_office_key)
@@ -115,7 +116,6 @@ class CallReporter:
         )
 
     def _queue(self, payload: dict) -> None:
-        # Ordered, retained tasks keep START/checkpoints ahead of CLOSEOUT even if a tool exits.
         previous = self._pending
 
         async def deliver():
@@ -154,7 +154,6 @@ class CallReporter:
                 pass
             if attempt == 0:
                 await asyncio.sleep(0.25)
-        # Do not log transcripts, phones, credentials, response bodies, or backend identifiers.
         logger.error("Product call reporting failed kind=%s", payload["kind"])
         return False
 
@@ -170,14 +169,14 @@ class CallReporter:
             drain_failed = False
             try:
                 await self._drain()
-            except Exception:  # noqa: BLE001 - still deliver an explicit failed closeout
+            except Exception:
                 drain_failed = True
                 logger.error("Call mutation drain failed during reporting")
             report = None
             if make_report:
                 try:
                     report = make_report()
-                except Exception:  # noqa: BLE001 - never invent a substitute transcript
+                except Exception:
                     logger.error("Native session report unavailable")
             close = next(
                 (
@@ -234,7 +233,9 @@ class CallReporter:
                 ]
             if report is not None:
                 payload["transcript"] = report
-                payload["closeoutPayload"]["evaluation"] = await evaluate_call(report)
+                payload["closeoutPayload"]["evaluation"] = await evaluate_call(
+                    report, self._gateway_key
+                )
             if self._appointment:
                 payload["appointmentOutcome"] = self._appointment
             if self._pending:

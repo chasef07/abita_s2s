@@ -10,7 +10,6 @@ from abita_s2s.release import COMPONENTS
 
 
 def publish(tag, commit, files):
-    # Resolve an existing tag to a commit; never move it, including partial reruns.
     refs = run("git", "ls-remote", "origin", f"refs/tags/{tag}")
     if refs:
         run("git", "fetch", "origin", f"refs/tags/{tag}")

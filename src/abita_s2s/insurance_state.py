@@ -1,6 +1,10 @@
-"""Insurance consumer contract. Acceptance is participation, never active benefits."""
+"""Insurance consumer contract. Acceptance is participation, never active benefits.
 
-from dataclasses import dataclass, field
+InsuranceRegistration grants acceptance; every owner clears or rebinds it only
+through clear_acceptance and rebind_acceptance.
+"""
+
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Literal
 
 from abita_s2s.insurance_contract import CoverageType, InsuranceDecision
@@ -23,11 +27,9 @@ class AcceptedInsurance:
 
 @dataclass(repr=False)
 class InsuranceState:
-    # Each intake retains its own submitted details, including corrected requests.
     eligibility_checks: list["EligibilityCheck"] = field(default_factory=list)
     current_eligibility: tuple[int, "EligibilityCheck"] | None = None
     accepted: AcceptedInsurance | None = None
-    # Complete creation can schedule; partial creation must be resolved first.
     registrations: dict[str, Literal["created", "partial"]] = field(
         default_factory=dict
     )
@@ -59,6 +61,29 @@ def accepted_insurance(
         checked
         if checked.patient_id is None and checked.absence is patient.absence
         else None
+    )
+
+
+def clear_acceptance(state: "CallState") -> None:
+    """Drop acceptance and fence any participation check still in flight."""
+    state.insurance.accepted = None
+    state.insurance.check_revision += 1
+
+
+def rebind_acceptance(
+    state: "CallState",
+    checked: AcceptedInsurance,
+    decision: InsuranceDecision | None,
+    **changes,
+) -> None:
+    """Carry acceptance onto the patient revision a completed write produced."""
+    if state.insurance.accepted is not checked:
+        return
+    if decision is None:
+        clear_acceptance(state)
+        return
+    state.insurance.accepted = replace(
+        checked, patient_revision=state.patient.revision, decision=decision, **changes
     )
 
 

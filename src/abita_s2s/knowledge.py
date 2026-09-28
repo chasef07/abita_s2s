@@ -9,6 +9,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from abita_s2s.config import Config
+from abita_s2s.results import reply
 
 logger = logging.getLogger(__name__)
 SEARCH_TIMEOUT = 4.0
@@ -56,11 +57,10 @@ class OfficeKnowledge:
     async def search(self, office_key: str, query: str) -> dict[str, str]:
         query = query.strip()
         if not 3 <= len(query) <= 500:
-            return {
-                "outcome": "invalid_query",
-                "answer": "needs_input: Provide a focused office question between 3 and 500 characters.",
-            }
-        # Keep each result tied to its question when overlapping reads finish out of order.
+            return reply(
+                "invalid_query",
+                "needs_input: Provide a focused office question between 3 and 500 characters.",
+            )
         result = {"office": office_key, "query": query}
         try:
             if not self._url or not self._secret:
@@ -81,22 +81,19 @@ class OfficeKnowledge:
             if data.outcome == "temporary_failure":
                 raise ValueError("Knowledge backend unavailable")
             if data.outcome == "no_relevant_information":
-                return {
+                return reply(
+                    data.outcome,
+                    "no_results: No information was found for this question. "
+                    "This does not establish that the service is unavailable.",
                     **result,
-                    "outcome": data.outcome,
-                    "answer": (
-                        "no_results: No information was found for this question. "
-                        "This does not establish that the service is unavailable."
-                    ),
-                }
+                )
             answer = "\n".join(
                 _STATUS.sub("", p.text).strip() for p in data.passages
             ).strip()
             if not answer:
                 raise ValueError("Empty office answer")
-            return {**result, "outcome": "found", "answer": f"success: {answer}"}
+            return reply("found", f"success: {answer}", **result)
         except (httpx.HTTPError, ValueError, TimeoutError) as exc:
-            # Never log queries, credentials, response bodies, or validation input.
             cause = (
                 f"http_{exc.response.status_code}"
                 if isinstance(exc, httpx.HTTPStatusError)
@@ -107,11 +104,9 @@ class OfficeKnowledge:
                 office_key,
                 cause,
             )
-            return {
+            return reply(
+                "temporary_failure",
+                "blocked: Office information could not be checked. "
+                "Offer staff help if needed.",
                 **result,
-                "outcome": "temporary_failure",
-                "answer": (
-                    "blocked: Office information could not be checked. "
-                    "Offer staff help if needed."
-                ),
-            }
+            )

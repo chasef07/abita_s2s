@@ -1,9 +1,13 @@
 """One per-call owner for identity evidence, resolution, and patient changes."""
 
 import asyncio
-from dataclasses import replace
 
-from abita_s2s.insurance_state import AcceptedInsurance, accepted_insurance
+from abita_s2s.insurance_state import (
+    AcceptedInsurance,
+    accepted_insurance,
+    clear_acceptance,
+    rebind_acceptance,
+)
 from abita_s2s.integrations.patient_middleware import (
     Candidate,
     Multiple,
@@ -19,6 +23,7 @@ from abita_s2s.name_matcher import (
     parse_dob,
     phone_name_matches,
 )
+from abita_s2s.results import reply
 from abita_s2s.state import (
     CallState,
     CandidateLookup,
@@ -31,10 +36,6 @@ def candidate_first_name(candidate: Candidate | Receipt) -> str:
         return candidate.firstName
     names = first_names(candidate.name)
     return names[0] if names else ""
-
-
-def reply(outcome: str, answer: str, **facts) -> dict:
-    return {"outcome": outcome, "answer": answer, **facts}
 
 
 def failed() -> dict:
@@ -147,7 +148,6 @@ class PatientResolver:
             return reply("superseded", "blocked: This call has ended.")
         first_name = first_name.strip() if first_name is not None else None
         dob = dob.strip() if dob is not None else None
-        # A changed name starts fresh; a DOB-only followup keeps the pending name.
         previous_name, previous_dob = self._pending
         if first_name is not None and exact_name(first_name) != exact_name(
             previous_name or ""
@@ -166,7 +166,7 @@ class PatientResolver:
         self._pending = (first_name, dob)
         checked = self.state.insurance.accepted
         if checked is not None and checked.patient_id is None:
-            self.state.insurance.accepted = None
+            clear_acceptance(self.state)
         active = self.state.patient.active
         if active and (
             (
@@ -185,7 +185,6 @@ class PatientResolver:
             self._task.cancel()
 
         async def lookup():
-            # The resolver owns completion; a cancelled waiter leaves the read running.
             try:
                 if self._precall is not None:
                     candidates = await asyncio.shield(self._precall)
@@ -336,17 +335,7 @@ class PatientResolver:
         self._token = None
         self.state.patient.active = updated
         self.state.patient.revision += 1
-        # A newer plan check must not be rebound to this older write's receipt.
-        if self.state.insurance.accepted is checked:
-            self.state.insurance.accepted = (
-                replace(
-                    checked,
-                    patient_revision=self.state.patient.revision,
-                    decision=updated.insuranceDecision,
-                )
-                if updated.insuranceDecision
-                else None
-            )
+        rebind_acceptance(self.state, checked, updated.insuranceDecision)
         return True
 
     def begin_registration(self, first_name: str, dob: str) -> bool:
@@ -365,7 +354,7 @@ class PatientResolver:
         self.state.patient.active = None
         self.state.patient.absence = None
         self.state.patient.revision += 1
-        self.state.insurance.accepted = None
+        clear_acceptance(self.state)
         return True
 
     def activate_created(self, checked: AcceptedInsurance, receipt: Receipt) -> bool:
@@ -382,16 +371,12 @@ class PatientResolver:
         self.state.patient.revision += 1
         self._pending = (None, None)
         self._previous_id = None
-        self.state.insurance.accepted = (
-            replace(
-                checked,
-                patient_revision=self.state.patient.revision,
-                patient_id=receipt.patientId,
-                absence=None,
-                decision=receipt.insuranceDecision,
-            )
-            if receipt.insuranceDecision
-            else None
+        rebind_acceptance(
+            self.state,
+            checked,
+            receipt.insuranceDecision,
+            patient_id=receipt.patientId,
+            absence=None,
         )
         return True
 
@@ -399,7 +384,6 @@ class PatientResolver:
         self, receipt: Receipt, outcome: str, *, call_id: str | None = None
     ) -> dict:
         if self.state.reporter:
-            # Resolving a chart created in this call must not label it existing.
             created = receipt.patientId in self.state.insurance.registrations
             for recorded in (outcome, "created") if created else (outcome,):
                 self.state.reporter.record(

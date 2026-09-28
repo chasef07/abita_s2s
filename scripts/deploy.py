@@ -40,7 +40,6 @@ def target(config: Path):
         r"[a-z0-9-]+", project
     ):
         raise ValueError("Provision an explicit Python agent ID and project subdomain")
-    # Explicit allowlist requires an operator to provision this new Python target.
     if agent != os.environ.get("ABITA_S2S_AGENT_ID"):
         raise ValueError(
             "Target does not match the separately provisioned Python agent"
@@ -151,7 +150,6 @@ class LiveKit:
                 time.sleep(5)
 
     def execute(self, action, manifest, expected=None):
-        # Check dispatch identity even before the first mutation.
         status = json.loads(self.command("status", "--id", self.agent, "--json"))
         agents = status.get("agents", [])
         if (

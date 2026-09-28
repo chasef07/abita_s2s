@@ -86,7 +86,6 @@ class CallStateTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(resolver.state.patient.active)
         await resolver._lookup_phone(token)
         self.assertEqual(resolver.state.patient.lookup.status, "found")
-        # A fresh private read also cannot replace the active patient.
         await resolver._load_patient(
             patient, "Jane", None, resolver._begin_lookup(), phone=True
         )

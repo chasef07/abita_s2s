@@ -12,7 +12,7 @@ import httpx
 from test_patient_resolution import CONFIG, call_state, receipt, search
 from test_scheduling import NOW, inventory
 
-from abita_s2s.tools.call_control import CallControl
+from abita_s2s.call_control import CallControl
 from abita_s2s.config import load_config
 from abita_s2s.handoff import AdmissionRejected
 from abita_s2s.identity import PatientResolver
@@ -54,7 +54,6 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
                 transport=httpx.MockTransport(handler)
             ) as client:
                 control = CallControl(call_state(), client, handoff=config.handoff)
-                # Admission must retain startup's normalized settings even if env changes.
                 with patch.dict(
                     "os.environ",
                     {"ACUITY_PRODUCT_HANDOFF_URL": "https://wrong.example/v1/handoffs"},
@@ -112,7 +111,6 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
                     (await owner.availability("medical"))["outcome"], "found"
                 )
                 self.assertEqual(len(requests), 3)
-                # Participation questions do not replace chart insurance for scheduling.
                 await resolver.resolve("Jane", "01/02/1980")
                 self.assertEqual(owner.state.patient.active.patientId, "chart-jane")
                 self.assertTrue(insurance_ready(owner.state))

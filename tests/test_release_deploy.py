@@ -15,7 +15,7 @@ from abita_s2s import release as package
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
-import deploy  # noqa: E402 - standalone operational scripts
+import deploy  # noqa: E402
 import publish_release  # noqa: E402
 
 spec = importlib.util.spec_from_file_location("build_release", SCRIPTS / "release.py")
@@ -98,7 +98,6 @@ class ComponentVersionTests(unittest.TestCase):
                 git(root, "add", ".")
                 git(root, "commit", "-qm", "Agent only")
                 self.assertEqual(versions(), unchanged)
-                # A rerun ignores tags for the current release itself.
                 for component in package.COMPONENTS:
                     git(root, "tag", f"{component}-v1.0.0")
                 self.assertEqual(versions(), unchanged)
@@ -187,7 +186,6 @@ class ReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             commit = repository(root)
-            # Ignored runtime files must not affect source identities or bundles.
             for directory in package.COMPONENTS.values():
                 cache = root / directory / "__pycache__"
                 cache.mkdir()

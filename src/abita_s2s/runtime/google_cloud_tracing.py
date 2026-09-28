@@ -32,11 +32,9 @@ class _CollectorSession(requests.Session):
                 "Trace collector transport failed"
             ) from None
         if 300 <= response.status_code < 400:
-            response.status_code = 400  # A redirect is not accepted telemetry.
+            response.status_code = 400
         response.reason = "Trace collector response"
-        response._content = (
-            b""  # The exporter needs status only; never log response bodies.
-        )
+        response._content = b""
         return response
 
 
@@ -92,8 +90,6 @@ def setup_google_cloud_tracing(env=None):
         )
     )
     provider.add_span_processor(processor)
-    # Match abita_agent: retain conversation/tool content unless content capture
-    # or the LiveKit project's mandatory redaction setting withholds it.
     set_tracer_provider(provider, allow_pii=True)
     logger.info("Google Cloud trace export enabled")
     return processor

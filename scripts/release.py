@@ -57,12 +57,9 @@ def component_version(component: str, version: str, commit: str, files: dict) ->
         prior = tag.removeprefix(f"{component}-v")
         if not re.fullmatch(r"\d+\.\d+\.\d+", prior):
             continue
-        # Ignore this release's tags so publishing cannot change a rebuild.
         if tuple(map(int, prior.split("."))) >= current:
             continue
         prior_files = component_files(component, tag)
-        # Older releases bundled only two prompt files and eval YAML. Compare
-        # their actual coverage, so old partial bundles cannot stand in for folders.
         full_folders = (
             subprocess.run(
                 [
@@ -136,7 +133,6 @@ def prepare(commit: str, output: Path):
     (ROOT / "src/abita_s2s/release.json").write_bytes(encoded)
     (output / "release.json").write_bytes(encoded)
     epoch = int(run("git", "show", "-s", "--format=%ct", commit))
-    # Fixed order, owner and timestamps make reruns byte-identical.
     for label, relative in COMPONENTS.items():
         directory = ROOT / relative
         names = manifest[f"{label}_files"]
@@ -166,9 +162,7 @@ def build(commit: str, output: Path):
         str(output),
         env={**os.environ, "SOURCE_DATE_EPOCH": str(epoch)},
     )
-    (output / ".gitignore").unlink(
-        missing_ok=True
-    )  # uv creates this build-directory marker.
+    (output / ".gitignore").unlink(missing_ok=True)
     (output / "uv.lock").write_bytes((ROOT / "uv.lock").read_bytes())
     sums = {
         p.name: digest(p) for p in sorted(output.iterdir()) if p.name != "SHA256SUMS"

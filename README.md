@@ -27,7 +27,7 @@ uv run --no-sync ruff check .
 
 | Path | Purpose |
 | --- | --- |
-| `src/abita_s2s/tools/` | Model-facing tools, grouped by capability. |
+| `src/abita_s2s/tools/` | Thin model-facing tools that bind to the call and delegate to owners. |
 | `src/abita_s2s/integrations/` | Patient, registration, and scheduling HTTP adapters. |
 | `src/abita_s2s/observability/` | Post-call evaluations and their result contracts. |
 | `src/abita_s2s/runtime/` | Call composition, reporting, and observability. |
@@ -35,6 +35,19 @@ uv run --no-sync ruff check .
 | `tests/` | Offline behavior, integration contracts, and release checks. |
 | `evals/scenarios/` | LiveKit simulation scenario YAML. |
 | `scripts/` | Release publishing and deployment operations. |
+
+Top-level modules form layers, enforced by [test_layers.py](tests/test_layers.py):
+
+- Foundation: `records`, `results`, `state`, `*_contract`, `insurance_state`, `offices`,
+  `config`, `name_matcher`, `prompt`.
+- Owners, one per call: `identity`, `insurance`, `scheduling`, `staff_tasks`,
+  `call_control`, `handoff`, `knowledge`.
+- Composition: `agent`, `main`, `model_config`, `release`, and `runtime/`.
+
+`identity` owns patient identity and `insurance` grants acceptance. `identity` clears or
+rebinds acceptance only through `insurance_state`, and `scheduling` writes only the active
+chart's appointment fields. [test_no_comments.py](tests/test_no_comments.py) keeps Python
+sources free of comments; intent belongs in names and docstrings.
 
 Deploy middleware contracts before their agent consumer. Offline tests and packaged
 eval scenarios do not establish live audio, SIP, or provider-write correctness;

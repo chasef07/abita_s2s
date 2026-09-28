@@ -33,7 +33,6 @@ async def main(url):
             userdata=state, function_call=SimpleNamespace(call_id="contract")
         )
         try:
-            # Exercise the real patient response, including office/type/token metadata.
             loaded = (
                 await client.post(
                     url + "/api/patient/resolve",
@@ -95,15 +94,11 @@ async def main(url):
                 assert repeated.startswith("needs_input:"), repeated
             else:
                 assert repeated == result
-            # Repeated tools are handled by call-local receipts. The HTTP write
-            # is single-shot and must never be retried after a lost response.
             for appointment in state.patient.active.appointments:
                 if appointment.id == 98765:
                     assert appointment.visitType == "medical"
                     assert appointment.officeId == "spring_hill"
                     assert appointment.cancellationToken and appointment.rescheduleToken
-            # Unsupported office/visit combinations must remain distinguishable
-            # from a full calendar across the actual middleware response.
             for office, visit in (
                 ("crystal-river", "routine_vision"),
                 ("north-miami-beach-optical", "medical"),

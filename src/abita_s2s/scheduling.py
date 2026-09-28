@@ -7,18 +7,22 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 
-from livekit.agents import RunContext
-
-from abita_s2s.identity import reply
 from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.insurance_state import (
     AcceptedInsurance,
+    accepted_insurance,
     appointment_eligibility,
     insurance_ready,
     registration_insurance,
 )
 from abita_s2s.integrations.patient_middleware import Appointment, Receipt
-from abita_s2s.offices import EASTERN, get_office_profile, same_office
+from abita_s2s.offices import (
+    EASTERN,
+    SHARED_SCHEDULING_OFFICES,
+    get_office_profile,
+    same_office,
+)
+from abita_s2s.results import reply
 from abita_s2s.integrations.scheduling_http import (
     RescheduleReceipt,
     SchedulingFailure,
@@ -29,6 +33,7 @@ from abita_s2s.integrations.scheduling_http import (
 from abita_s2s.state import CallState
 
 
+UNAVAILABLE = "blocked: Scheduling is unavailable."
 CHOOSE_LOADED_APPOINTMENT = "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed."
 
 
@@ -117,7 +122,6 @@ class Scheduling:
         for task in self._read_tasks:
             task.cancel()
         await asyncio.gather(*self._read_tasks, return_exceptions=True)
-        # A sent mutation must reach reconciliation even if its caller disappears.
         if self._write_task:
             await asyncio.shield(self._write_task)
 
@@ -125,7 +129,7 @@ class Scheduling:
         p = self.state.patient.active
         insurance = self.state.insurance
         registration = insurance.registrations.get(p.patientId) if p else None
-        accepted = insurance.accepted if registration is not None else None
+        accepted = accepted_insurance(self.state) if registration is not None else None
         return SchedulingContext(
             patient_revision=self.state.patient.revision,
             patient_id=p.patientId if p else None,
@@ -187,8 +191,8 @@ class Scheduling:
 
     def _office(self, requested):
         called = self.state.call.called_office_key
-        if called in ("hollywood", "sweetwater"):
-            if requested not in ("hollywood", "sweetwater"):
+        if called in SHARED_SCHEDULING_OFFICES:
+            if requested not in SHARED_SCHEDULING_OFFICES:
                 return None
             return requested
         return called if requested is None else None
@@ -237,7 +241,6 @@ class Scheduling:
         if self._search_key != key:
             self._invalidate()
             self._search_key = key
-        # _invalidate() clears the cache and shared read whenever the key changes.
         if self._cache and self._cache[0] > self.now():
             return self._cache[1]
         failed = self._failures.get(key)
@@ -270,8 +273,6 @@ class Scheduling:
             return await asyncio.shield(pending.task)
         finally:
             pending.waiters -= 1
-            # A cancelled waiter cannot stop another waiter, but abandoned reads
-            # must not publish later after the caller corrects their request.
             if pending.waiters == 0 and not pending.task.done():
                 pending.task.cancel()
                 if self._search is pending:
@@ -311,8 +312,6 @@ class Scheduling:
                 f"{'needs_input' if result.outcome == 'invalid_input' else 'blocked'}: {result.message}",
                 retry_same_search=False,
             )
-            # Policy errors are not exhausted transport retries. Recheck after
-            # the normal TTL so chart corrections can restore scheduling.
             self._failures.pop(key, None)
             return self._remember(answer)
         if (
@@ -350,14 +349,11 @@ class Scheduling:
         expiry = result.bookingTokenExpiresAt
         unique = {slot.key: slot for slot in result.slots}
         for slot in unique.values():
-            # Stable during inventory refresh; invalidation starts a new selection
-            # lifecycle so an obsolete write reference cannot authorize rebooking.
             identity = json.dumps(
                 (generation, key.office, key.visit, slot.key),
                 separators=(",", ":"),
             )
             ref = "ST_" + hashlib.sha256(identity.encode()).hexdigest()[:6].upper()
-            # Short references must never overwrite another offered appointment.
             collision = 0
             while ref in self._slots:
                 collision += 1
@@ -393,58 +389,52 @@ class Scheduling:
 
     async def book(
         self,
-        context: RunContext[CallState],
         *,
         slot_ref: str,
         reason: str,
         referrer: str,
         confirmed: Literal[True] | None,
+        call_id: str,
     ) -> str:
         return await self._execute(
-            context,
             self._book,
             slot_ref=slot_ref,
             reason=reason,
             referrer=referrer,
             confirmed=confirmed,
+            call_id=call_id,
         )
 
     async def cancel(
-        self,
-        context: RunContext[CallState],
-        *,
-        confirmed: Literal[True] | None,
-        old_ref: str,
+        self, *, confirmed: Literal[True] | None, old_ref: str, call_id: str
     ) -> str:
         return await self._execute(
-            context, self._cancel, confirmed=confirmed, old_ref=old_ref
+            self._cancel, confirmed=confirmed, old_ref=old_ref, call_id=call_id
         )
 
     async def reschedule(
         self,
-        context: RunContext[CallState],
         *,
         slot_ref: str,
         reason: str,
         referrer: str,
         confirmed: Literal[True] | None,
         old_ref: str,
+        call_id: str,
     ) -> str:
         return await self._execute(
-            context,
             self._reschedule,
             slot_ref=slot_ref,
             reason=reason,
             referrer=referrer,
             confirmed=confirmed,
             old_ref=old_ref,
+            call_id=call_id,
         )
 
-    async def _execute(
-        self, context: RunContext[CallState], operation, **arguments
-    ) -> str:
-        if context.userdata is not self.state or self._closed:
-            return "blocked: Scheduling is unavailable."
+    async def _execute(self, operation, **arguments) -> str:
+        if self._closed:
+            return UNAVAILABLE
         if self._write_task and not self._write_task.done():
             return "blocked: An appointment change is already in progress. Wait for its result; do not repeat it."
         patient = self.state.patient.active
@@ -464,12 +454,9 @@ class Scheduling:
                     "stale",
                     "blocked: The call or patient changed before the appointment operation started.",
                 )
-            result = await operation(
-                patient, captured, call_id=context.function_call.call_id, **arguments
-            )
+            result = await operation(patient, captured, **arguments)
             return self._finish_change(result, captured)
 
-        # Retain both the write and reconciliation even if the tool caller leaves.
         self._write_task = asyncio.create_task(change())
         result = await asyncio.shield(self._write_task)
         return result["answer"] + self.appointments_text()
@@ -529,9 +516,7 @@ class Scheduling:
         if old is None:
             return reply("needs_input", CHOOSE_LOADED_APPOINTMENT)
         if not old.cancellationToken:
-            self.state.patient.active = p.model_copy(
-                update={"appointmentsStatus": "error"}
-            )
+            self._appointments_stale(p)
             return reply(
                 "needs_input",
                 "needs_input: Reload appointments to obtain cancellation authorization, then reconfirm the exact appointment.",
@@ -555,14 +540,11 @@ class Scheduling:
         self._report(
             p, cancellation_outcome=outcome["outcome"], old=old, call_id=call_id
         )
-        # Definite rejections invalidate the loaded appointment authority.
         if (
             outcome["outcome"] == "rejected"
             or (outcome["outcome"] == "failed" and isinstance(result, WriteReceipt))
         ) and self._context() == captured:
-            self.state.patient.active = p.model_copy(
-                update={"appointmentsStatus": "error"}
-            )
+            self._appointments_stale(p)
         if outcome["outcome"] in ("cancelled", "uncertain"):
             self._receipts[receipt_key] = MutationReceipt(
                 outcome,
@@ -666,9 +648,7 @@ class Scheduling:
             body["insurancePlan"] = decision.canonicalPlan
         if old:
             if not old.rescheduleToken:
-                self.state.patient.active = p.model_copy(
-                    update={"appointmentsStatus": "error"}
-                )
+                self._appointments_stale(p)
                 return reply(
                     "needs_input",
                     "needs_input: Reload appointments to obtain reschedule authorization, then reconfirm the move.",
@@ -908,6 +888,12 @@ class Scheduling:
         )
         reporter.appointment(evidence, call_id=call_id)
 
+    def _appointments_stale(self, patient: Receipt) -> None:
+        """Revoke loaded appointment authority until the patient is reloaded."""
+        self.state.patient.active = patient.model_copy(
+            update={"appointmentsStatus": "error"}
+        )
+
     def _reconcile_receipts(self):
         """Apply confirmed receipt effects after writes and patient reloads."""
         patient = self.state.patient.active
@@ -939,7 +925,6 @@ class Scheduling:
             )
 
     def _finish_change(self, result, captured):
-        # Complete state updates even when the shielded tool caller has left.
         if self._context() != captured:
             return {
                 **result,

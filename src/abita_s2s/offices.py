@@ -2,17 +2,19 @@
 
 import re
 from dataclasses import dataclass
+from typing import Literal, get_args
 from zoneinfo import ZoneInfo
 
-# Every office is clinic-local to US Eastern time.
 EASTERN = ZoneInfo("America/New_York")
+
+SharedSchedulingOffice = Literal["hollywood", "sweetwater"]
+SHARED_SCHEDULING_OFFICES: tuple[str, ...] = get_args(SharedSchedulingOffice)
 
 
 @dataclass(frozen=True)
 class OfficeProfile:
     key: str
     display_name: str
-    # First entry is the canonical middleware office phone; the rest are SIP aliases.
     trunk_numbers: tuple[str, ...]
     greeting_name: str
     staff_tasks_enabled: bool = True
@@ -77,7 +79,6 @@ def office_phone(key: str) -> str:
 
 
 def same_office(office_id: str, key: str) -> bool:
-    # Middleware office IDs use underscores where office keys use hyphens.
     return office_id.replace("_", "-") == key
 
 

@@ -1,10 +1,11 @@
-"""Assemble the voice agent and own its greeting and lifecycle."""
+"""Assemble the voice agent's tools and own its greeting; startup owns lifecycle."""
 
 import logging
 from datetime import datetime
 
 from livekit.agents import Agent
 
+from abita_s2s.call_control import CallControl
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.knowledge import OfficeKnowledge
@@ -12,7 +13,7 @@ from abita_s2s.offices import EASTERN, OfficeProfile
 from abita_s2s.prompt import load_prompt
 from abita_s2s.scheduling import Scheduling
 from abita_s2s.staff_tasks import StaffTasks
-from abita_s2s.tools.call_control import CallControl
+from abita_s2s.tools.call_control import CallControlTools
 from abita_s2s.tools.insurance import InsuranceTools
 from abita_s2s.tools.knowledge import KnowledgeTools
 from abita_s2s.tools.patients import PatientTools
@@ -36,12 +37,11 @@ class AbitaAgent(Agent):
         patients = PatientTools(resolver, insurance, scheduling)
         coverage = InsuranceTools(insurance)
         office_knowledge = KnowledgeTools(knowledge)
-        tools = list(SchedulingTools(scheduling).tools) if scheduling else []
+        tools = SchedulingTools(scheduling).tools if scheduling else []
         if office.staff_tasks_enabled:
             tools.append(StaffTaskTools(staff_tasks).save_staff_task)
         if call_control:
-            tools.append(call_control)
-        # Preserve the original tool order, including Agent's former method discovery.
+            tools.append(CallControlTools(call_control))
         tools.extend(
             [
                 patients.add_patient,
@@ -60,11 +60,6 @@ class AbitaAgent(Agent):
             ),
         )
         self._practice_name = office.greeting_name
-        self._resolver = resolver
-
-    async def on_exit(self) -> None:
-        if self._resolver is not None:
-            await self._resolver.aclose()
 
     async def on_enter(self) -> None:
         now = datetime.now(EASTERN)

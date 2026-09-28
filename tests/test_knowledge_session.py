@@ -76,7 +76,6 @@ class KnowledgeSessionTests(unittest.IsolatedAsyncioTestCase):
                     async with AgentSession(
                         llm=model, userdata=call_state()
                     ) as session:
-                        # Suppress only the greeting; exercise the real registered tool and executor.
                         with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
                             await session.start(agent=agent)
                         await asyncio.wait_for(

@@ -4,28 +4,12 @@ import asyncio
 from typing import Annotated, Literal
 
 import httpx
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    StringConstraints,
-    TypeAdapter,
-    ValidationError,
-)
+from pydantic import Field, TypeAdapter, ValidationError
 
-from abita_s2s.config import Config
 from abita_s2s.insurance_contract import CoverageType, InsuranceDecision
+from abita_s2s.integrations.middleware import Middleware
 from abita_s2s.offices import office_phone
-
-Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
-
-
-class Record(BaseModel):
-    model_config = ConfigDict(strict=True, frozen=True)
-
-    def __repr_args__(self):
-        # These records contain private patient evidence.
-        return ()
+from abita_s2s.records import Record, Text
 
 
 class Appointment(Record):
@@ -89,37 +73,10 @@ Result = Receipt | Multiple | NotFound | Unresolved | Failure
 RESULT = TypeAdapter(Annotated[Result, Field(discriminator="status")])
 
 
-class Middleware:
-    """Authenticated middleware POSTs; subclasses own deadlines, retries, and errors."""
-
-    def __init__(self, client: httpx.AsyncClient, config: Config, deadline: float):
-        self._client = client
-        self._config = config
-        self._deadline = deadline
-
-    @property
-    def _configured(self) -> bool:
-        return bool(self._config.middleware_url and self._config.middleware_token)
-
-    def _send(self, path: str, body: dict, deadline: float | None = None):
-        deadline = self._deadline if deadline is None else deadline
-        return self._client.post(
-            self._config.middleware_url.rstrip("/") + path,
-            headers={"Authorization": self._config.middleware_token},
-            json=body,
-            timeout=deadline,
-            follow_redirects=False,
-        )
-
-
 class PatientMiddleware(Middleware):
-    def __init__(
-        self, client: httpx.AsyncClient, config: Config, *, deadline: float = 10
-    ):
-        super().__init__(client, config, deadline)
+    DEADLINE = 10
 
     async def resolve(self, office_key: str, identity: dict[str, str]) -> Result:
-        # Routing is application-owned; aliases always select the canonical office.
         office = office_phone(office_key)
         if not self._configured:
             return Failure(reason="not_configured")
@@ -152,5 +109,4 @@ class PatientMiddleware(Middleware):
                     return result
         except TimeoutError:
             return Failure(reason="timeout")
-        # Cancellation deliberately propagates to the HTTP transport.
         return Failure()

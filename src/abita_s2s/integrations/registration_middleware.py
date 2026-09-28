@@ -8,9 +8,10 @@ import httpx
 from abita_s2s.config import Config
 from abita_s2s.eligibility_contract import EligibilityInput, EligibilityResult
 from abita_s2s.insurance_contract import InsuranceDecision
-from abita_s2s.integrations.patient_middleware import Middleware, Record, Text
+from abita_s2s.integrations.middleware import Middleware
 from abita_s2s.offices import office_phone, same_office
 from abita_s2s.name_matcher import member_key, parse_dob
+from abita_s2s.records import Record, Text
 
 
 class CreationReceipt(Record):
@@ -40,11 +41,10 @@ class RegistrationMiddleware(Middleware):
         client: httpx.AsyncClient,
         config: Config,
         *,
-        deadline: float = 20,
+        deadline: float | None = None,
         eligibility_deadline: float = 30,
     ):
-        super().__init__(client, config, deadline)
-        # Middleware allows Stedi 25 seconds; leave time for transport and decoding.
+        super().__init__(client, config, deadline=deadline)
         self._eligibility_deadline = eligibility_deadline
 
     async def eligibility(
@@ -135,11 +135,11 @@ class RegistrationMiddleware(Middleware):
                     path, {**payload, "office": office_phone(office)}
                 )
             body = response.json()
-            if (
-                receipt is UpdatedReceipt
-                and isinstance(body, dict)
-                and body.get("status") == "error"
-            ):
+            failed = isinstance(body, dict) and body.get("status") == "error"
+            reason = failed and (
+                body.get("message") or body.get("outcome") or "backend_failure"
+            )
+            if receipt is UpdatedReceipt and failed:
                 effect = body.get("effect")
                 return WriteFailure(
                     status="failed"
@@ -147,15 +147,11 @@ class RegistrationMiddleware(Middleware):
                     else "partial"
                     if effect == "partial"
                     else "uncertain",
-                    reason=body.get("message")
-                    or body.get("outcome")
-                    or "backend_failure",
+                    reason=reason,
                 )
             if not response.is_success:
                 return WriteFailure(status="uncertain", reason="http_failure")
-            if isinstance(body, dict) and body.get("status") == "error":
-                # Only these outcomes prove that chart creation made no chart.
-                # An update can already have ended the old plan before failing.
+            if failed:
                 safe = receipt is CreationReceipt and body.get("outcome") in (
                     "validation_failed",
                     "rejected",
@@ -164,10 +160,7 @@ class RegistrationMiddleware(Middleware):
                     "failed",
                 )
                 return WriteFailure(
-                    status="failed" if safe else "uncertain",
-                    reason=body.get("message")
-                    or body.get("outcome")
-                    or "backend_failure",
+                    status="failed" if safe else "uncertain", reason=reason
                 )
             result = receipt.model_validate(body)
             decision = result.insuranceDecision

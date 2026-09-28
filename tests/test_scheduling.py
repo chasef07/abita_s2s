@@ -486,14 +486,12 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             {"outcome": "booked"},
             booked=booked,
         )
-        # A provider reload has not yet reflected the booking confirmed this call.
         verified(owner.state, appointmentsStatus="none", appointments=[])
         output = await resolve_patient(context, "Jane", None)
         self.assertIn("Existing appointments", output)
         self.assertIn("2026-09-20 at 10:00 AM", output)
         self.assertNotIn("No upcoming appointments", output)
 
-        # Likewise a reload can still include an appointment already cancelled.
         owner._receipts["chart-jane", "cancel", booked.id] = MutationReceipt(
             {"outcome": "cancelled"},
             cancelled_id=booked.id,
@@ -549,9 +547,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         owner, requests = self.owner(
             [inventory(bookingTokenExpiresAt="2026-09-15T02:00:00Z")]
         )
-        owner.now = lambda: datetime(
-            2026, 9, 15, 1, tzinfo=UTC
-        )  # Still Sep 14 Eastern.
+        owner.now = lambda: datetime(2026, 9, 15, 1, tzinfo=UTC)
         ref = await self.slots(owner)
         for start in ("2026-09-14", "20260916", "bad"):
             self.assertEqual(
@@ -784,7 +780,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         first = await self.slots(owner)
         original = await self.book(owner, first)
         self.assertEqual(await self.book(owner, first), original)
-        # A fresh reference/token for the same live appointment is still a duplicate.
         same_slot = await self.slots(owner)
         self.assertEqual(await self.book(owner, same_slot), original)
         second = await self.slots(owner, startDate="2026-09-16")
@@ -876,7 +871,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 readBack=True,
             )
             if moves:
-                # A different selection cannot replay success for an obsolete old reference.
                 stale = await self.tool(
                     owner,
                     "reschedule_appointment",
@@ -905,7 +899,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             readBack=True,
         )
         await self.book(owner, await self.slots(owner))
-        # A stale backend reload must not resurrect any earlier booking.
         verified(
             owner.state, appointmentsStatus="found", appointments=[appointment(id=888)]
         )
@@ -983,7 +976,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     await task
                 release.set()
                 await owner.aclose()
-                # No presentation/read call should be needed to apply the receipt.
                 patient = owner.state.patient.active
                 self.assertEqual(
                     [a.id for a in patient.appointments],
@@ -1043,7 +1035,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                         else "uncertain"
                     ],
                 )
-                # A stale reload must produce the same appointment list, repeatedly.
                 verified(
                     owner.state,
                     appointmentsStatus="found",
@@ -1150,8 +1141,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     [a.id for a in owner.state.patient.active.appointments], [77]
                 )
                 self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
-                # Simulate the real pre-call candidate path, which reuses a loaded
-                # patient unless cancellation invalidated appointment authority.
                 owner.state.patient.lookup = CandidateLookup(
                     "found", (owner.state.patient.active,)
                 )
@@ -1467,7 +1456,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     any(path.startswith("/api/appointment/") for path, _, _ in requests)
                 )
 
-                # Proven call-local receipts cannot turn the incomplete read into found.
                 owner._receipts["chart-jane", "book", None] = MutationReceipt(
                     {"outcome": "booked"},
                     booked=Appointment.model_validate(appointment(id=88)),
@@ -1559,7 +1547,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 [a.id for a in owner.state.patient.active.appointments], [77]
             )
-            # Cancelling the verified exact appointment does not require guessing its visit type.
             result = await self.tool(
                 owner,
                 "cancel_appointment",
@@ -1729,7 +1716,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 speech = context.session.generate_reply.return_value
 
                 async def playout():
-                    self.assertEqual(len(requests), 1)  # Availability only.
+                    self.assertEqual(len(requests), 1)
 
                 speech.wait_for_playout.side_effect = playout
                 args = dict(
@@ -1779,6 +1766,40 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                         await operation
                 self.assertEqual(len(requests), 1)
                 self.assertFalse(owner._receipts)
+
+    async def test_foreign_session_blocks_changes_before_announcing(self):
+        owner, requests = self.owner([])
+        tools = SchedulingTools(owner)
+        change = dict(
+            appointmentSlotRef="ST_ABCDEF",
+            appointmentReason="Blurry vision",
+            referringDoctor="none",
+            readBack=True,
+        )
+        for name, args in (
+            ("book_appointment", change),
+            ("reschedule_appointment", {**change, "oldAppointmentRef": "A1"}),
+            ("cancel_appointment", {"appointmentRef": "A1", "readBack": True}),
+        ):
+            with self.subTest(name=name):
+                context = speech_context(call_state(None))
+                self.assertEqual(
+                    await getattr(tools, name)(context, **args),
+                    "blocked: Scheduling is unavailable.",
+                )
+                context.wait_for_playout.assert_not_awaited()
+                context.session.generate_reply.assert_not_called()
+        self.assertEqual(requests, [])
+
+    async def test_clearing_inactive_acceptance_keeps_offered_slots(self):
+        state = call_state(None)
+        verified(state)
+        state.insurance.registrations["chart-jane"] = "created"
+        state.patient.revision += 1
+        owner, _ = self.owner([inventory(), booking()], state=state)
+        ref = await self.slots(owner)
+        state.insurance.accepted = None
+        self.assertTrue((await self.book(owner, ref)).startswith("success:"))
 
     def test_schema_has_no_patient_ids_or_tokens(self):
         owner, _ = self.owner([])

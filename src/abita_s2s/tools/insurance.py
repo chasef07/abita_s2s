@@ -6,14 +6,12 @@ from abita_s2s.eligibility_contract import EligibilityInput
 from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.insurance import InsuranceRegistration, staff
 from abita_s2s.state import CallState
+from abita_s2s.tools.context import bound
 
 
 class InsuranceTools:
     def __init__(self, insurance: InsuranceRegistration | None) -> None:
         self._insurance = insurance
-
-    def _bound(self, context: RunContext[CallState]) -> bool:
-        return self._insurance is not None and self._insurance.state is context.userdata
 
     @function_tool
     async def check_new_patient_eligibility(
@@ -33,7 +31,7 @@ class InsuranceTools:
         or self-pay. Use a returned name correction in the confirmed read-back.
         Do not repeat for payer-returned spelling; retry only for caller-corrected inputs.
         """
-        if not self._bound(context):
+        if not bound(self._insurance, context):
             return "unavailable: Continue intake; eligibility was not checked."
         if not all(
             v.strip() for v in (firstName, lastName, dob, plan, insuranceMemberId)
@@ -62,7 +60,7 @@ class InsuranceTools:
         Use before registration or a requested insurance change. Follow clarification
         or staff-review instructions; acceptance does not establish active benefits.
         """
-        if not self._bound(context):
+        if not bound(self._insurance, context):
             return staff()["answer"]
         return (await self._insurance.check(plan, coverageType))["answer"]
 
@@ -79,7 +77,7 @@ class InsuranceTools:
         registration. Claim success only from an updated receipt; never retry an
         uncertain result or repeat a completed write.
         """
-        if not self._bound(context):
+        if not bound(self._insurance, context):
             return staff()["answer"]
         result = await self._insurance.update(
             insuranceMemberId, call_id=context.function_call.call_id

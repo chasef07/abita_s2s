@@ -71,7 +71,6 @@ def dob_matches(left: str, right: str) -> bool:
 
 
 def first_names(name: str) -> list[str]:
-    # AdvancedMD returns both "Surname, First Middle" and natural name order.
     value = name.split(",", 1)[1] if "," in name else name
     value = "".join(
         c for c in unicodedata.normalize("NFKD", value) if not unicodedata.combining(c)

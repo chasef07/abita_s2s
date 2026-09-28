@@ -41,7 +41,6 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
             room=room, wait_for_participant=AsyncMock(side_effect=asyncio.Event().wait)
         )
 
-        # accept the SDK keyword; await an absent participant forever
         async def absent(**_):
             await asyncio.Event().wait()
 
@@ -146,7 +145,6 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         ):
             await startup.start_voice_call(ctx)
         self.assertTrue(client.is_closed)
-        # SDK may invoke application callback again concurrently after failure.
         await asyncio.gather(*(callback() for callback in callbacks))
 
     async def test_concurrent_sdk_cleanup_cancels_read_and_drains_accepted_http_write(
@@ -212,7 +210,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
                 await ctx.add_shutdown_callback.call_args.args[0]()
             self.assertTrue(owner._middleware._client.is_closed)
             self.assertTrue(owner._closed)
-            self._cleanups.pop()  # The expected timeout was already asserted.
+            self._cleanups.pop()
         finally:
             pending.cancel()
             await asyncio.gather(pending, return_exceptions=True)
