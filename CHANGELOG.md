@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/chasef07/abita_s2s/compare/v0.10.0...v0.10.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **identity:** keep the active patient over stale phone matches ([#108](https://github.com/chasef07/abita_s2s/issues/108)) ([9614fae](https://github.com/chasef07/abita_s2s/commit/9614faeb68687177f74d7784128b13acc0e32526))
+
 ## [0.10.0](https://github.com/chasef07/abita_s2s/compare/v0.9.9...v0.10.0) (2026-09-29)
 
 
