@@ -16,7 +16,7 @@ from abita_s2s.config import Config
 from abita_s2s.identity import (
     PatientResolver,
 )
-from abita_s2s.integrations.patient_middleware import PatientMiddleware
+from abita_s2s.integrations.patient_middleware import PatientMiddleware, Receipt
 from abita_s2s.name_matcher import phone_name_matches
 from abita_s2s.offices import SPRING_HILL
 from abita_s2s.state import CallContext, CallState
@@ -95,6 +95,17 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         resolver.start_phone_lookup()
         await resolver._precall
         self.assertIsNone(resolver.state.patient.active)
+
+    async def test_active_patient_wins_over_matching_phone_record(self):
+        r, calls = self.resolver([receipt("chart-existing")])
+        await self.preload(r)
+        r.state.patient.active = Receipt.model_validate(receipt("chart-created"))
+
+        result = await r.resolve("Jane", "01/02/1980")
+
+        self.assertEqual(result["outcome"], "verified")
+        self.assertEqual(r.state.patient.active.patientId, "chart-created")
+        self.assertEqual(len(calls), 1)
 
     async def test_phone_fast_path_preserves_private_receipt_and_caller_separation(
         self,

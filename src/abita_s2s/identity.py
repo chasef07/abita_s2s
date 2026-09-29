@@ -231,19 +231,19 @@ class PatientResolver:
             if phone_name_matches(name, candidate_first_name(c))
             and (not dob or dob_matches(dob, c.dob))
         ]
-        if len(selected) > 1:
-            return ambiguous(dob)
-        if selected:
-            return await self._load_patient(
-                selected[0], name, dob, token, phone=True, call_id=call_id
-            )
         active = self.state.patient.active
-        if active and _matches(active, name, dob):
+        if active and _matches(active, name, dob) and (dob or len(selected) < 2):
             if active.appointmentsStatus != "error":
                 self._pending = (None, None)
                 return self._facts(active, "verified", call_id=call_id)
             return await self._load_patient(
                 active, name, dob, token, phone=True, call_id=call_id
+            )
+        if len(selected) > 1:
+            return ambiguous(dob)
+        if selected:
+            return await self._load_patient(
+                selected[0], name, dob, token, phone=True, call_id=call_id
             )
         if not dob:
             return reply(
