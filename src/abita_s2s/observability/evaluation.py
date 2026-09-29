@@ -139,9 +139,7 @@ async def evaluate_judges(
     return {"results": results, "errors": errors}
 
 
-async def evaluate_call(
-    report: dict, api_key: str | None, *, call_seconds: float | None = None
-) -> dict:
+async def evaluate_call(report: dict, api_key: str | None, seconds: float) -> dict:
     """Return a persistable result without letting a judge failure break closeout."""
     evaluation = {
         "evaluator": "jev",
@@ -156,7 +154,7 @@ async def evaluate_call(
             item.type == "message" and item.role == "user" for item in history.items
         ):
             evaluation.update(status="skipped", reason="no_user_messages")
-        elif call_seconds is not None and call_seconds < MIN_CALL_SECONDS:
+        elif seconds < MIN_CALL_SECONDS:
             evaluation.update(status="skipped", reason="call_too_short")
         elif not api_key:
             evaluation.update(status="skipped", reason="gateway_key_not_configured")

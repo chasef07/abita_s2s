@@ -73,7 +73,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         client = httpx.AsyncClient(transport=httpx.MockTransport(receive))
         self.addAsyncCleanup(client.aclose)
         return CallReporter(
-            call or call_state().call,
+            call or minute_call(),
             client,
             replace(
                 CONFIG,
@@ -296,7 +296,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         async def drain():
             events.append("drain")
 
-        async def evaluate(report, api_key, **_):
+        async def evaluate(report, api_key, _):
             self.assertEqual(report, REPORT)
             events.append("evaluate")
             return evidence
@@ -314,7 +314,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         history.items.append(llm.AgentConfigUpdate(instructions="Manage appointments."))
         history.add_message(role="user", content="Please help with an appointment.")
         report = {**REPORT, "chat_history": history.to_dict()}
-        reporter = self.reporter(call=minute_call(), gateway_key="offline")
+        reporter = self.reporter(gateway_key="offline")
         reporter.started = True
 
         def respond(request):
@@ -367,7 +367,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             (hang, "TimeoutError"),
             (ValueError("private"), "ValueError"),
         ]:
-            reporter = self.reporter(call=minute_call(), gateway_key="offline")
+            reporter = self.reporter(gateway_key="offline")
             reporter.started = True
             with (
                 patch(
@@ -386,7 +386,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
     async def test_closeout_evaluates_with_configured_gateway_key(self):
         keys = []
 
-        async def evaluate(report, api_key, **_):
+        async def evaluate(report, api_key, _):
             keys.append(api_key)
             return {}
 

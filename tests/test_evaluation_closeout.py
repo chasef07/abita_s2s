@@ -33,7 +33,7 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
                 patch("abita_s2s.observability.evaluation.EVALUATION_SECONDS", 0.01),
                 self.assertLogs("abita_s2s.observability.evaluation", "ERROR") as logs,
             ):
-                result = await evaluate_call(report, "offline")
+                result = await evaluate_call(report, "offline", 60)
             self.assertEqual(result["status"], "incomplete")
             self.assertNotIn("private API body", str(result) + str(logs.output))
 
@@ -46,12 +46,12 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
             if not instructions:
                 report["chat_history"]["items"].pop(0)
             with patch("abita_s2s.observability.evaluation.evaluate_judges") as judge:
-                result = await evaluate_call(report, key)
+                result = await evaluate_call(report, key, 60)
             judge.assert_not_called()
             self.assertEqual(result["reason"], expected)
 
     async def test_calls_under_thirty_seconds_never_call_provider(self):
-        for seconds, called in ((29.9, False), (30, True), (None, True)):
+        for seconds, called in ((29.9, False), (30, True)):
             with (
                 self.subTest(seconds=seconds),
                 patch(
@@ -60,9 +60,7 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
                     return_value={"results": {}, "errors": {}},
                 ) as judge,
             ):
-                result = await evaluate_call(
-                    self.report(), "offline", call_seconds=seconds
-                )
+                result = await evaluate_call(self.report(), "offline", seconds)
             self.assertEqual(judge.called, called)
             if not called:
                 self.assertEqual(result["status"], "skipped")
@@ -71,10 +69,10 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
     async def test_no_caller_or_missing_report(self):
         report = self.report()
         report["chat_history"] = ChatContext().to_dict()
-        result = await evaluate_call(report, "offline")
+        result = await evaluate_call(report, "offline", 60)
         self.assertEqual(result["status"], "skipped")
         with self.assertLogs("abita_s2s.observability.evaluation", "ERROR"):
-            result = await evaluate_call({}, "offline")
+            result = await evaluate_call({}, "offline", 60)
         self.assertEqual(result["status"], "incomplete")
 
     def test_gateway_key_is_loaded_with_config(self):

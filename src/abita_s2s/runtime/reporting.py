@@ -237,7 +237,7 @@ class CallReporter:
                 payload["closeoutPayload"]["evaluation"] = await evaluate_call(
                     report,
                     self._gateway_key,
-                    call_seconds=(ended_at - self._started_at).total_seconds(),
+                    (ended_at - self._started_at).total_seconds(),
                 )
             if self._appointment:
                 payload["appointmentOutcome"] = self._appointment

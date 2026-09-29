@@ -90,7 +90,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             patch("abita_s2s.observability.evaluation.RETRY_SECONDS", 0),
         ):
             result = await evaluate_call(
-                {"chat_history": history.to_dict()}, "synthetic-secret"
+                {"chat_history": history.to_dict()}, "synthetic-secret", 60
             )
         return requests, result
 
