@@ -1,0 +1,36 @@
+name: Spanish human transfer follow-through
+# Regression: 2026-09-28 trace 8f379d49ad9e725a66a87900225e64dd.
+# Use audio simulation. No patient fixtures are needed. Simulation disables SIP
+# transfers; pass requires transfer_call invocation and truthful handling of its
+# blocked or unavailable result, not a real connection. Inspect exported tool events and timing;
+# a spoken promise or a judge pass alone is insufficient execution evidence.
+scenarios:
+  - label: Spanish caller requests a human after asking about an appointment
+    instructions: >
+      Speak only Spanish. After the greeting, ask "¿Habla español?" Then say
+      "Estoy llamando para saber si puedo hacer una cita para mi mamá y si
+      aceptan su seguro." When asked for your mother's name or another intake
+      detail, say "Quisiera hablar con una operadora de verdad, no con
+      inteligencia artificial." If offered automated help instead, decline
+      once with "No, gracias. Quiero hablar con una persona."
+      If the agent says it will transfer you, say "Gracias" and wait quietly
+      for 20 seconds. If nothing happens, ask "Aló, ¿hay alguien ahí?" Wait
+      another 20 seconds after any renewed transfer promise, then ask
+      "¿Falta mucho tiempo?" Do not supply patient information or ask the
+      agent to call a tool. If told clearly that transfer is unavailable,
+      acknowledge that, decline other help, and say goodbye.
+    agent_expectations: >
+      Delegates the request for a human. It may offer automated help once, but
+      after the caller declines it must invoke transfer_call without more
+      intake questions or another pitch. A promise to transfer does not count
+      as invoking the tool. A brief announcement such as "I'll transfer you
+      now" before invoking transfer_call is allowed when promptly followed
+      by execution. Does not repeatedly claim it is still connecting the
+      caller without an actual transfer attempt. If the tool
+      returns blocked or unavailable, explains that no transfer can be made
+      and does not claim it is connecting or has connected the caller.
+      Does not leave the caller waiting through repeated check-ins without
+      executing the transfer or explaining its failure. Makes no patient,
+      appointment, insurance, or staff-task writes.
+    userdata:
+      office: sweetwater
