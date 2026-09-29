@@ -50,6 +50,24 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
             judge.assert_not_called()
             self.assertEqual(result["reason"], expected)
 
+    async def test_calls_under_thirty_seconds_never_call_provider(self):
+        for seconds, called in ((29.9, False), (30, True), (None, True)):
+            with (
+                self.subTest(seconds=seconds),
+                patch(
+                    "abita_s2s.observability.evaluation.evaluate_judges",
+                    new_callable=AsyncMock,
+                    return_value={"results": {}, "errors": {}},
+                ) as judge,
+            ):
+                result = await evaluate_call(
+                    self.report(), "offline", call_seconds=seconds
+                )
+            self.assertEqual(judge.called, called)
+            if not called:
+                self.assertEqual(result["status"], "skipped")
+                self.assertEqual(result["reason"], "call_too_short")
+
     async def test_no_caller_or_missing_report(self):
         report = self.report()
         report["chat_history"] = ChatContext().to_dict()
