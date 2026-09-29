@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/chasef07/abita_s2s/compare/v0.9.9...v0.10.0) (2026-09-29)
+
+
+### Features
+
+* disclose AI identity, scope referral questions, and skip short-call evaluation ([#106](https://github.com/chasef07/abita_s2s/issues/106)) ([d59c102](https://github.com/chasef07/abita_s2s/commit/d59c102e8dd1abc8c8d33d44af2a1eb535061c91))
+
 ## [0.9.9](https://github.com/chasef07/abita_s2s/compare/v0.9.8...v0.9.9) (2026-09-28)
 
 
