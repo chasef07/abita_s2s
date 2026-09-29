@@ -39,6 +39,7 @@ class CallReporter:
         self._secret = config.product_secret
         self._gateway_key = config.ai_gateway_key
         self._drain = drain
+        self._started_at = call.session_started_at
         self._insurance = insurance
         office = get_office_profile(call.called_office_key)
         office_phone = call.called_number or office.trunk_numbers[0]
@@ -234,7 +235,9 @@ class CallReporter:
             if report is not None:
                 payload["transcript"] = report
                 payload["closeoutPayload"]["evaluation"] = await evaluate_call(
-                    report, self._gateway_key
+                    report,
+                    self._gateway_key,
+                    (ended_at - self._started_at).total_seconds(),
                 )
             if self._appointment:
                 payload["appointmentOutcome"] = self._appointment

@@ -1,4 +1,4 @@
-"""Five evidence-grounded checks and whole-call sentiment via TypeSafe's API."""
+"""Four evidence-grounded checks and whole-call sentiment via TypeSafe's API."""
 
 import asyncio
 import logging
@@ -14,7 +14,8 @@ from abita_s2s.observability.judges import QUESTIONS, appointment_datetime_corre
 logger = logging.getLogger(__name__)
 EVALUATION_SECONDS = 20
 RETRY_SECONDS = 0.25
-EVALUATOR_VERSION = "typesafe-scorecard-v3"
+MIN_CALL_SECONDS = 30
+EVALUATOR_VERSION = "typesafe-scorecard-v4"
 
 
 def validate_answer(name: str, result: dict) -> None:
@@ -138,7 +139,7 @@ async def evaluate_judges(
     return {"results": results, "errors": errors}
 
 
-async def evaluate_call(report: dict, api_key: str | None) -> dict:
+async def evaluate_call(report: dict, api_key: str | None, seconds: float) -> dict:
     """Return a persistable result without letting a judge failure break closeout."""
     evaluation = {
         "evaluator": "jev",
@@ -153,6 +154,8 @@ async def evaluate_call(report: dict, api_key: str | None) -> dict:
             item.type == "message" and item.role == "user" for item in history.items
         ):
             evaluation.update(status="skipped", reason="no_user_messages")
+        elif seconds < MIN_CALL_SECONDS:
+            evaluation.update(status="skipped", reason="call_too_short")
         elif not api_key:
             evaluation.update(status="skipped", reason="gateway_key_not_configured")
         else:

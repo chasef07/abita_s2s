@@ -4,6 +4,7 @@ import asyncio
 import json
 import unittest
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
@@ -39,6 +40,11 @@ OUTCOME = {
 }
 
 
+def minute_call():
+    call = call_state().call
+    return replace(call, session_started_at=datetime.now(UTC) - timedelta(minutes=1))
+
+
 class ReportingTests(unittest.IsolatedAsyncioTestCase):
     def reporter(
         self,
@@ -67,7 +73,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         client = httpx.AsyncClient(transport=httpx.MockTransport(receive))
         self.addAsyncCleanup(client.aclose)
         return CallReporter(
-            call or call_state().call,
+            call or minute_call(),
             client,
             replace(
                 CONFIG,
@@ -290,7 +296,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         async def drain():
             events.append("drain")
 
-        async def evaluate(report, api_key):
+        async def evaluate(report, api_key, _):
             self.assertEqual(report, REPORT)
             events.append("evaluate")
             return evidence
@@ -336,7 +342,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(closeout["status"], "COMPLETED")
         evaluation = closeout["closeoutPayload"]["evaluation"]
         self.assertEqual(evaluation["status"], "incomplete")
-        self.assertEqual(len(evaluation["results"]), 5)
+        self.assertEqual(len(evaluation["results"]), 4)
         self.assertEqual(
             evaluation["results"]["conversation_responsive"]["answers"][
                 "conversation_responsive"
@@ -380,7 +386,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
     async def test_closeout_evaluates_with_configured_gateway_key(self):
         keys = []
 
-        async def evaluate(report, api_key):
+        async def evaluate(report, api_key, _):
             keys.append(api_key)
             return {}
 

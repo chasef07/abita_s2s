@@ -11,6 +11,7 @@ insurance, appointments, or availability.
 | [appointments.yaml](scenarios/appointments.yaml) | Booking, rescheduling, and cancellation. |
 | [knowledge.yaml](scenarios/knowledge.yaml) | Office and provider knowledge from Product. |
 | [slot_identity.yaml](scenarios/slot_identity.yaml) | Selecting the confirmed date when adjacent dates share a provider and time. |
+| [ai_disclosure.yaml](scenarios/ai_disclosure.yaml) | Saying it is an AI assistant when a caller asks, in English and Spanish. |
 
 ## Before running
 

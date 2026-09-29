@@ -109,11 +109,9 @@ class SchedulingTools:
         Use reschedule_appointment to move an existing appointment.
 
         Args:
-            referringDoctor: Caller-provided referring doctor. Reuse an answer already
-                supplied; otherwise ask "Did a doctor refer you?" If yes, ask for the
-                name. Use internal value "none" only when the caller says they have
-                no referring doctor. Do not ask whether to put or mark none, or
-                narrate the internal value.
+            referringDoctor: New patients: reuse a supplied answer or ask "Did a doctor
+                refer you?" and get the name; "none" if not referred. Existing patients:
+                "none" without asking. Never narrate "none".
         """
         if not bound(self._scheduling, context):
             return UNAVAILABLE
@@ -165,11 +163,9 @@ class SchedulingTools:
         Books first, then cancels the old visit. Report partial success and never repeat an uncertain booking.
 
         Args:
-            referringDoctor: Caller-provided referring doctor. Reuse an answer already
-                supplied; otherwise ask "Did a doctor refer you?" If yes, ask for the
-                name. Use internal value "none" only when the caller says they have
-                no referring doctor. Do not ask whether to put or mark none, or
-                narrate the internal value.
+            referringDoctor: New patients: reuse a supplied answer or ask "Did a doctor
+                refer you?" and get the name; "none" if not referred. Existing patients:
+                "none" without asking. Never narrate "none".
         """
         if not bound(self._scheduling, context):
             return UNAVAILABLE
