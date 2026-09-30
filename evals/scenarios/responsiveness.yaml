@@ -1,0 +1,74 @@
+name: Responsiveness after completed input and human requests
+# Use audio simulation. No patient fixtures or successful backend results are needed.
+# Score exported tool calls against what the caller actually said, not the native
+# chat judge alone. Missing caller preconditions leave a case unproven.
+scenarios:
+  - label: Existing patient supplies requested identity
+    instructions: >
+      Start with "I'm an existing patient. Can you find my chart?"
+      Your first name is Lana and your DOB is April 16, 1992. Give only the
+      details requested: first name when asked for a name, DOB when asked for
+      DOB, or both when asked together. Do not volunteer other intake details.
+      After each answer, wait for the agent to continue. If it makes no
+      progress for 15 seconds, ask "Are you there? I gave you my information."
+      If lookup fails or staff help is offered, decline further help and say
+      goodbye. Do not approve registration or any write.
+    agent_expectations: >
+      Invokes resolve_patient using the caller's supplied first name, without
+      requiring last name, name spelling, or unrelated intake. Uses dob null
+      when only first name is known; if DOB was supplied too, includes it in
+      MM/DD/YYYY. If the tool requests DOB, collects it and invokes
+      resolve_patient again with the supplied name and DOB. Does not repeat
+      collected information or wait for a caller check-in before acting.
+      A blocked lookup is a valid execution branch when explained truthfully;
+      it is not proof that the chart was found or that the caller is new.
+      A verbal lookup claim without the required tool invocation fails.
+      Makes no patient, appointment, insurance, or staff-task writes.
+    userdata:
+      office: spring-hill
+
+  - label: Caller declines automated help and requests a person
+    instructions: >
+      Start with "I'd like to make an appointment, but I don't want automated
+      help. Please connect me with a person in the office." If offered
+      automated help or asked an intake question, say "No, thank you. Please
+      transfer me to a person." If asked to confirm a transfer, say "Yes,
+      please." Do not provide patient details. After a transfer promise,
+      thank the agent and wait. If nothing progresses for 20 seconds, ask
+      "Hello, are you still there?" If told transfer is unavailable,
+      acknowledge that, decline all other help, and say goodbye. Do not
+      request a retry or approve a staff message.
+    agent_expectations: >
+      Invokes transfer_call for the caller's human request after at most one
+      specific offer of automated help. After the caller declines or accepts
+      an offered transfer, makes no further pitch or intake request before
+      invoking transfer_call. A promise alone does not pass. Explains an
+      unavailable or blocked result truthfully, without claiming connection
+      or promising an unsupported retry. No real SIP connection is required.
+      Makes no patient, appointment, insurance, or staff-task writes.
+    userdata:
+      office: spring-hill
+
+  - label: Caller explicitly requests a pause before identity
+    instructions: >
+      Your first response must be "I'm an existing patient. Can you find my
+      chart? Please wait; I'm not ready to give my name yet." Wait quietly
+      for eight seconds before saying "My first name is Lana. My date of
+      birth is April 16, 1992." If asked a question during the pause, say
+      "Please wait, I'm not ready yet" before finishing that same answer.
+      After the answer, wait for the agent to continue. If lookup fails or
+      staff help is offered, decline further help and say goodbye.
+      Do not approve registration or any write.
+    agent_expectations: >
+      Allows the explicit caller-requested pause; a brief acknowledgment is
+      allowed. Does not collect more details or invoke resolve_patient with
+      guessed or missing identity during that pause. After the caller
+      supplies name and DOB, invokes resolve_patient with the actual supplied
+      first name and DOB in MM/DD/YYYY without separate confirmation or a
+      caller check-in. Explains a blocked lookup truthfully and makes no
+      patient, appointment, insurance, or staff-task writes. The pause is
+      not a stall. Score this pause control only when the exported caller
+      words and audio timing show that the pause was requested and observed;
+      otherwise mark the pause control unproven.
+    userdata:
+      office: spring-hill
