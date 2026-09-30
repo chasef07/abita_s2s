@@ -257,6 +257,13 @@ class ObservedGPTLiveModel(GPTLiveModel):
     def __init__(self, *, call_id: str = "", **kwargs):
         super().__init__(**kwargs)
         self.call_id = call_id
+        self.live: ObservedGPTLiveSession | None = None
 
     def session(self) -> GPTLiveSession:
-        return ObservedGPTLiveSession(self, self.call_id)
+        self.live = ObservedGPTLiveSession(self, self.call_id)
+        return self.live
+
+    @property
+    def backend_busy(self) -> bool:
+        """Whether a delegated backend response is still running."""
+        return bool(self.live and self.live.timeline.responses)

@@ -166,7 +166,9 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
     async def test_acceptance_announcement_exact_participant_duplicate_and_end_guard(
         self,
     ):
+        self.assertFalse(self.control.closing)
         result = await self.run_tool("transfer_call")
+        self.assertTrue(self.control.closing)
         self.assertTrue(result.startswith("accepted: "))
         self.assertIn("A human answer is not confirmed", result)
         self.assertIn("Do not retry or end the call", result)

@@ -26,6 +26,7 @@ from abita_s2s.offices import (
 )
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
 from abita_s2s.runtime.reporting import CallReporter
+from abita_s2s.runtime.silence import AWAY_SECONDS, SilenceCheckIn
 from abita_s2s.scheduling import Scheduling
 from abita_s2s.integrations.scheduling_http import SchedulingHTTP
 from abita_s2s.staff_tasks import StaffTasks
@@ -255,6 +256,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             llm=create_model(config, call_id=call.call_id),
             vad=None,
             turn_handling={"turn_detection": "realtime_llm"},
+            user_away_timeout=AWAY_SECONDS,
         )
         session.on(
             "error",
@@ -278,6 +280,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             handoff=config.handoff,
             sandbox=config.deployment is not None,
         )
+        SilenceCheckIn(session, control)
 
         resolver.start_phone_lookup()
         insurance = InsuranceRegistration(

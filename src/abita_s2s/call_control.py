@@ -63,6 +63,11 @@ class CallControl:
             and participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP
         )
 
+    @property
+    def closing(self) -> bool:
+        """Whether a transfer or call completion owns the rest of the call."""
+        return self.ending or self.status in ("pending", "accepted", "ambiguous")
+
     def _retry_status(self) -> str:
         return "retryable" if self.attempts < 2 else "failed"
 
