@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.2](https://github.com/chasef07/abita_s2s/compare/v0.10.1...v0.10.2) (2026-09-30)
+
+
+### Miscellaneous Chores
+
+* **release:** trigger 0.10.2 ([73185db](https://github.com/chasef07/abita_s2s/commit/73185dbb5a75a681405b0c080c4ab04cc8ee42cd))
+
 ## [0.10.1](https://github.com/chasef07/abita_s2s/compare/v0.10.0...v0.10.1) (2026-09-29)
 
 
