@@ -44,7 +44,9 @@ scenarios:
       an offered transfer, makes no further pitch or intake request before
       invoking transfer_call. A promise alone does not pass. Explains an
       unavailable or blocked result truthfully, without claiming connection
-      or promising an unsupported retry. No real SIP connection is required.
+      or promising an unsupported retry. After that explanation it may offer
+      once to take a message or help another way; that follows the transfer
+      attempt and is not another pitch. No real SIP connection is required.
       Makes no patient, appointment, insurance, or staff-task writes.
     userdata:
       office: spring-hill

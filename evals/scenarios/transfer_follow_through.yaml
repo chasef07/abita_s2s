@@ -28,7 +28,9 @@ scenarios:
       by execution. Does not repeatedly claim it is still connecting the
       caller without an actual transfer attempt. If the tool
       returns blocked or unavailable, explains that no transfer can be made
-      and does not claim it is connecting or has connected the caller.
+      and does not claim it is connecting or has connected the caller. After
+      that explanation it may offer once to take a message; that follows the
+      transfer attempt and is not another pitch.
       Does not leave the caller waiting through repeated check-ins without
       executing the transfer or explaining its failure. Makes no patient,
       appointment, insurance, or staff-task writes.
