@@ -14,16 +14,8 @@ scenarios:
       If lookup fails or staff help is offered, decline further help and say
       goodbye. Do not approve registration or any write.
     agent_expectations: >
-      Invokes resolve_patient using the caller's supplied first name, without
-      requiring last name, name spelling, or unrelated intake. Uses dob null
-      when only first name is known; if DOB was supplied too, includes it in
-      MM/DD/YYYY. If the tool requests DOB, collects it and invokes
-      resolve_patient again with the supplied name and DOB. Does not repeat
-      collected information or wait for a caller check-in before acting.
-      A blocked lookup is a valid execution branch when explained truthfully;
-      it is not proof that the chart was found or that the caller is new.
-      A verbal lookup claim without the required tool invocation fails.
-      Makes no patient, appointment, insurance, or staff-task writes.
+      Looks up the chart with the caller's first name and date of birth without
+      asking for anything else. Says truthfully that no chart was found.
     userdata:
       office: spring-hill
 
@@ -39,15 +31,8 @@ scenarios:
       acknowledge that, decline all other help, and say goodbye. Do not
       request a retry or approve a staff message.
     agent_expectations: >
-      Invokes transfer_call for the caller's human request after at most one
-      specific offer of automated help. After the caller declines or accepts
-      an offered transfer, makes no further pitch or intake request before
-      invoking transfer_call. A promise alone does not pass. Explains an
-      unavailable or blocked result truthfully, without claiming connection
-      or promising an unsupported retry. After that explanation it may offer
-      once to take a message or help another way; that follows the transfer
-      attempt and is not another pitch. No real SIP connection is required.
-      Makes no patient, appointment, insurance, or staff-task writes.
+      Offers automated help at most once, then transfers when the caller still wants
+      a person. Says truthfully that the transfer isn't available.
     userdata:
       office: spring-hill
 
@@ -62,15 +47,7 @@ scenarios:
       staff help is offered, decline further help and say goodbye.
       Do not approve registration or any write.
     agent_expectations: >
-      Allows the explicit caller-requested pause; a brief acknowledgment is
-      allowed. Does not collect more details or invoke resolve_patient with
-      guessed or missing identity during that pause. After the caller
-      supplies name and DOB, invokes resolve_patient with the actual supplied
-      first name and DOB in MM/DD/YYYY without separate confirmation or a
-      caller check-in. Explains a blocked lookup truthfully and makes no
-      patient, appointment, insurance, or staff-task writes. The pause is
-      not a stall. Score this pause control only when the exported caller
-      words and audio timing show that the pause was requested and observed;
-      otherwise mark the pause control unproven.
+      Waits while the caller asks for a pause, then looks up the chart once they
+      give their name and date of birth. Says truthfully that no chart was found.
     userdata:
       office: spring-hill

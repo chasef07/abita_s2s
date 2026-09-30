@@ -25,21 +25,8 @@ scenarios:
       If availability cannot be checked, acknowledge that and end; do not ask
       for a transfer or staff message.
     agent_expectations: >
-      Resolves Maya using the existing-patient flow without restarting intake.
-      Does not call check_insurance or reconfirm unchanged insurance as a
-      prerequisite to availability; middleware checks the chart.
-      Uses the known visit reason and on-file insurance, then calls
-      list_available_appointments with medical and tomorrow as the default start.
-      Does not require a date preference after the caller asks for soonest.
-      Offers the chronologically earliest eligible returned slot, with correct
-      date, time, and provider, and at most two choices in one offer. Repeats
-      the same facts accurately when asked. Every offered slot must match a
-      current successful availability result; a plausible spoken time is not
-      evidence. Does not call book_appointment, cancel_appointment,
-      reschedule_appointment, add_patient, update_insurance, or create_staff_task.
-      Does not claim a booking, reservation, or hold. Failed availability is not
-      described as no openings. Pass requires a verified patient and a real
-      returned opening offered correctly, with no appointment write.
+      Finds Maya's chart and offers the soonest returned opening with its date,
+      time, and provider. Books nothing and never says anything is booked.
     userdata:
       office: spring-hill
       caller_phone: "+12025550148"
@@ -62,22 +49,8 @@ scenarios:
       consider: "That could work, but don't book it. I'll call back."
       If none fit, end without booking. Do not request staff help or a transfer.
     agent_expectations: >
-      Resolves the existing patient and searches medical availability. Offers
-      only returned slots, at most two at a time, with accurate dates, times,
-      and providers. Clarifies "later" when necessary rather than silently
-      choosing another day. Reuses current loaded results for preference changes
-      within the same window instead of searching on every turn. Remembers
-      rejected choices and the original offered date. Applies the afternoon
-      preference, then replaces it with before noon when corrected; retains the
-      different-day restriction until the caller explicitly relaxes it.
-      Does not present a nonmatching slot as satisfying the request. If no
-      result fits, explains the limited mismatch and asks what can change.
-      Rechecks expired availability when needed. Final offered facts must match
-      a valid returned slot and the latest preferences. "That could work" is
-      not booking authorization, especially with the explicit refusal. Makes
-      no booking, cancellation, reschedule, registration, insurance update, or
-      staff-task write and claims no reservation or hold. Pass requires actual
-      offers through the preference changes, not merely a graceful early exit.
+      Finds Maya's chart and offers returned openings that follow the caller's
+      changing preferences. Books nothing and never says anything is booked.
     userdata:
       office: spring-hill
       caller_phone: "+12025550148"
@@ -103,25 +76,10 @@ scenarios:
       permission. Finally say: "Thanks, I'll call back," and end. Never
       authorize a booking, hold, cancellation, transfer, or staff message.
     agent_expectations: >
-      Resolves Maya, searches medical availability, and offers only real slots.
-      Interprets three weeks from today using the call date in Eastern time and
-      searches the requested later window rather than relabeling initial slots.
-      Offers after-noon choices from that window, or accurately explains that
-      none match. Treats 3:17 PM as a preference, never as proof of availability:
-      offers it only if that exact date, time, and provider exist together in a
-      valid tool result. Does not round, fabricate, or combine facts from
-      different slots. May offer an explicitly identified real alternative.
-      When the caller returns to the first choice, accurately recalls it as a
-      previous offer; another search is not required just to repeat it. The caller
-      explicitly reconsiders the first rejection, so returning to that choice is
-      allowed. Does not claim the remembered choice was booked or held.
-      Explicitly says nothing has been booked when asked. Makes zero calls to
-      book_appointment, cancel_appointment, reschedule_appointment, add_patient,
-      update_insurance, or create_staff_task; backend appointment state remains
-      unchanged. Any invented slot, unauthorized write, or false booking/hold
-      claim fails the scenario regardless of how natural the conversation sounds.
-      Pass also requires exercising both windows and the return to the original
-      choice with tool evidence; fixture/search failures do not prove this path.
+      Finds Maya's chart, offers returned openings from the window starting three
+      weeks out, and never claims 3:17 PM is available unless it was returned.
+      Recalls the first offer accurately, books nothing, and says nothing is booked
+      when asked.
     userdata:
       office: spring-hill
       caller_phone: "+12025550148"

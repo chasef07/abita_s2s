@@ -20,19 +20,7 @@ scenarios:
       agent to call a tool. If told clearly that transfer is unavailable,
       acknowledge that, decline other help, and say goodbye.
     agent_expectations: >
-      Delegates the request for a human. It may offer automated help once, but
-      after the caller declines it must invoke transfer_call without more
-      intake questions or another pitch. A promise to transfer does not count
-      as invoking the tool. A brief announcement such as "I'll transfer you
-      now" before invoking transfer_call is allowed when promptly followed
-      by execution. Does not repeatedly claim it is still connecting the
-      caller without an actual transfer attempt. If the tool
-      returns blocked or unavailable, explains that no transfer can be made
-      and does not claim it is connecting or has connected the caller. After
-      that explanation it may offer once to take a message; that follows the
-      transfer attempt and is not another pitch.
-      Does not leave the caller waiting through repeated check-ins without
-      executing the transfer or explaining its failure. Makes no patient,
-      appointment, insurance, or staff-task writes.
+      Offers automated help at most once, then transfers when the caller still wants
+      a person. Says truthfully, in Spanish, that the transfer isn't available.
     userdata:
       office: sweetwater

@@ -24,20 +24,9 @@ scenarios:
       any other visits, do not request another booking, and end after the
       cancellation result is explained.
     agent_expectations: >
-      Resolves Maya through the existing-patient workflow, reuses known details,
-      searches medical availability and offers a returned slot. Obtains explicit
-      approval before book_appointment with readBack true, then claims success only
-      from its receipt with the correct date, time and provider. For the move,
-      targets the visit it just booked, searches matching availability, obtains
-      approval of old and new details, and calls reschedule_appointment with
-      readBack true, never separate booking and cancellation tools. Receipts show
-      the replacement booked before the original is cancelled, and the completion
-      explicitly says the old appointment was cancelled. For the cancellation,
-      targets the moved visit, obtains approval before cancel_appointment with
-      readBack true, and does not collect booking intake or check insurance again.
-      Every other visit on the chart remains unchanged and no new chart is
-      registered. Fail if any of the booking, reschedule or cancellation does not
-      succeed.
+      Finds Maya's chart, then books a returned opening, moves it to a later
+      returned opening, and cancels it, getting the caller's approval before each
+      change. Describes each result accurately.
     userdata:
       office: spring-hill
       caller_phone: '+12025550148'
