@@ -28,83 +28,35 @@ env:
   SANDBOX_AMD_API_TOKEN: ${{ secrets.SANDBOX_AMD_API_TOKEN }}
   ACUITY_PRODUCT_KNOWLEDGE_URL: ${{ secrets.ACUITY_PRODUCT_KNOWLEDGE_URL }}
   ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET: ${{ secrets.ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET }}
-  # Suites that write to shared sandbox charts run alone, after the read-only suites.
-  SERIAL_SUITES: evals/scenarios/appointments.yaml
 jobs:
-  suites:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      parallel: ${{ steps.list.outputs.parallel }}
-      serial: ${{ steps.list.outputs.serial }}
-    steps:
-      - name: Require evaluation credentials
-        shell: bash
-        run: |
-          missing=0
-          for key in LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET OPENAI_API_KEY SANDBOX_AMD_API_URL SANDBOX_AMD_API_TOKEN ACUITY_PRODUCT_KNOWLEDGE_URL ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET; do
-            if [[ -z "${!key}" ]]; then
-              echo "::error::Missing evaluation secret: $key"
-              missing=1
-            fi
-          done
-          exit "$missing"
-      - uses: actions/checkout@v4
-      - name: List scenario suites
-        id: list
-        shell: python
-        run: |
-          import json, os, pathlib
-          serial = set(os.environ["SERIAL_SUITES"].split())
-          suites = sorted(
-              str(path)
-              for path in pathlib.Path("evals/scenarios").rglob("*")
-              if path.suffix in (".yaml", ".yml")
-          )
-          if not suites:
-              raise SystemExit("::error::No scenario suites found")
-          missing = serial.difference(suites)
-          if missing:
-              raise SystemExit(f"::error::Unknown serial suites: {sorted(missing)}")
-
-          def entries(paths):
-              return json.dumps(
-                  [{"suite": p, "name": p.removeprefix("evals/scenarios/").rsplit(".", 1)[0].replace("/", "-")} for p in paths]
-              )
-
-          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-              output.write(f"parallel={entries([s for s in suites if s not in serial])}\n")
-              output.write(f"serial={entries([s for s in suites if s in serial])}\n")
-  parallel:
-    needs: suites
-    if: ${{ needs.suites.outputs.parallel != '[]' }}
+  read-only:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.suites.outputs.parallel) }}
-    name: ${{ matrix.name }}
+        suite:
+          - ai_disclosure
+          - availability
+          - knowledge
+          - office_hours
+          - responsiveness
+          - scenarios
+          - transfer_follow_through
+    name: ${{ matrix.suite }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/scenario-suite
         with:
           suite: ${{ matrix.suite }}
-          name: ${{ matrix.name }}
-  serial:
-    needs: [suites, parallel]
-    if: ${{ !cancelled() && needs.suites.result == 'success' && needs.suites.outputs.serial != '[]' }}
+  # Books, reschedules and cancels on a chart the read-only suites look up.
+  appointments:
+    needs: read-only
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        include: ${{ fromJSON(needs.suites.outputs.serial) }}
-    name: ${{ matrix.name }} (serial)
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/scenario-suite
         with:
-          suite: ${{ matrix.suite }}
-          name: ${{ matrix.name }}
+          suite: appointments

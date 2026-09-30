@@ -1,15 +1,23 @@
 name: Run scenario suite
-description: Run one scenario YAML in audio mode against a worker launched from the checkout.
+description: Run one evals/scenarios suite in audio mode against a worker launched from the checkout.
 inputs:
   suite:
-    description: Scenario YAML path under evals/scenarios.
-    required: true
-  name:
-    description: Artifact-safe suite name.
+    description: Suite file name under evals/scenarios, without .yaml.
     required: true
 runs:
   using: composite
   steps:
+    - name: Require evaluation credentials
+      shell: bash
+      run: |
+        missing=0
+        for key in LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET OPENAI_API_KEY SANDBOX_AMD_API_URL SANDBOX_AMD_API_TOKEN ACUITY_PRODUCT_KNOWLEDGE_URL ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET; do
+          if [[ -z "${!key}" ]]; then
+            echo "::error::Missing evaluation secret: $key"
+            missing=1
+          fi
+        done
+        exit "$missing"
     - uses: astral-sh/setup-uv@v6
       with:
         version: '0.12.15'
@@ -30,15 +38,13 @@ runs:
       shell: bash
       env:
         SUITE: ${{ inputs.suite }}
-        NAME: ${{ inputs.name }}
       run: |
         mkdir -p eval-results
-        set -o pipefail
-        lk agent simulate audio --scenarios "$SUITE" --concurrency 1 src/abita_s2s/main.py 2>&1 | tee "eval-results/$NAME.log"
+        lk agent simulate audio --scenarios "evals/scenarios/$SUITE.yaml" --concurrency 1 src/abita_s2s/main.py 2>&1 | tee "eval-results/$SUITE.log"
     - uses: actions/upload-artifact@v4
       if: ${{ always() && steps.simulation.outcome != 'skipped' }}
       with:
-        name: scenario-eval-${{ inputs.name }}-${{ github.run_id }}
+        name: scenario-eval-${{ inputs.suite }}-${{ github.run_id }}
         path: eval-results/
         if-no-files-found: error
         retention-days: 7

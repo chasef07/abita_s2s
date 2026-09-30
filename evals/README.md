@@ -62,10 +62,11 @@ Repository secrets must supply `LIVEKIT_URL`, `LIVEKIT_API_KEY`,
 simulation starts. Fork pull requests do not receive repository secrets.
 
 Each suite runs in its own job, with simulation concurrency set to one inside
-the suite. Read-only suites run in parallel. Suites listed in the workflow's
-`SERIAL_SUITES` write to shared sandbox charts, so they run one at a time after
-the read-only suites finish; add a suite there if it books, reschedules,
-cancels, or registers. Runs never overlap. Every suite is attempted even after
+the suite. Read-only suites run in parallel from the workflow's matrix; add a new
+suite there (`tests/test_eval_workflow.py` fails until you do). `appointments`
+books, reschedules, and cancels on a chart the read-only suites look up, so it
+runs alone after they finish; give any other writing suite the same treatment.
+Runs never overlap. Every suite is attempted even after
 a failure, and any failed suite fails the run. Each suite's log is saved as a
 seven-day Actions artifact. CI does not seed fixture state or
 freeze the clock, so do not add scenarios that depend on the run date or on writes
