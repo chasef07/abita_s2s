@@ -2,19 +2,37 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from livekit.agents import UserStateChangedEvent
+from livekit.agents import AgentSession, UserStateChangedEvent
 from livekit.plugins.openai.realtime import GPTLiveSession
 
 from abita_s2s.runtime.observability import ObservedGPTLiveModel
-from abita_s2s.runtime.silence import CHECK_IN, GOODBYE, SilenceCheckIn
+from abita_s2s.runtime.silence import CHECK_INS, GOODBYE, SilenceCheckIn
+
+
+class Handle:
+    def __init__(self):
+        self.interrupted = False
+        self.callbacks = []
+
+    def add_done_callback(self, fn):
+        self.callbacks.append(fn)
+
+    def finish(self):
+        for fn in self.callbacks:
+            fn(self)
 
 
 class Session:
     def __init__(self):
         self.handlers = {}
-        self.llm = SimpleNamespace(backend_busy=False)
         self.reset_away_timer = Mock()
-        self.generate_reply = Mock()
+        self.handles = []
+        self.generate_reply = Mock(side_effect=self.reply)
+        self.shutdown = Mock()
+
+    def reply(self, **_):
+        self.handles.append(Handle())
+        return self.handles[-1]
 
     def on(self, name, fn):
         self.handlers[name] = fn
@@ -31,36 +49,61 @@ class Session:
 class SilenceCheckInTests(unittest.TestCase):
     def setUp(self):
         self.session = Session()
-        self.control = SimpleNamespace(closing=False)
-        SilenceCheckIn(self.session, self.control)
+        self.model = SimpleNamespace(backend_busy=False)
+        self.control = SimpleNamespace(closing=False, begin_end=Mock(return_value=None))
+        SilenceCheckIn(self.session, self.model, self.control)
 
-    def test_checks_in_twice_then_says_goodbye(self):
-        for _ in range(3):
+    def go_silent(self, windows):
+        for _ in range(windows):
             self.session.user("listening", "away")
-        self.assertEqual(self.session.replies(), [CHECK_IN, CHECK_IN, GOODBYE])
+
+    def test_checks_in_twice_then_hangs_up_after_one_goodbye(self):
+        self.go_silent(5)
+        self.assertEqual(self.session.replies(), [*CHECK_INS, GOODBYE])
         self.assertEqual(self.session.reset_away_timer.call_count, 3)
+        self.session.shutdown.assert_not_called()
+        self.session.handles[-1].finish()
+        self.control.begin_end.assert_called_once()
+        self.session.shutdown.assert_called_once_with()
+
+    def test_caller_speech_during_goodbye_cancels_hang_up(self):
+        self.go_silent(3)
+        self.session.user("away", "speaking")
+        self.session.handles[-1].finish()
+        self.session.shutdown.assert_not_called()
+
+    def test_interrupted_goodbye_does_not_hang_up(self):
+        self.go_silent(3)
+        self.session.handles[-1].interrupted = True
+        self.session.handles[-1].finish()
+        self.control.begin_end.assert_not_called()
+        self.session.shutdown.assert_not_called()
+
+    def test_blocked_completion_keeps_the_call_open(self):
+        self.control.begin_end.return_value = "unavailable: No active SIP call."
+        self.go_silent(3)
+        self.session.handles[-1].finish()
+        self.session.shutdown.assert_not_called()
 
     def test_caller_speech_restarts_check_ins(self):
-        self.session.user("listening", "away")
-        self.session.user("away", "listening")
-        self.session.user("listening", "away")
+        self.go_silent(2)
         self.session.user("away", "speaking")
         self.session.user("speaking", "listening")
-        self.session.user("listening", "away")
-        self.assertEqual(self.session.replies(), [CHECK_IN, CHECK_IN, CHECK_IN])
+        self.go_silent(1)
+        self.assertEqual(self.session.replies(), [*CHECK_INS, CHECK_INS[0]])
 
     def test_running_backend_response_rearms_without_speaking(self):
-        self.session.llm.backend_busy = True
-        self.session.user("listening", "away")
+        self.model.backend_busy = True
+        self.go_silent(1)
         self.session.reset_away_timer.assert_called_once()
         self.session.generate_reply.assert_not_called()
-        self.session.llm.backend_busy = False
-        self.session.user("listening", "away")
-        self.assertEqual(self.session.replies(), [CHECK_IN])
+        self.model.backend_busy = False
+        self.go_silent(1)
+        self.assertEqual(self.session.replies(), [CHECK_INS[0]])
 
     def test_transfer_or_completion_suppresses_check_ins(self):
         self.control.closing = True
-        self.session.user("listening", "away")
+        self.go_silent(1)
         self.session.reset_away_timer.assert_not_called()
         self.session.generate_reply.assert_not_called()
 
@@ -69,6 +112,23 @@ class SilenceCheckInTests(unittest.TestCase):
         self.session.user("speaking", "listening")
         self.session.reset_away_timer.assert_not_called()
         self.session.generate_reply.assert_not_called()
+
+
+class RealSessionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_real_session_wraps_the_model_and_still_checks_in(self):
+        model = ObservedGPTLiveModel(api_key="offline")
+        session = AgentSession(llm=model)
+        self.assertIsNot(session.llm, model)
+        SilenceCheckIn(session, model, SimpleNamespace(closing=False))
+        with (
+            patch.object(session, "reset_away_timer"),
+            patch.object(session, "generate_reply") as reply,
+        ):
+            session.emit(
+                "user_state_changed",
+                UserStateChangedEvent(old_state="listening", new_state="away"),
+            )
+        reply.assert_called_once_with(instructions=CHECK_INS[0])
 
 
 class BackendBusyTests(unittest.TestCase):
