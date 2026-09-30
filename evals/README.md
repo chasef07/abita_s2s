@@ -8,9 +8,8 @@ insurance, appointments, or availability.
 | --- | --- |
 | [scenarios.yaml](scenarios/scenarios.yaml) | New-patient intake and existing-patient identity resolution. |
 | [availability.yaml](scenarios/availability.yaml) | Existing-patient availability searches. |
-| [appointments.yaml](scenarios/appointments.yaml) | Booking, rescheduling, and cancellation. |
+| [appointments.yaml](scenarios/appointments.yaml) | Booking, rescheduling, and cancelling one visit in a single call. |
 | [knowledge.yaml](scenarios/knowledge.yaml) | Office and provider knowledge from Product. |
-| [slot_identity.yaml](scenarios/slot_identity.yaml) | Selecting the confirmed date when adjacent dates share a provider and time. |
 | [ai_disclosure.yaml](scenarios/ai_disclosure.yaml) | Saying it is an AI assistant when a caller asks, in English and Spanish. |
 
 ## Before running
@@ -20,12 +19,10 @@ and sandbox patient middleware. The worker's simulation path disables Product
 writes and live SIP transfer setup; configured office knowledge reads remain
 available. Configuration is documented in [.env.example](../.env.example).
 
-Read the prerequisite comments in each YAML. Appointment scenarios share a chart;
-suite order is not guaranteed, even with concurrency set to one. Run isolated
-scenarios against known fixture state when writes depend on previous results.
-The slot-identity regression requires specific October 2026 slots and a call date
-before October 13, 2026. Its userdata neither creates those slots nor sets the clock.
-Missing fixtures or failed middleware leave the scenario unproven.
+Read the prerequisite comments in each YAML. Every scenario must pass on any
+date and in any order. The appointment scenario books, reschedules, and cancels
+the same visit in one call so the shared chart ends where it started. Missing
+fixtures or failed middleware leave the scenario unproven.
 
 ## Run a suite
 
@@ -33,7 +30,7 @@ From the repository root, with the intended LiveKit project selected:
 
 ```sh
 lk agent simulate text --agent-name abita-s2s --scenarios evals/scenarios/scenarios.yaml
-lk agent simulate audio --agent-name abita-s2s --scenarios evals/scenarios/slot_identity.yaml
+lk agent simulate audio --agent-name abita-s2s --scenarios evals/scenarios/appointments.yaml
 lk agent simulate list
 ```
 
@@ -65,11 +62,9 @@ simulation starts. Fork pull requests do not receive repository secrets.
 
 Runs and suites execute serially with simulation concurrency set to one. Every
 suite is attempted even after a failure, and any failed suite fails the job.
-Logs are saved as a seven-day Actions artifact. The scenario prerequisites above
-still apply: CI does not seed fixture state or freeze the clock. The weekend-only
-case in `office_hours.yaml` requires a weekend, and `slot_identity.yaml` requires
-its stated dates. Those cases remain in the full suite and can fail outside their
-required conditions. Do not configure this path-filtered workflow as a required
+Logs are saved as a seven-day Actions artifact. CI does not seed fixture state or
+freeze the clock, so do not add scenarios that depend on the run date or on writes
+from another scenario. Do not configure this path-filtered workflow as a required
 merge check; GitHub leaves its check pending on PRs without prompt changes.
 
 ## Releases and offline checks
