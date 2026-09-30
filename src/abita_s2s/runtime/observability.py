@@ -12,6 +12,8 @@ from livekit.agents.telemetry import gen_ai, tracer
 from livekit.plugins.openai.realtime import GPTLiveModel, GPTLiveSession
 from opentelemetry import trace
 
+from abita_s2s.runtime.silence import BackendResponses
+
 logger = logging.getLogger(__name__)
 
 
@@ -257,6 +259,9 @@ class ObservedGPTLiveModel(GPTLiveModel):
     def __init__(self, *, call_id: str = "", **kwargs):
         super().__init__(**kwargs)
         self.call_id = call_id
+        self.backend = BackendResponses()
 
     def session(self) -> GPTLiveSession:
-        return ObservedGPTLiveSession(self, self.call_id)
+        live = ObservedGPTLiveSession(self, self.call_id)
+        live.on("openai_server_event_received", self.backend.record)
+        return live

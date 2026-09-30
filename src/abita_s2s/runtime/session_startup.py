@@ -26,6 +26,7 @@ from abita_s2s.offices import (
 )
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
 from abita_s2s.runtime.reporting import CallReporter
+from abita_s2s.runtime.silence import check_in_on_silence
 from abita_s2s.scheduling import Scheduling
 from abita_s2s.integrations.scheduling_http import SchedulingHTTP
 from abita_s2s.staff_tasks import StaffTasks
@@ -250,9 +251,10 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         else:
             logger.error("Product call reporting unavailable: caller phone missing")
     try:
+        model = create_model(config, call_id=call.call_id)
         session = AgentSession[CallState](
             userdata=state,
-            llm=create_model(config, call_id=call.call_id),
+            llm=model,
             vad=None,
             turn_handling={"turn_detection": "realtime_llm"},
         )
@@ -267,6 +269,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         session.on(
             "close", lambda event: logger.info("session_closed reason=%s", event.reason)
         )
+        check_in_on_silence(session, model.backend)
         resolver = PatientResolver(state, PatientMiddleware(client, config))
         if not ctx.is_fake_job() and simulation is None:
             sip_api = api.LiveKitAPI(failover=False)
