@@ -28,9 +28,11 @@ class CallControl:
         *,
         handoff: HandoffConfig | None = None,
         sandbox: bool = False,
+        simulation: bool = False,
     ):
         self.state = state
         self.sandbox = sandbox
+        self.simulation = simulation
         self.admission = HandoffAdmission(state, client, handoff)
         self.room = room
         self.sip = sip
@@ -164,7 +166,7 @@ class CallControl:
             return "blocked: Transfer may be in progress. Do not hang up."
         if self.ending:
             return "pending: Call completion is already in progress."
-        if not self._active():
+        if not self.simulation and not self._active():
             return "unavailable: No active SIP call to end. The session remains open."
         hold()
         self.ending = True

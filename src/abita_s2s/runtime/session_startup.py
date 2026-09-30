@@ -280,6 +280,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             sip_api.sip if sip_api else None,
             handoff=config.handoff,
             sandbox=config.deployment is not None,
+            simulation=simulation is not None,
         )
 
         resolver.start_phone_lookup()

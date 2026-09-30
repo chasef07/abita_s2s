@@ -298,6 +298,24 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.sip.transfer_sip_participant.assert_not_awaited()
         self.assertEqual(self.events, [])
 
+    async def test_simulation_ends_without_a_sip_caller(self):
+        del self.room.remote_participants["caller"]
+        self.control.simulation = True
+        self.assertEqual(
+            (await self.run_tool("transfer_call")).split(":", 1)[0], "unavailable"
+        )
+        job = SimpleNamespace(shutdown=Mock(), add_shutdown_callback=Mock())
+        closed = asyncio.Event()
+        self.session.on("close", lambda event: closed.set())
+        with patch(
+            "livekit.agents.beta.tools.end_call.get_job_context", return_value=job
+        ):
+            await asyncio.wait_for(self.session.run(user_input="end_call"), 4)
+            await asyncio.wait_for(closed.wait(), 4)
+        self.assertEqual(self.model.outputs[-1], "Say a brief goodbye to the caller.")
+        self.assertTrue(self.control.ending)
+        self.sip.transfer_sip_participant.assert_not_awaited()
+
     async def test_disconnect_during_announcement_prevents_refer(self):
         async def playout():
             self.room.remote_participants.clear()
