@@ -11,7 +11,6 @@ from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.insurance_state import (
     AcceptedInsurance,
     accepted_insurance,
-    appointment_eligibility,
     insurance_ready,
     registration_insurance,
 )
@@ -20,7 +19,6 @@ from abita_s2s.offices import (
     EASTERN,
     SHARED_SCHEDULING_OFFICES,
     get_office_profile,
-    same_office,
 )
 from abita_s2s.results import reply
 from abita_s2s.integrations.scheduling_http import (
@@ -631,7 +629,6 @@ class Scheduling:
             if p.patientId in self.state.insurance.registrations
             else "established"
         )
-        eligibility = appointment_eligibility(self.state, p.patientId, offered.visit)
         decision = registration_insurance(self.state, offered.visit)
         body = {
             "patientId": p.patientId,
@@ -700,7 +697,6 @@ class Scheduling:
             self._report(
                 p,
                 booking=result,
-                eligibility=eligibility,
                 booking_outcome=outcome["outcome"],
                 slot=slot,
                 call_id=call_id,
@@ -760,7 +756,6 @@ class Scheduling:
             self._report(
                 p,
                 booking=result,
-                eligibility=eligibility,
                 booking_outcome="partial_booking" if note else "booked",
                 cancellation_outcome="cancelled" if cancelled else "uncertain",
                 old=old,
@@ -832,7 +827,6 @@ class Scheduling:
         call_id,
         booking=None,
         booking_outcome=None,
-        eligibility=None,
         cancellation_outcome="not_attempted",
         old=None,
         slot=None,
@@ -860,15 +854,6 @@ class Scheduling:
                     officeId=booking.officeId,
                     visitType=booking.visitType,
                 )
-                if (
-                    eligibility is not None
-                    and booking.profileId is not None
-                    and booking.profileId == str(slot.profileId)
-                    and booking.officeId is not None
-                    and same_office(booking.officeId, eligibility.office)
-                    and booking.visitType == eligibility.request.coverageType
-                ):
-                    evidence["bookingResult"]["eligibilityCheckId"] = eligibility.id
         if old:
             evidence["oldAppointmentId"] = str(old.id)
             evidence["cancellationResult"] = {"status": cancellation_outcome}
