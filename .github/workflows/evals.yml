@@ -1,0 +1,88 @@
+name: Prompt scenario evals
+on:
+  pull_request:
+    paths:
+      - src/abita_s2s/prompts/speaker.md
+      - src/abita_s2s/prompts/thinker.md
+  push:
+    branches: [main]
+    paths:
+      - src/abita_s2s/prompts/speaker.md
+      - src/abita_s2s/prompts/thinker.md
+permissions:
+  contents: read
+# All suites share sandbox fixtures; let an active run finish before starting another.
+concurrency:
+  group: abita-s2s-scenario-evals
+  cancel-in-progress: false
+jobs:
+  simulate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      LIVEKIT_URL: ${{ secrets.LIVEKIT_URL }}
+      LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
+      LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      SANDBOX_AMD_API_URL: ${{ secrets.SANDBOX_AMD_API_URL }}
+      SANDBOX_AMD_API_TOKEN: ${{ secrets.SANDBOX_AMD_API_TOKEN }}
+      ACUITY_PRODUCT_KNOWLEDGE_URL: ${{ secrets.ACUITY_PRODUCT_KNOWLEDGE_URL }}
+      ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET: ${{ secrets.ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET }}
+    steps:
+      - name: Require evaluation credentials
+        shell: bash
+        run: |
+          missing=0
+          for key in LIVEKIT_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET OPENAI_API_KEY SANDBOX_AMD_API_URL SANDBOX_AMD_API_TOKEN ACUITY_PRODUCT_KNOWLEDGE_URL ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET; do
+            if [[ -z "${!key}" ]]; then
+              echo "::error::Missing evaluation secret: $key"
+              missing=1
+            fi
+          done
+          exit "$missing"
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.12.15'
+          python-version: '3.13.15'
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Install pinned LiveKit CLI
+        shell: bash
+        run: |
+          curl -fsSLO https://github.com/livekit/livekit-cli/releases/download/v2.18.8/lk_2.18.8_linux_amd64.tar.gz
+          curl -fsSLO https://github.com/livekit/livekit-cli/releases/download/v2.18.8/checksums.txt
+          sha256sum --check --ignore-missing --strict checksums.txt
+          tar -xzf lk_2.18.8_linux_amd64.tar.gz lk
+          sudo install lk /usr/local/bin/lk
+      - name: Run every scenario suite against the checkout
+        id: simulations
+        shell: bash
+        run: |
+          suites=()
+          while IFS= read -r -d '' scenarios; do
+            suites+=("$scenarios")
+          done < <(find evals/scenarios -type f \( -name '*.yaml' -o -name '*.yml' \) -print0)
+          if [[ ${#suites[@]} -eq 0 ]]; then
+            echo "::error::No scenario suites found"
+            exit 1
+          fi
+          failed=0
+          for scenarios in "${suites[@]}"; do
+            log="eval-results/${scenarios#evals/scenarios/}.log"
+            mkdir -p "$(dirname "$log")"
+            echo "::group::$scenarios"
+            if ! lk agent simulate audio --scenarios "$scenarios" --concurrency 1 src/abita_s2s/main.py 2>&1 | tee "$log"; then
+              echo "::error::Scenario suite failed: $scenarios"
+              failed=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$failed"
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && steps.simulations.outcome != 'skipped' }}
+        with:
+          name: scenario-eval-logs-${{ github.run_id }}
+          path: eval-results/
+          if-no-files-found: error
+          retention-days: 7
