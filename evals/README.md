@@ -49,6 +49,29 @@ simulation evidence; actual SIP behavior and provider writes require their own
 observed records. A spoken success claim or a passing text simulation is not
 provider confirmation.
 
+## Prompt-change CI
+
+[Prompt scenario evals](../.github/workflows/evals.yml) runs only when a pull
+request or a push to `main` changes `prompts/speaker.md` or `prompts/thinker.md`
+under `src/abita_s2s/`. It runs every YAML suite under `evals/scenarios/` in audio
+mode against a local worker launched from the checkout. Tool-only, scenario-only,
+and documentation-only changes do not trigger it.
+
+Repository secrets must supply `LIVEKIT_URL`, `LIVEKIT_API_KEY`,
+`LIVEKIT_API_SECRET`, `OPENAI_API_KEY`, `SANDBOX_AMD_API_URL`,
+`SANDBOX_AMD_API_TOKEN`, `ACUITY_PRODUCT_KNOWLEDGE_URL`, and
+`ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET`. Missing secrets fail before any
+simulation starts. Fork pull requests do not receive repository secrets.
+
+Runs and suites execute serially with simulation concurrency set to one. Every
+suite is attempted even after a failure, and any failed suite fails the job.
+Logs are saved as a seven-day Actions artifact. The scenario prerequisites above
+still apply: CI does not seed fixture state or freeze the clock. The weekend-only
+case in `office_hours.yaml` requires a weekend, and `slot_identity.yaml` requires
+its stated dates. Those cases remain in the full suite and can fail outside their
+required conditions. Do not configure this path-filtered workflow as a required
+merge check; GitHub leaves its check pending on PRs without prompt changes.
+
 ## Releases and offline checks
 
 Release discovery includes `.yaml` and `.yml` files recursively under `evals/`.
