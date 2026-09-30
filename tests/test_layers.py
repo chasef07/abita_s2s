@@ -11,7 +11,6 @@ TYPE_CHECKING = ("TYPE_CHECKING", "typing.TYPE_CHECKING")
 LAYERS = {
     "foundation": (
         "config",
-        "eligibility_contract",
         "insurance_contract",
         "insurance_state",
         "name_matcher",
