@@ -1,0 +1,44 @@
+name: Run scenario suite
+description: Run one scenario YAML in audio mode against a worker launched from the checkout.
+inputs:
+  suite:
+    description: Scenario YAML path under evals/scenarios.
+    required: true
+  name:
+    description: Artifact-safe suite name.
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@v6
+      with:
+        version: '0.12.15'
+        python-version: '3.13.15'
+        enable-cache: true
+    - run: uv sync --locked
+      shell: bash
+    - name: Install pinned LiveKit CLI
+      shell: bash
+      run: |
+        curl -fsSLO https://github.com/livekit/livekit-cli/releases/download/v2.18.8/lk_2.18.8_linux_amd64.tar.gz
+        curl -fsSLO https://github.com/livekit/livekit-cli/releases/download/v2.18.8/checksums.txt
+        sha256sum --check --ignore-missing --strict checksums.txt
+        tar -xzf lk_2.18.8_linux_amd64.tar.gz lk
+        sudo install lk /usr/local/bin/lk
+    - name: Run ${{ inputs.suite }}
+      id: simulation
+      shell: bash
+      env:
+        SUITE: ${{ inputs.suite }}
+        NAME: ${{ inputs.name }}
+      run: |
+        mkdir -p eval-results
+        set -o pipefail
+        lk agent simulate audio --scenarios "$SUITE" --concurrency 1 src/abita_s2s/main.py 2>&1 | tee "eval-results/$NAME.log"
+    - uses: actions/upload-artifact@v4
+      if: ${{ always() && steps.simulation.outcome != 'skipped' }}
+      with:
+        name: scenario-eval-${{ inputs.name }}-${{ github.run_id }}
+        path: eval-results/
+        if-no-files-found: error
+        retention-days: 7
