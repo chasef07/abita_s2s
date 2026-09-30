@@ -2,19 +2,44 @@
 
 from livekit.agents import AgentSession, UserStateChangedEvent
 
-from abita_s2s.runtime.observability import ObservedGPTLiveModel
-
 CHECK_IN = (
     "The caller has been silent. If they asked for time, briefly say you are "
     "still here. Otherwise ask whether they are still there or need anything else."
 )
+FINISHED = frozenset(
+    {
+        "response.completed",
+        "response.failed",
+        "response.incomplete",
+        "response.cancelled",
+    }
+)
 
 
-def check_in_on_silence(session: AgentSession, model: ObservedGPTLiveModel) -> None:
+class BackendResponses:
+    """Delegated backend responses the voice model is still waiting on."""
+
+    def __init__(self) -> None:
+        self.running: set[str | None] = set()
+
+    def record(self, event: dict) -> None:
+        kind = event.get("type")
+        if kind == "session.started":
+            self.running.clear()
+        if kind != "response.event":
+            return
+        inner = event.get("event", {}).get("type")
+        if inner == "response.created":
+            self.running.add(event.get("delegation_id"))
+        elif inner in FINISHED:
+            self.running.discard(event.get("delegation_id"))
+
+
+def check_in_on_silence(session: AgentSession, backend: BackendResponses) -> None:
     def on_user_state(event: UserStateChangedEvent) -> None:
         if event.new_state != "away":
             return
-        if model.backend_busy:
+        if backend.running:
             session.reset_away_timer()
             return
         session.generate_reply(instructions=CHECK_IN)
