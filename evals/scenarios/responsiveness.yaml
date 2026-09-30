@@ -14,8 +14,9 @@ scenarios:
       If lookup fails or staff help is offered, decline further help and say
       goodbye. Do not approve registration or any write.
     agent_expectations: >
-      Looks up the chart with the caller's first name and date of birth without
-      asking for anything else. Says truthfully that no chart was found.
+      Looks up the chart with the caller's first name and date of birth. Says
+      truthfully that no chart was found; asking the caller to confirm the spelling
+      or date of birth is fine.
     userdata:
       office: spring-hill
 
