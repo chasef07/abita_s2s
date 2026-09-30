@@ -14,7 +14,6 @@ from abita_s2s.observability.evaluation import evaluate_call
 from abita_s2s.config import Config
 from abita_s2s.offices import get_office_profile, get_product_office_key
 from abita_s2s.state import CallContext
-from abita_s2s.insurance_state import InsuranceState
 
 logger = logging.getLogger(__name__)
 AGENT_VERSION = version("abita-s2s")
@@ -31,8 +30,6 @@ class CallReporter:
         client: httpx.AsyncClient,
         config: Config,
         drain: Callable[[], Awaitable[None]],
-        *,
-        insurance: InsuranceState | None = None,
     ):
         self._client = client
         self._url = config.interaction_url
@@ -40,7 +37,6 @@ class CallReporter:
         self._gateway_key = config.ai_gateway_key
         self._drain = drain
         self._started_at = call.session_started_at
-        self._insurance = insurance
         office = get_office_profile(call.called_office_key)
         office_phone = call.called_number or office.trunk_numbers[0]
         self._base = {
@@ -217,21 +213,6 @@ class CallReporter:
                     "domainOutcomes": deepcopy(self._facts),
                 },
             }
-            if self._insurance is not None:
-                payload["closeoutPayload"]["eligibilityChecks"] = [
-                    {
-                        "id": check.id,
-                        "externalPatientId": check.patient_id,
-                        "office": check.office,
-                        "request": check.request.model_dump(mode="json"),
-                        "status": check.status,
-                        "result": check.result.model_dump(mode="json")
-                        if check.result
-                        else None,
-                        "failureReason": check.failure_reason,
-                    }
-                    for check in self._insurance.eligibility_checks
-                ]
             if report is not None:
                 payload["transcript"] = report
                 payload["closeoutPayload"]["evaluation"] = await evaluate_call(
