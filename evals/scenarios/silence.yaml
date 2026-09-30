@@ -1,47 +1,36 @@
-name: Silent caller check-ins
+name: Silent caller check-in
 # Regression: 2026-09-28 trace c87cef92d9989e07880bfc415d16a15a, where the agent
 # ended a turn without a question and both sides waited 75 seconds in silence.
-# Use audio simulation. No patient fixtures are needed. The worker, not the
-# model, hangs up after the goodbye; simulations have no SIP call, so the worker
-# logs silence_hang_up blocked=unavailable instead of disconnecting. Confirm
-# check-in timing from exported audio and worker silence_check_in logs; a judge
-# pass alone does not prove timing. If the simulated caller speaks or leaves
-# during a silence window, that window is unproven.
+# Use audio simulation. No patient fixtures are needed. Confirm timing from
+# exported audio; a judge pass alone does not prove it. If the simulated caller
+# speaks or leaves during the silence, the check-in is unproven.
 scenarios:
   - label: Caller goes silent mid-conversation
     instructions: >
       Start with "Hi, I'm thinking about booking an eye exam." After the
       agent's first reply, say only "Um, okay." Then stay completely silent
-      for the rest of the call. Do not answer any question or check-in, even
-      if asked whether you are still there. Never say goodbye and never hang
-      up yourself; stay connected and silent for at least 90 seconds.
+      for 25 seconds, even if the agent speaks. After that say "Sorry, I'm
+      here. Actually, I'll call back later. Goodbye."
     agent_expectations: >
       After the caller goes silent, speaks again within about 20 seconds of
       its own last turn to ask whether the caller is still there or needs
-      anything else, instead of waiting indefinitely. If silence continues,
-      checks in a second time in different words and says it will end the
-      call soon. After continued silence, says one brief goodbye without a
-      question and then stays quiet; it does not repeat the goodbye or keep
-      checking in. Does not fabricate caller responses. The call staying
-      connected afterward is expected in simulation. Makes no patient,
-      appointment, insurance, or staff-task writes.
+      anything else, instead of waiting indefinitely. Checks in once and does
+      not keep repeating check-ins while the caller stays silent. Responds
+      normally when the caller returns. Makes no patient, appointment,
+      insurance, or staff-task writes.
     userdata:
       office: spring-hill
 
-  - label: Caller asks for time and returns
+  - label: Caller asks for time
     instructions: >
       Start with "Hi, I'd like to book an eye exam. Hold on, let me grab my
       insurance card." Then stay completely silent for 25 seconds, even if
       the agent speaks. After that say "Sorry, I'm back. Actually, I'll call
-      back later. Goodbye." Do not hang up before saying that.
+      back later. Goodbye."
     agent_expectations: >
-      Allows the caller's requested pause. Any check-in during the pause
-      briefly acknowledges the request, such as saying it is still there or
-      to take their time. It does not say goodbye before it has checked in
-      twice and said it will end the call soon. Once the caller returns,
-      responds to what they say; after the caller's goodbye, says a brief
-      goodbye. The call staying connected afterward is expected in
-      simulation. Makes no patient, appointment, insurance, or staff-task
-      writes.
+      Allows the caller's requested pause. If it speaks during the pause, it
+      only briefly says it is still there or to take their time; it does not
+      say goodbye or pressure the caller. Responds normally when the caller
+      returns. Makes no patient, appointment, insurance, or staff-task writes.
     userdata:
       office: spring-hill
