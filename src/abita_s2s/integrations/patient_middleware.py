@@ -8,7 +8,6 @@ from pydantic import Field, TypeAdapter, ValidationError
 
 from abita_s2s.insurance_contract import CoverageType, InsuranceDecision
 from abita_s2s.integrations.middleware import Middleware
-from abita_s2s.offices import office_phone
 from abita_s2s.records import Record, Text
 
 
@@ -77,7 +76,6 @@ class PatientMiddleware(Middleware):
     DEADLINE = 10
 
     async def resolve(self, office_key: str, identity: dict[str, str]) -> Result:
-        office = office_phone(office_key)
         if not self._configured:
             return Failure(reason="not_configured")
         try:
@@ -85,7 +83,7 @@ class PatientMiddleware(Middleware):
                 for attempt in range(2):
                     try:
                         response = await self._send(
-                            "/api/patient/resolve", {**identity, "office": office}
+                            "/api/patient/resolve", {**identity, "office": office_key}
                         )
                     except httpx.TransportError:
                         if attempt == 0:
