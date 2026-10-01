@@ -3,8 +3,11 @@
 import hashlib
 import json
 import re
+from functools import cache
 from importlib.metadata import version
 from pathlib import Path
+
+from abita_s2s.observability.evaluation import EVALUATOR_VERSION
 
 PACKAGE = Path(__file__).parent
 
@@ -48,6 +51,20 @@ def identity() -> dict:
             if checksums(installed, files) != files:
                 raise ValueError("Installed component content mismatch")
     return data
+
+
+@cache
+def call_versions() -> dict[str, str]:
+    """Versions that shape every call, read once from the verified installed release."""
+    release = identity()
+    return {
+        "agent": release["agent_version"],
+        "gitCommit": release["git_commit"],
+        "prompts": release.get("prompts_version", "development"),
+        "tools": release.get("tools_version", "development"),
+        "judges": release.get("observability_version", "development"),
+        "evaluator": EVALUATOR_VERSION,
+    }
 
 
 def smoke() -> None:
