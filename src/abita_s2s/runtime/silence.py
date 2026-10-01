@@ -3,8 +3,10 @@
 from livekit.agents import AgentSession, UserStateChangedEvent
 
 CHECK_IN = (
-    "The caller has been silent. If they asked for time, briefly say you are "
-    "still here. Otherwise ask whether they are still there or need anything else."
+    "The caller has been silent and no backend work is running. If the caller "
+    "gave information or a request you have not delegated yet, delegate it now. "
+    "Otherwise, if they asked for time, briefly say you are still here; if not, "
+    "ask whether they are still there or need anything else."
 )
 FINISHED = frozenset(
     {

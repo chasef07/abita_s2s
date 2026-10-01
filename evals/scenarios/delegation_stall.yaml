@@ -1,0 +1,113 @@
+name: Delegation follows a promise to check
+# Use audio simulation. No patient fixtures or successful backend results are needed.
+# Each caller answers and then waits without prompting. Score the exported tool
+# calls: once the agent has what it asked for, or says it will check something,
+# a tool call must follow before the caller speaks again. A promise to check
+# followed by "still here" or by the agent going silent, with no tool call, is a stall.
+scenarios:
+  - label: Spanish caller spells a name for chart lookup
+    instructions: >
+      Speak only Spanish. As soon as the agent greets you, say "Hola, soy
+      paciente de ustedes. ¿Me puede buscar mi expediente?" When asked for your
+      name, say "Lucía, se escribe L-U-C-I-A." When asked for your date of
+      birth, say "El dieciséis de abril de mil novecientos noventa y dos." After
+      each answer, wait for the agent without prompting it. If the agent only
+      says it is still there or still checking, reply only "Está bien." If the
+      chart is not found or staff help is offered, decline further help and say
+      goodbye. Do not approve registration or any write.
+    agent_expectations: >
+      Looks up the chart as soon as the caller gives the name and date of birth,
+      without the caller having to speak again. Says truthfully whether a chart
+      was found.
+    userdata:
+      office: spring-hill
+
+  - label: Spanish caller asks whether a plan is accepted
+    instructions: >
+      Speak only Spanish. As soon as the agent greets you, say "Hola, quería
+      saber si ustedes aceptan mi seguro. Tengo Ambetter de Sunshine Health."
+      If asked what the visit is for, say "Para un examen médico de los ojos,
+      tengo los ojos irritados." If asked for more plan details or the name on
+      the card, say "Es Ambetter Balanced Care, por el mercado." After each
+      answer, wait for the agent without prompting it. If the agent only says
+      it is still there or still checking, reply only "Está bien." Once you
+      have an answer, thank the agent, decline further help, and say goodbye.
+      Do not register or approve any write.
+    agent_expectations: >
+      Checks whether the plan is accepted as soon as it has the plan and visit
+      type, and again after the caller gives the plan name from the card,
+      without the caller having to speak again. Answers only from the check's
+      result.
+    userdata:
+      office: spring-hill
+
+  - label: Spanish caller asks staff to follow up on exam results
+    instructions: >
+      Speak only Spanish. As soon as the agent greets you, say "Hola, llamo por
+      los resultados de unos exámenes que me hicieron la semana pasada. ¿Me
+      pueden decir algo?" Your first name is Lucía and your date of birth is
+      April 16, 1992; give them only when asked. If offered a message to staff
+      or a callback, say "Sí, por favor, que me llamen." After each answer, wait
+      for the agent without prompting it. If the agent only says it is still
+      there or still checking, reply only "Está bien." If told it cannot be
+      done, acknowledge it, decline further help, and say goodbye. Do not
+      request a transfer.
+    agent_expectations: >
+      Starts the backend work for the request (patient lookup or staff message)
+      right after the caller gives what it asked for, without the caller having
+      to speak again. Does not invent results.
+    userdata:
+      office: spring-hill
+
+  - label: English caller gives the exact plan name after being asked
+    instructions: >
+      As soon as the agent greets you, say "Hi, do you take Ambetter? I want to
+      come in for an eye exam because my eyes have been blurry." If asked which
+      plan or what is on your card, say "Sorry, it says Ambetter Balanced Care,
+      from the marketplace." If asked anything else about the plan, say "That's
+      all it says on the card." After each answer, wait for the agent without
+      prompting it. If the agent only says it is still there or still checking,
+      reply only "Okay." Once you have an answer, thank the agent, decline
+      further help, and say goodbye. Do not register or approve any write.
+    agent_expectations: >
+      Checks the plan, and the exact plan name once the caller gives it,
+      without the caller having to speak again. Answers only from the check's
+      result.
+    userdata:
+      office: spring-hill
+
+  - label: Spanish caller asks when their appointment is
+    instructions: >
+      Speak only Spanish. As soon as the agent greets you, say "Hola, tengo una
+      cita pronto pero no me acuerdo qué día es. ¿Me puede revisar?" If asked
+      for your name, say only "Lucía." If asked for your date of birth, say "El
+      dieciséis de abril de mil novecientos noventa y dos." If asked to spell
+      your name, say "L-U-C-I-A." After each answer, wait for the agent without
+      prompting it. If the agent only says it is still there or still checking,
+      reply only "Está bien." If the chart is not found or staff help is
+      offered, decline further help and say goodbye. Do not approve
+      registration or any write.
+    agent_expectations: >
+      Looks up the chart after each name or date of birth the caller gives,
+      without the caller having to speak again. Says truthfully whether a chart
+      was found.
+    userdata:
+      office: spring-hill
+
+  - label: Caller tells the agent to go ahead and check, then waits
+    instructions: >
+      As soon as the agent greets you, say "Hi, I'm an existing patient. I
+      think I have an appointment coming up but I forgot the day." If asked for
+      your name, say "Lana." If asked for your date of birth, say "April
+      sixteenth, 1992." Whenever the agent offers to check or says it will look
+      something up, say "Okay, go ahead and check." After each answer, wait for
+      the agent without prompting it. If the agent only says it is still there
+      or still checking, reply only "Okay." If the chart is not found or staff
+      help is offered, decline further help and say goodbye. Do not approve
+      registration or any write.
+    agent_expectations: >
+      Looks up the chart as soon as it has the name and date of birth, without
+      the caller having to speak again. Says truthfully whether a chart was
+      found.
+    userdata:
+      office: spring-hill
