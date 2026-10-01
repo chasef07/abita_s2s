@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/chasef07/abita_s2s/compare/v0.11.0...v0.11.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* **prompts:** delegate caller answers instead of stalling ([#120](https://github.com/chasef07/abita_s2s/issues/120)) ([df0e9fa](https://github.com/chasef07/abita_s2s/commit/df0e9fae83c0b39e252acda2792eac111bfde320))
+
 ## [0.11.0](https://github.com/chasef07/abita_s2s/compare/v0.10.2...v0.11.0) (2026-10-01)
 
 
