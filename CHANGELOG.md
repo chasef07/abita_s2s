@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0](https://github.com/chasef07/abita_s2s/compare/v0.10.2...v0.11.0) (2026-10-01)
+
+
+### Features
+
+* check in on silent callers ([#114](https://github.com/chasef07/abita_s2s/issues/114)) ([80e202a](https://github.com/chasef07/abita_s2s/commit/80e202ae50d53ea0aa9cf09c966a191a27ea0099))
+
+
+### Bug Fixes
+
+* **simulation:** working sandbox evals and simpler expectations ([#117](https://github.com/chasef07/abita_s2s/issues/117)) ([7c6b1e9](https://github.com/chasef07/abita_s2s/commit/7c6b1e91d1cdd5f117a31cad1fa0a85e174564d9))
+
 ## [0.10.2](https://github.com/chasef07/abita_s2s/compare/v0.10.1...v0.10.2) (2026-09-30)
 
 
