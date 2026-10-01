@@ -9,10 +9,10 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "httpx>=0.28.1,<1",
-    "livekit-agents[openai]>=1.8.3,<2",
+    "livekit-agents[openai]>=1.8.4,<2",
     "metaphone>=0.6,<1",
     "pydantic>=2.13.5,<3",
-    "python-dotenv>=1.2.3",
+    "python-dotenv>=1.2.4",
     "rapidfuzz>=3,<4",
 ]
 
@@ -20,12 +20,12 @@ dependencies = [
 abita-s2s = "abita_s2s.main:main"
 
 [build-system]
-requires = ["uv_build==0.12.18"]
+requires = ["uv_build==0.12.19"]
 build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "ruff==0.16.8",
+    "ruff==0.16.10",
 ]
 
 [tool.ruff.lint]
