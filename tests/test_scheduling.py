@@ -236,7 +236,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             requests[0][1],
             {
-                "office": "+19542872010",
+                "office": "hollywood",
                 "patientId": "chart-jane",
                 "coverageType": "medical",
                 "startDate": "2026-09-15",

@@ -252,7 +252,7 @@ class Scheduling:
         else:
             p = self.state.patient.active
             body = {
-                "office": get_office_profile(selected).trunk_numbers[0],
+                "office": selected,
                 "startDate": first.isoformat(),
                 "rangeDays": 14,
                 "patientId": p.patientId,

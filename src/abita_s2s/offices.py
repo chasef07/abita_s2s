@@ -74,10 +74,6 @@ def get_office_profile(key: str) -> OfficeProfile:
     raise ValueError("Unsupported office key")
 
 
-def office_phone(key: str) -> str:
-    return get_office_profile(key).trunk_numbers[0]
-
-
 def same_office(office_id: str, key: str) -> bool:
     return office_id.replace("_", "-") == key
 

@@ -8,7 +8,7 @@ insurance, appointments, or availability.
 | --- | --- |
 | [scenarios.yaml](scenarios/scenarios.yaml) | New-patient intake and existing-patient identity resolution. |
 | [availability.yaml](scenarios/availability.yaml) | Existing-patient availability searches. |
-| [appointments.yaml](scenarios/appointments.yaml) | Booking, rescheduling, and cancellation. |
+| [appointments.yaml](scenarios/appointments.yaml) | Booking, rescheduling, and cancelling one visit in a single call. |
 | [knowledge.yaml](scenarios/knowledge.yaml) | Office and provider knowledge from Product. |
 | [slot_identity.yaml](scenarios/slot_identity.yaml) | Selecting the confirmed date when adjacent dates share a provider and time. |
 | [ai_disclosure.yaml](scenarios/ai_disclosure.yaml) | Saying it is an AI assistant when a caller asks, in English and Spanish. |
@@ -20,10 +20,9 @@ and sandbox patient middleware. The worker's simulation path disables Product
 writes and live SIP transfer setup; configured office knowledge reads remain
 available. Configuration is documented in [.env.example](../.env.example).
 
-Read the prerequisite comments in each YAML. Appointment scenarios share a chart;
-suite order is not guaranteed, even with concurrency set to one. Run isolated
-scenarios against known fixture state when writes depend on previous results.
-The slot-identity regression requires specific October 2026 slots and a call date
+Read the prerequisite comments in each YAML. The appointment scenario books,
+reschedules, and cancels the same visit in one call so the shared chart ends where
+it started. The slot-identity regression requires specific October 2026 slots and a call date
 before October 13, 2026. Its userdata neither creates those slots nor sets the clock.
 Missing fixtures or failed middleware leave the scenario unproven.
 

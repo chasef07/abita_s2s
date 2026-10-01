@@ -149,7 +149,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await r.resolve(None, "01/02/1980"))["outcome"], "verified")
         self.assertEqual(
             calls[0],
-            {"firstName": "Jane", "dob": "01/02/1980", "office": "+17275919997"},
+            {"firstName": "Jane", "dob": "01/02/1980", "office": "spring-hill"},
         )
         self.assertEqual(len(calls), 1)
 

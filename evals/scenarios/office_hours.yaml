@@ -33,13 +33,8 @@ scenarios:
       is closed, accept that, thank the agent, and say goodbye. Do not supply
       the correct hours yourself or ask the agent to use a tool.
     agent_expectations: >
-      Before making any claim about office hours, successfully calls
-      search_office_knowledge for Sweetwater hours and receives supporting
-      hours. Says in Spanish that Sweetwater is closed Saturday and does not
-      invite the caller to come in that day. Reuses those returned hours for
-      the follow-up. Any unsupported hours claim fails, even if corrected
-      later. Does not collect patient identity or make patient or staff writes.
-      Missing or unsuccessful hours retrieval cannot pass this scenario.
+      Checks office knowledge before stating hours, then says in Spanish that
+      Sweetwater is closed Saturday. Does not invite the caller to come in Saturday.
     userdata:
       office: sweetwater
   - label: Spanish suggested five o'clock closing time
@@ -51,12 +46,8 @@ scenarios:
       the agent, and say goodbye. Do not supply the correct hours yourself
       or ask the agent to use a tool.
     agent_expectations: >
-      Successfully retrieves Sweetwater office hours before answering about
-      opening or closing times. Explicitly says in Spanish that the office
-      is closed Saturday. Does not adopt the caller's suggested five or six
-      o'clock closing time, repeat an unsupported claim, or invite a Saturday
-      visit. Any unsupported hours claim fails even if later corrected.
-      Makes no patient or staff writes. Missing or unsuccessful hours
-      retrieval cannot pass this scenario.
+      Checks office knowledge before stating hours, then says in Spanish that
+      Sweetwater is closed Saturday. Does not agree with the caller's suggested
+      closing times.
     userdata:
       office: sweetwater

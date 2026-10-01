@@ -35,11 +35,7 @@ class PatientMiddlewareTests(unittest.IsolatedAsyncioTestCase):
                     str(request.url), "https://middleware.test/api/patient/resolve"
                 )
                 self.assertEqual(request.headers["authorization"], "test-auth")
-                self.assertEqual(
-                    json.loads(request.content)["office"], office.trunk_numbers[0]
-                )
-            with self.assertRaises(ValueError):
-                await middleware.resolve("unknown", {})
+                self.assertEqual(json.loads(request.content)["office"], office.key)
             self.assertEqual(len(requests), len(OFFICES))
 
     async def test_only_eligible_failures_retry_once(self):

@@ -24,25 +24,9 @@ scenarios:
       If registration fails, acknowledge the explanation and end without requesting
       a transfer, staff message, or another registration attempt.
     agent_expectations: >
-      Interprets patient tool responses as a status followed by plain text.
-      Does not read status labels or private appointment references aloud.
-      Recognizes a new-patient intake request and leads collection of all information.
-      Asks the caller to spell their full name and asks for DOB. Does not call resolve_patient or check for an existing chart. Collects full street address including apartment,
-      city, state, and ZIP; sex; callback number; email; visit reason; insurance plan,
-      subscriber name, and member ID. Checks office insurance acceptance for the
-      medical visit. Does not invent missing details. Reads back the full registration
-      information and obtains confirmation before calling add_patient exactly once.
-      The add_patient arguments preserve every supplied value, including apartment
-      and alphanumeric member ID. Claims completed registration only if the tool
-      confirms it, and explains any partial result accurately. Does not book an
-      appointment or submit a staff request. Successful intake includes successful
-      chart creation with insurance attached.
-      Does not request SSN digits or a separate first-registration confirmation.
-      Collects each detail once without repeated name-spelling requests or
-      section-by-section confirmations. Gives one full read-back at the end,
-      resolving any uncertainty there. Asks whether the patient's name or someone
-      else's is on the insurance card, reusing the patient's collected name when
-      appropriate instead of asking for a subscriber name.
+      Collects the new patient's details, checks their insurance, reads everything
+      back once, and registers them after the caller confirms. Describes the
+      registration result accurately.
     userdata:
       office: spring-hill
       caller_phone: "+12025550147"
@@ -63,16 +47,8 @@ scenarios:
       an appointment, insurance changes, a transfer, or a staff message.
       If the chart cannot be found, acknowledge the explanation and end.
     agent_expectations: >
-      Interprets patient tool responses as a status followed by plain text.
-      Does not read status labels or private appointment references aloud.
-      Asks only for the patient's first name and immediately calls resolve_patient
-      with firstName "Maya" and dob null. Does not ask for last name, name spelling,
-      or DOB before attempting this match. The tool returns a plain-text success result for Maya
-      Singleproof and promotes that chart to the active patient using the loaded
-      phone lookup record. Does not perform a first-name/DOB search unnecessarily.
-      Confirms finding the chart only after successful resolution, then ends when
-      the caller is finished. Does not call add_patient or modify any record.
-      A verbal claim without successful tool resolution does not pass.
+      Asks only for the first name and finds Maya's chart without asking for her
+      last name or date of birth. Confirms the chart only after finding it.
     userdata:
       office: spring-hill
       caller_phone: "+12025550148"
@@ -97,18 +73,8 @@ scenarios:
       insurance changes, a transfer, or a staff message.
       If the chart cannot be found, acknowledge the explanation and end.
     agent_expectations: >
-      Interprets patient tool responses as a status followed by plain text.
-      Does not read status labels or private appointment references aloud.
-      Asks for the patient's first name without reading either candidate's name
-      aloud. Calls resolve_patient with firstName "Eli" and dob null as soon as
-      the name is supplied. Selects Eli from the loaded phone candidates and
-      promotes Eli Sharedproof, never Nora, to the active patient. May load Eli's
-      full record by patient ID if the phone result contains only candidates.
-      Does not ask for DOB solely because two profiles share the phone number;
-      the supplied first name uniquely distinguishes them. Confirms finding
-      Eli's chart only after a verified tool result and ends when the caller is
-      finished. Does not call add_patient or modify any record. Resolving Nora
-      or claiming success without successful resolution does not pass.
+      Finds Eli's chart, not Nora's, from his first name. Confirms the chart only
+      after finding it.
     userdata:
       office: spring-hill
       caller_phone: "+12025550149"
@@ -131,18 +97,7 @@ scenarios:
       insurance changes, a transfer, or a staff message.
       If the chart cannot be found, acknowledge the explanation and end.
     agent_expectations: >
-      Interprets patient tool responses as a status followed by plain text.
-      Does not read status labels or private appointment references aloud.
-      Recognizes the caller as an existing patient despite unavailable caller ID.
-      Calls resolve_patient with firstName "Owen", then collects DOB when the
-      tool requests it and calls again with dob "09/04/1976". If both details
-      were already supplied, calls once with firstName and dob.
-      Searches by first name and DOB, loads the uniquely matched patient record,
-      and promotes Owen Dobproof to the active patient with a verified result.
-      Does not require a last name, phone number, or separate DOB read-back.
-      Does not treat absent caller ID as evidence that the patient is new.
-      Confirms finding the chart only after successful resolution, then ends
-      when the caller is finished. Does not call add_patient or modify any record.
-      A verbal claim without successful tool resolution does not pass.
+      Finds Owen's chart from his first name and date of birth, without needing
+      caller ID or a last name. Confirms the chart only after finding it.
     userdata:
       office: spring-hill

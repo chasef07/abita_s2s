@@ -7,7 +7,7 @@ import httpx
 
 from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.integrations.middleware import Middleware
-from abita_s2s.offices import office_phone, same_office
+from abita_s2s.offices import same_office
 from abita_s2s.records import Record, Text
 
 
@@ -43,7 +43,7 @@ class RegistrationMiddleware(Middleware):
                 response = await self._send(
                     "/api/insurance/decision",
                     {
-                        "office": office_phone(office),
+                        "office": office,
                         "plan": plan,
                         "coverageType": coverage,
                         "dob": dob,
@@ -75,9 +75,7 @@ class RegistrationMiddleware(Middleware):
             return WriteFailure(status="failed", reason="not_configured")
         try:
             async with asyncio.timeout(self._deadline):
-                response = await self._send(
-                    path, {**payload, "office": office_phone(office)}
-                )
+                response = await self._send(path, {**payload, "office": office})
             body = response.json()
             failed = isinstance(body, dict) and body.get("status") == "error"
             reason = failed and (
