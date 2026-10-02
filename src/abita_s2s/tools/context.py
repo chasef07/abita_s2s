@@ -8,11 +8,11 @@ def bound(owner, context: RunContext) -> bool:
     return owner is not None and owner.state is context.userdata
 
 
-async def say_only(context: RunContext, text: str) -> bool:
-    """Speak one fixed sentence after current playout; report whether it completed."""
+async def say_only(context: RunContext, news: str) -> bool:
+    """Tell the caller one short piece of news after current playout; report whether it completed."""
     await context.wait_for_playout()
     speech = context.session.generate_reply(
-        instructions=f"Say only: {text} Use the caller's language.",
+        instructions=f"In one short sentence, tell the caller {news}.",
         tool_choice="none",
     )
     await speech.wait_for_playout()

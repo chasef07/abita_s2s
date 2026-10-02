@@ -15,9 +15,7 @@ from abita_s2s.tools.context import bound, say_only
 
 async def _announce(context: RunContext[CallState], action: str) -> None:
     async with asyncio.timeout(15):
-        spoken = await say_only(
-            context, f"One moment while I {action} your appointment."
-        )
+        spoken = await say_only(context, f"you are {action} their appointment")
     if not spoken:
         raise ToolError("Announcement did not complete. No appointment was changed.")
 
@@ -116,7 +114,7 @@ class SchedulingTools:
         if not bound(self._scheduling, context):
             return UNAVAILABLE
         if readBack is True:
-            await _announce(context, "book")
+            await _announce(context, "booking")
         return await self._scheduling.book(
             slot_ref=appointmentSlotRef,
             reason=appointmentReason,
@@ -170,7 +168,7 @@ class SchedulingTools:
         if not bound(self._scheduling, context):
             return UNAVAILABLE
         if readBack is True:
-            await _announce(context, "reschedule")
+            await _announce(context, "rescheduling")
         return await self._scheduling.reschedule(
             slot_ref=appointmentSlotRef,
             reason=appointmentReason,
