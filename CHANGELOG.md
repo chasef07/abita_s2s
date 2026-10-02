@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.4](https://github.com/chasef07/abita_s2s/compare/v0.11.3...v0.11.4) (2026-10-02)
+
+
+### Bug Fixes
+
+* **knowledge:** search one office topic per short English query ([#130](https://github.com/chasef07/abita_s2s/issues/130)) ([f402811](https://github.com/chasef07/abita_s2s/commit/f402811472e9a0be7481f16a27f06c90b542232e))
+* **voice:** triage medical and routine vision visits in one place ([#128](https://github.com/chasef07/abita_s2s/issues/128)) ([aff5d9a](https://github.com/chasef07/abita_s2s/commit/aff5d9a009b867f08023883e86c304faed572800))
+
 ## [0.11.3](https://github.com/chasef07/abita_s2s/compare/v0.11.2...v0.11.3) (2026-10-02)
 
 
