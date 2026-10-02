@@ -24,7 +24,7 @@ class CallControlTools(EndCallTool):
         """
         return await self._control.transfer(
             ctx.disallow_interruptions,
-            lambda: say_only(ctx, "One moment while I transfer you to the office."),
+            lambda: say_only(ctx, "you are transferring them to the office"),
         )
 
     async def aclose(self) -> None:

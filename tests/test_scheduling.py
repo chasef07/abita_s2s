@@ -1736,7 +1736,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(result.startswith("success:"), result)
                 self.assertEqual(len(requests), 2)
                 context.session.generate_reply.assert_called_once_with(
-                    instructions=f"Say only: One moment while I {action} your appointment. Use the caller's language.",
+                    instructions=f"In one short sentence, tell the caller you are {'rescheduling' if move else 'booking'} their appointment.",
                     tool_choice="none",
                 )
                 speech.wait_for_playout.assert_awaited_once()
