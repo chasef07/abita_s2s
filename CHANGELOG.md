@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.2](https://github.com/chasef07/abita_s2s/compare/v0.11.1...v0.11.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* **evaluation:** remove request-understood judge ([34c99ea](https://github.com/chasef07/abita_s2s/commit/34c99ea7b7152e229996a21c66d3b5deb157f97a))
+* **evaluation:** remove request-understood judge ([7057457](https://github.com/chasef07/abita_s2s/commit/7057457fec6cad0ee5bc9e3181aa70dbf76ec66a))
+
 ## [0.11.1](https://github.com/chasef07/abita_s2s/compare/v0.11.0...v0.11.1) (2026-10-01)
 
 
