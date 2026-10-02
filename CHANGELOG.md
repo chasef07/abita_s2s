@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.3](https://github.com/chasef07/abita_s2s/compare/v0.11.2...v0.11.3) (2026-10-02)
+
+
+### Bug Fixes
+
+* **voice:** delegate silently and announce actions in the call's language ([#126](https://github.com/chasef07/abita_s2s/issues/126)) ([abb29ce](https://github.com/chasef07/abita_s2s/commit/abb29ced3fcb7bb4cbf62229655247e8db44c442))
+
 ## [0.11.2](https://github.com/chasef07/abita_s2s/compare/v0.11.1...v0.11.2) (2026-10-02)
 
 
