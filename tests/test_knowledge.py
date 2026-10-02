@@ -88,6 +88,32 @@ class KnowledgeTests(unittest.IsolatedAsyncioTestCase):
                     "success: Weekdays 8:30 AM–4:30 PM. Closed weekends.",
                 )
 
+    async def test_found_answers_report_their_corpus_revision(self):
+        revisions = []
+        client = httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json=FOUND)
+            )
+        )
+        self.addAsyncCleanup(client.aclose)
+        knowledge = OfficeKnowledge(client, CONFIG, revisions.append)
+        await knowledge.search("spring-hill", "When do you close?")
+        self.assertEqual(revisions, [FOUND["revisionId"]])
+        for outcome in ("no_relevant_information", "temporary_failure"):
+            unanswered = OfficeKnowledge(
+                httpx.AsyncClient(
+                    transport=httpx.MockTransport(
+                        lambda request, outcome=outcome: httpx.Response(
+                            200, json={"outcome": outcome, "passages": []}
+                        )
+                    )
+                ),
+                CONFIG,
+                revisions.append,
+            )
+            await unanswered.search("spring-hill", "Do you offer this service?")
+        self.assertEqual(revisions, [FOUND["revisionId"]])
+
     async def test_no_information_is_distinct_from_unavailability(self):
         for outcome in ("no_relevant_information", "temporary_failure"):
             with self.subTest(outcome=outcome):

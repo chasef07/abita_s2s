@@ -13,6 +13,7 @@ import httpx
 from abita_s2s.observability.evaluation import evaluate_call
 from abita_s2s.config import Config
 from abita_s2s.offices import get_office_profile, get_product_office_key
+from abita_s2s.release import call_versions
 from abita_s2s.state import CallContext
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,13 @@ class CallReporter:
         self._finish_task: asyncio.Task | None = None
         self.started = False
         self.transfer_status = "idle"
+        self.knowledge_revision: str | None = None
+        self._versions = call_versions()
         self._queue({**self._base, "kind": "START", "status": "IN_PROGRESS"})
+
+    def observe_knowledge_revision(self, revision_id: str) -> None:
+        """Keep the latest office knowledge revision this call's searches used."""
+        self.knowledge_revision = revision_id
 
     def record(self, kind: str, evidence: dict, *, call_id: str | None = None) -> None:
         """Retain application receipts alongside native tool executions, using Product's contract."""
@@ -207,6 +214,14 @@ class CallReporter:
                 "endedAt": ended_at.isoformat(),
                 "closeoutPayload": {
                     "agentVersion": AGENT_VERSION,
+                    "versions": {
+                        **self._versions,
+                        **(
+                            {"knowledge": self.knowledge_revision}
+                            if self.knowledge_revision
+                            else {}
+                        ),
+                    },
                     "closeReason": close.get("reason", "startup_or_report_failure"),
                     "mutationDrainFailed": drain_failed,
                     "transferStatus": self.transfer_status,
