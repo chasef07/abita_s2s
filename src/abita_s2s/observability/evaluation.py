@@ -1,4 +1,4 @@
-"""Four evidence-grounded checks and whole-call sentiment via TypeSafe's API."""
+"""Three evidence-grounded checks and whole-call sentiment via TypeSafe's API."""
 
 import asyncio
 import logging
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 EVALUATION_SECONDS = 20
 RETRY_SECONDS = 0.25
 MIN_CALL_SECONDS = 30
-EVALUATOR_VERSION = "typesafe-scorecard-v4"
+EVALUATOR_VERSION = "typesafe-scorecard-v5"
 
 
 def validate_answer(name: str, result: dict) -> None:
