@@ -242,6 +242,8 @@ class InsuranceRegistration:
             subscriberName=r.subscriberName or f"{r.firstName} {r.lastName}",
             subscriberNum="self pay" if self_pay else r.insuranceMemberId,
         )
+        if checked.decision.planId:
+            payload["insurancePlanId"] = checked.decision.planId
         if r.email:
             payload["email"] = r.email
         if checked.decision.coverageType == "routine_vision":
@@ -361,6 +363,8 @@ class InsuranceRegistration:
                 "coverageType": checked.decision.coverageType,
                 "subscriberNum": member_id,
             }
+            if checked.decision.planId:
+                payload["insurancePlanId"] = checked.decision.planId
             result = await self._middleware.update(checked.office_key, payload)
             if isinstance(result, WriteFailure):
                 if result.status == "failed":

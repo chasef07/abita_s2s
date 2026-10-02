@@ -110,6 +110,10 @@ class RegistrationMiddleware(Middleware):
                 not same_office(decision.officeId, office)
                 or decision.coverageType != payload.get("coverageType", "medical")
                 or decision.canonicalPlan != payload["insurance"]
+                or (
+                    "insurancePlanId" in payload
+                    and decision.planId != payload["insurancePlanId"]
+                )
             ):
                 return WriteFailure(
                     status="uncertain", reason="mismatched_insurance_decision"

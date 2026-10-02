@@ -230,6 +230,10 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             )
             body = self.requests[-1][1]
             self.assertEqual(body["subscriberNum"], member)
+            self.assertEqual(body["insurance"], plan)
+            self.assertEqual(
+                body["insurancePlanId"], decision(plan, "routine_vision")["planId"]
+            )
             self.assertNotIn("ssn", body)
             self.assertEqual(body["coverageType"], "routine_vision")
             self.assertEqual(state.call.caller_phone, "+15555550101")
@@ -315,6 +319,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_write_decision_must_match_requested_plan_office_and_coverage(self):
         for changed in (
             decision("Different Product"),
+            decision(planId="different-product"),
             decision(office="hollywood"),
             decision(coverage="routine_vision"),
         ):
@@ -558,8 +563,8 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             body for path, body in self.requests if path.endswith("update-insurance")
         ]
         self.assertEqual(
-            [body["insurance"] for body in writes],
-            ["Aetna", "VSP", "Aetna"],
+            [(body["insurance"], body["insurancePlanId"]) for body in writes],
+            [("Aetna", "aetna"), ("VSP", "vsp"), ("Aetna", "aetna")],
         )
         self.assertTrue(insurance_ready(state))
 

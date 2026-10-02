@@ -12,6 +12,7 @@ from test_insurance_registration import created, registration, updated
 
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
+from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.insurance_state import accepted_insurance, insurance_ready
 from abita_s2s.integrations.patient_middleware import Receipt
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
@@ -64,6 +65,80 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("PCP referral", result["answer"])
         self.assertEqual(requests[0]["plan"], "Caller's exact unfamiliar wording")
         self.assertEqual(requests[0]["dob"], state.patient.active.dob)
+
+    async def test_plan_question_is_relayed_without_acceptance(self):
+        requests = []
+        question = decision(
+            outcome="needs_clarification",
+            participation="unknown",
+            planId="",
+            canonicalPlan="",
+            canSchedule=False,
+            options=[
+                dict(planId="synthetic-hmo", label="Synthetic HMO"),
+                dict(planId="synthetic-ppo", label="Synthetic PPO"),
+            ],
+            answer="needs_input: Which of these is on your card: Synthetic HMO, or Synthetic PPO?",
+        )
+
+        def handler(request):
+            plan = json.loads(request.content)["plan"]
+            requests.append(plan)
+            if plan == "Synthetic":
+                return httpx.Response(200, json=question)
+            return httpx.Response(
+                200, json=decision("Synthetic PPO", planId="synthetic-ppo")
+            )
+
+        state, owner = self.owner(handler)
+        result = await owner.check("Synthetic", "medical")
+        self.assertEqual(result["outcome"], "needs_clarification")
+        self.assertEqual(result["answer"], question["answer"])
+        self.assertIsNone(accepted_insurance(state))
+        self.assertEqual(
+            (await owner.check("Synthetic PPO", "medical"))["outcome"], "accepted"
+        )
+        self.assertEqual(accepted_insurance(state).decision.planId, "synthetic-ppo")
+        self.assertEqual(requests, ["Synthetic", "Synthetic PPO"])
+
+    async def test_writes_send_checked_plan_id_and_name(self):
+        legacy = {
+            k: v for k, v in decision("Aetna HMO").items() if k != "planId"
+        } | dict(routing="all_three", credentialedProviders=["Dr. Example"])
+        self.assertEqual(InsuranceDecision.model_validate(legacy).planId, "")
+        current = decision("Aetna HMO", carrierId="car-synthetic", options=[])
+        for checked in (current, legacy):
+            for operation in ("registration", "update"):
+                with self.subTest(operation=operation, planId=checked.get("planId")):
+                    writes = []
+
+                    def handler(request):
+                        if request.url.path == "/api/insurance/decision":
+                            return httpx.Response(200, json=checked)
+                        writes.append(json.loads(request.content))
+                        return httpx.Response(
+                            200,
+                            json=created(insuranceDecision=checked)
+                            if operation == "registration"
+                            else updated(
+                                newInsurance="Aetna HMO", insuranceDecision=checked
+                            ),
+                        )
+
+                    state, owner = self.owner(handler)
+                    if operation == "update":
+                        state.patient.active = Receipt.model_validate(receipt())
+                    await owner.check("aetna h m o", "medical")
+                    if operation == "registration":
+                        result = await owner.add(registration())
+                    else:
+                        result = await owner.update("member-example")
+                    self.assertIn(result["outcome"], ("created", "updated"))
+                    self.assertEqual(writes[0]["insurance"], "Aetna HMO")
+                    if "planId" in checked:
+                        self.assertEqual(writes[0]["insurancePlanId"], "aetna-hmo")
+                    else:
+                        self.assertNotIn("insurancePlanId", writes[0])
 
     async def test_no_local_fallback_on_invalid_unavailable_or_mismatched_decision(
         self,
