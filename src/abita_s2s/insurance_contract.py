@@ -20,6 +20,7 @@ class InsuranceDecision(BaseModel):
         "accepted", "not_accepted", "needs_clarification", "needs_staff_task"
     ]
     participation: Literal["accepted", "not_accepted", "unknown"]
+    planId: str = ""
     canonicalPlan: str = ""
     carrierCode: str = ""
     coverageType: CoverageType
