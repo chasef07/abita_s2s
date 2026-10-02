@@ -1,0 +1,24 @@
+name: Abita visit type triage
+# Sandbox fixtures: Maya Singleproof, DOB 05/12/1985, +12025550148 must resolve
+# uniquely with accepted medical insurance and eligible future medical slots.
+# The call ends once openings are offered, so no visit is booked.
+# Userdata does not seed fixtures.
+# Verify the visitType tool argument; the spoken flow alone is not a pass.
+scenarios:
+  - label: Ambiguous yearly eye exam triages as medical for a known condition
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
+      Open with: "Hi, I'm due for my yearly eye exam." Do not say why until asked.
+      If asked what kind of visit it is, say the doctor has been watching early
+      cataracts and wanted to see you every year. You do not need new glasses.
+      Your insurance has not changed. Give your first name when asked and DOB only
+      if needed. Only after actual times are offered, say you will check your
+      calendar and call back, then end. If told no openings can be found, accept
+      that and end.
+    agent_expectations: >
+      Clarifies the kind of visit instead of treating "yearly eye exam" as routine,
+      then searches medical openings for the cataract follow-up. Does not book
+      anything.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
