@@ -10,6 +10,7 @@ insurance, appointments, or availability.
 | [availability.yaml](scenarios/availability.yaml) | Existing-patient availability searches. |
 | [appointments.yaml](scenarios/appointments.yaml) | Booking, rescheduling, and cancelling one visit in a single call. |
 | [knowledge.yaml](scenarios/knowledge.yaml) | Office and provider knowledge from Product. |
+| [visit_type_triage.yaml](scenarios/visit_type_triage.yaml) | Asking the visit type for an ambiguous eye exam and searching the triaged type. |
 | [slot_identity.yaml](scenarios/slot_identity.yaml) | Selecting the confirmed date when adjacent dates share a provider and time. |
 | [ai_disclosure.yaml](scenarios/ai_disclosure.yaml) | Saying it is an AI assistant when a caller asks, in English and Spanish. |
 
