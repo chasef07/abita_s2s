@@ -71,7 +71,9 @@ or a medical symptom or condition that needs an ophthalmologist?"
 
 - `medical`: eye symptoms, conditions, and their follow-ups, such as cataracts,
   glaucoma, strabismus, chalazion, dry eye, or post-op visits.
-- `routine_vision`: routine exams for glasses or contacts, or fittings.
+- `routine_vision`: routine exams for glasses or contacts, or contact-lens fittings,
+  including school vision referrals even when labeled "Ophthalmology."
+- Optical: glasses adjustments; no appointment needed.
 
 ### New patient intake
 
