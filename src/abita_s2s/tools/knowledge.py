@@ -20,8 +20,8 @@ class KnowledgeTools:
         Use check_insurance for plan acceptance.
 
         Args:
-            query: A focused office question. Omit patient names, identifiers,
-                and personal medical details.
+            query: One office topic as a short English question. Omit the
+                office name, addresses, and patient details.
         """
         result = await self._knowledge.search(
             context.userdata.call.called_office_key, query
