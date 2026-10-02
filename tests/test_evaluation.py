@@ -120,7 +120,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                         ),
                         applies,
                     )
-                    self.assertEqual(len(requests), 5 if applies else 4)
+                    self.assertEqual(len(requests), 4 if applies else 3)
                     self.assertEqual(result["status"], "complete")
                     if not applies:
                         self.assertEqual(
@@ -131,20 +131,19 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                             },
                         )
 
-    async def test_five_judges_receive_full_history_and_return_decisions(self):
+    async def test_four_judges_receive_full_history_and_return_decisions(self):
         requests, result = await self.run_evaluation(
             values={
                 "appointment_datetime_correct": 0.1,
                 "conversation_responsive": 0.05,
             }
         )
-        self.assertEqual(len(requests), 5)
+        self.assertEqual(len(requests), 4)
         self.assertEqual(result["status"], "complete")
-        self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v4")
+        self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v5")
         self.assertEqual(
             set(result["results"]),
             {
-                "request_understood",
                 "appointment_datetime_correct",
                 "office_rules_grounded",
                 "conversation_responsive",
@@ -184,7 +183,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         ]:
 
             async def behavior(name, attempt, request):
-                if name == "request_understood":
+                if name == "office_rules_grounded":
                     body = {"answers": {} if answer is None else {name: answer}}
                     return httpx.Response(200, content=json.dumps(body).encode())
 
@@ -193,28 +192,28 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLogs("abita_s2s.observability.evaluation", "ERROR"),
             ):
                 _, result = await self.run_evaluation(behavior)
-                self.assertEqual(len(result["results"]), 4)
-                self.assertNotIn("request_understood", result["results"])
+                self.assertEqual(len(result["results"]), 3)
+                self.assertNotIn("office_rules_grounded", result["results"])
                 self.assertEqual(
-                    result["errors"]["request_understood"]["cause"], "ValueError"
+                    result["errors"]["office_rules_grounded"]["cause"], "ValueError"
                 )
 
     async def test_retry_after_cannot_extend_deadline(self):
         async def behavior(name, attempt, request):
-            if name == "request_understood":
+            if name == "office_rules_grounded":
                 return httpx.Response(429, headers={"Retry-After": "60"})
 
         with self.assertLogs("abita_s2s.observability.evaluation", "ERROR"):
             requests, result = await self.run_evaluation(behavior)
-        self.assertEqual(len(requests), 5)
-        self.assertEqual(result["errors"]["request_understood"]["httpStatus"], 429)
-        self.assertEqual(len(result["results"]), 4)
+        self.assertEqual(len(requests), 4)
+        self.assertEqual(result["errors"]["office_rules_grounded"]["httpStatus"], 429)
+        self.assertEqual(len(result["results"]), 3)
 
     async def test_exhausted_http_and_transport_retries_remain_visible(self):
         for transport_failure in (False, True):
 
             async def behavior(name, attempt, request):
-                if name == "request_understood":
+                if name == "office_rules_grounded":
                     if transport_failure:
                         raise httpx.ConnectError(
                             "synthetic-secret private details", request=request
@@ -226,9 +225,9 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLogs("abita_s2s.observability.evaluation", "ERROR") as logs,
             ):
                 requests, result = await self.run_evaluation(behavior)
-            self.assertEqual(len(requests), 6)
-            self.assertEqual(len(result["results"]), 4)
-            error = result["errors"]["request_understood"]
+            self.assertEqual(len(requests), 5)
+            self.assertEqual(len(result["results"]), 3)
+            error = result["errors"]["office_rules_grounded"]
             self.assertEqual(error["attempts"], 2)
             self.assertEqual(
                 error["cause"],
@@ -236,7 +235,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertNotIn("synthetic-secret", str(result) + str(logs.output))
 
-    async def test_invalid_sentiment_preserves_all_four_checks(self):
+    async def test_invalid_sentiment_preserves_all_three_checks(self):
         for answer in [
             {"type": "score", "score": 5, "probabilities": {"2": 1}},
             {"type": "score", "score": True, "probabilities": {"2": 1}},
@@ -253,7 +252,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLogs("abita_s2s.observability.evaluation", "ERROR"),
             ):
                 _, result = await self.run_evaluation(behavior)
-            self.assertEqual(len(result["results"]), 4)
+            self.assertEqual(len(result["results"]), 3)
             self.assertEqual(
                 result["errors"]["expressed_sentiment"]["cause"], "ValueError"
             )

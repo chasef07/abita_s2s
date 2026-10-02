@@ -232,7 +232,14 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(closeout["status"], "COMPLETED")
         evaluation = closeout["closeoutPayload"]["evaluation"]
         self.assertEqual(evaluation["status"], "incomplete")
-        self.assertEqual(len(evaluation["results"]), 4)
+        self.assertEqual(
+            set(evaluation["results"]),
+            {
+                "appointment_datetime_correct",
+                "conversation_responsive",
+                "expressed_sentiment",
+            },
+        )
         self.assertEqual(
             evaluation["results"]["conversation_responsive"]["answers"][
                 "conversation_responsive"
