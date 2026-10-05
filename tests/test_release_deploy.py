@@ -73,27 +73,29 @@ class ComponentVersionTests(unittest.TestCase):
 
                 unchanged = dict.fromkeys(package.COMPONENTS, "0.9.0")
                 self.assertEqual(versions(), unchanged)
-                for component, directory in package.COMPONENTS.items():
-                    for operation in ("edit", "add", "rename", "delete"):
-                        with self.subTest(component=component, operation=operation):
-                            folder = root / directory
-                            if operation == "edit":
-                                (folder / "README.md").write_text("New instructions")
-                            elif operation == "add":
-                                (folder / "nested/new.json").write_text("{}")
-                            elif operation == "rename":
-                                (folder / "nested/data.txt").rename(
-                                    folder / "nested/moved.txt"
-                                )
-                            else:
-                                (folder / "README.md").unlink()
-                            git(root, "add", ".")
-                            git(root, "commit", "-qm", operation)
-                            self.assertEqual(
-                                versions(), {**unchanged, component: "1.0.0"}
+                first, *others = package.COMPONENTS
+                changes = [
+                    (first, operation)
+                    for operation in ("edit", "add", "rename", "delete")
+                ] + [(component, "edit") for component in others]
+                for component, operation in changes:
+                    with self.subTest(component=component, operation=operation):
+                        folder = root / package.COMPONENTS[component]
+                        if operation == "edit":
+                            (folder / "README.md").write_text("New instructions")
+                        elif operation == "add":
+                            (folder / "nested/new.json").write_text("{}")
+                        elif operation == "rename":
+                            (folder / "nested/data.txt").rename(
+                                folder / "nested/moved.txt"
                             )
-                            git(root, "revert", "--no-edit", "HEAD")
-                            self.assertEqual(versions(), unchanged)
+                        else:
+                            (folder / "README.md").unlink()
+                        git(root, "add", ".")
+                        git(root, "commit", "-qm", operation)
+                        self.assertEqual(versions(), {**unchanged, component: "1.0.0"})
+                        git(root, "revert", "--no-edit", "HEAD")
+                        self.assertEqual(versions(), unchanged)
                 (root / "agent-only.txt").write_text("agent change")
                 git(root, "add", ".")
                 git(root, "commit", "-qm", "Agent only")

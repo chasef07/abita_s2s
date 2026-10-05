@@ -52,6 +52,9 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         gateway_key=None,
     ):
         self.requests = []
+        pause = patch("abita_s2s.runtime.reporting.RETRY_PAUSE_SECONDS", 0)
+        pause.start()
+        self.addCleanup(pause.stop)
         if evaluate is not None:
             evaluator = patch(
                 "abita_s2s.runtime.reporting.evaluate_call", side_effect=evaluate
@@ -272,6 +275,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                     side_effect=failure,
                 ),
                 patch("abita_s2s.observability.evaluation.EVALUATION_SECONDS", 0.01),
+                patch("abita_s2s.observability.evaluation.EVALUATION_GRACE_SECONDS", 0),
                 self.assertLogs("abita_s2s.observability.evaluation", "ERROR"),
             ):
                 await reporter.finish(lambda: report)

@@ -33,28 +33,26 @@ class OfficeRoutingTests(unittest.TestCase):
     ):
         with tempfile.TemporaryDirectory() as directory:
             Path(directory, ".env.local").write_text(
-                "OPENAI_API_KEY=offline-file-key\n"
+                "OPENAI_API_KEY=offline-file-key\nABITA_DOTENV_PROBE=from-file\n"
             )
-            env = {k: v for k, v in os.environ.items() if k != "OPENAI_API_KEY"}
-            for exported, expected in (
-                (None, "offline-file-key"),
-                ("offline-exported-key", "offline-exported-key"),
-            ):
-                if exported:
-                    env["OPENAI_API_KEY"] = exported
-                result = subprocess.run(
-                    [
-                        sys.executable,
-                        "-c",
-                        "import abita_s2s.main; import os; assert os.environ['OPENAI_API_KEY'] == "
-                        + repr(expected),
-                    ],
-                    cwd=directory,
-                    env=env,
-                    capture_output=True,
-                    text=True,
-                )
-                self.assertEqual(result.returncode, 0, result.stderr)
+            env = {
+                **{k: v for k, v in os.environ.items() if k != "ABITA_DOTENV_PROBE"},
+                "OPENAI_API_KEY": "offline-exported-key",
+            }
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "import abita_s2s.main; import os; "
+                    "assert os.environ['ABITA_DOTENV_PROBE'] == 'from-file'; "
+                    "assert os.environ['OPENAI_API_KEY'] == 'offline-exported-key'",
+                ],
+                cwd=directory,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_aliases_select_same_office(self):
         for phone in (*SPRING_HILL.trunk_numbers, "(727) 591-9997", "1-813-548-4830"):

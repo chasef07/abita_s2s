@@ -26,19 +26,42 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+BLOB_SHA256: dict[str, str] = {}
+
+
+def blob_hashes(objects) -> dict[str, str]:
+    """SHA-256 of git blobs, read in one batch; object IDs are content-addressed."""
+    missing = sorted(set(objects) - BLOB_SHA256.keys())
+    if missing:
+        output = subprocess.run(
+            ["git", "cat-file", "--batch"],
+            input="".join(f"{oid}\n" for oid in missing).encode(),
+            capture_output=True,
+            check=True,
+            cwd=ROOT,
+        ).stdout
+        position = 0
+        for oid in missing:
+            header_end = output.index(b"\n", position)
+            size = int(output[position:header_end].split()[2])
+            start = header_end + 1
+            BLOB_SHA256[oid] = hashlib.sha256(output[start : start + size]).hexdigest()
+            position = start + size + 1
+    return BLOB_SHA256
+
+
 def component_files(component: str, ref: str) -> dict[str, str]:
     """Hash the tracked folder at a commit, excluding untracked/ignored artifacts."""
     directory = COMPONENTS[component]
-    paths = run(
-        "git", "ls-tree", "-r", "--name-only", "-z", ref, "--", directory
-    ).split("\0")
-    files = {}
-    for path in filter(None, paths):
-        data = subprocess.check_output(["git", "show", f"{ref}:{path}"], cwd=ROOT)
-        files[path.removeprefix(directory + "/")] = hashlib.sha256(data).hexdigest()
-    if not files:
+    entries = run("git", "ls-tree", "-r", "-z", ref, "--", directory).split("\0")
+    objects = {}
+    for entry in filter(None, entries):
+        meta, path = entry.split("\t", 1)
+        objects[path.removeprefix(directory + "/")] = meta.split()[2]
+    if not objects:
         raise ValueError(f"Release requires a nonempty {component} folder")
-    return files
+    hashes = blob_hashes(objects.values())
+    return {name: hashes[oid] for name, oid in objects.items()}
 
 
 def component_version(component: str, version: str, commit: str, files: dict) -> str:
