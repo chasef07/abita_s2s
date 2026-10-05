@@ -17,6 +17,10 @@ from abita_s2s.state import CallContext
 
 logger = logging.getLogger(__name__)
 AGENT_VERSION = version("abita-s2s")
+FINISH_SECONDS = 80
+SEND_SECONDS = 5
+RETRY_PAUSE_SECONDS = 0.25
+CLOSEOUT_SECONDS = 2 * SEND_SECONDS + RETRY_PAUSE_SECONDS + 1
 
 
 class ReportingError(RuntimeError):
@@ -125,12 +129,12 @@ class CallReporter:
     async def _send(self, payload: dict) -> bool:
         for attempt in range(2):
             try:
-                async with asyncio.timeout(5):
+                async with asyncio.timeout(SEND_SECONDS):
                     response = await self._client.post(
                         self._url,
                         json=payload,
                         headers={"Authorization": f"Bearer {self._secret}"},
-                        timeout=5,
+                        timeout=SEND_SECONDS,
                         follow_redirects=False,
                     )
                 if response.status_code in (200, 201):
@@ -150,7 +154,7 @@ class CallReporter:
             except (httpx.HTTPError, TimeoutError, ValueError, KeyError, TypeError):
                 pass
             if attempt == 0:
-                await asyncio.sleep(0.25)
+                await asyncio.sleep(RETRY_PAUSE_SECONDS)
         logger.error("Product call reporting failed kind=%s", payload["kind"])
         return False
 
@@ -160,9 +164,21 @@ class CallReporter:
             self._finish_task = asyncio.create_task(self._finish(make_report))
         await asyncio.shield(self._finish_task)
 
+    async def _settle_checkpoints(self, seconds: float) -> None:
+        """Let queued checkpoints land before the closeout, but never delay it past budget."""
+        if self._pending is None:
+            return
+        done, _ = await asyncio.wait({self._pending}, timeout=max(seconds, 0))
+        if not done:
+            self._pending.cancel()
+            logger.error("Product checkpoints unfinished before closeout")
+
     async def _finish(self, make_report: Callable[[], dict] | None) -> None:
+        """Drain, then evaluate and settle checkpoints together, keeping time to send."""
         ended_at = datetime.now(UTC)
-        async with asyncio.timeout(180):
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + FINISH_SECONDS
+        async with asyncio.timeout_at(deadline):
             drain_failed = False
             try:
                 await self._drain()
@@ -213,16 +229,22 @@ class CallReporter:
                     "domainOutcomes": deepcopy(self._facts),
                 },
             }
-            if report is not None:
-                payload["transcript"] = report
-                payload["closeoutPayload"]["evaluation"] = await evaluate_call(
-                    report,
-                    self._gateway_key,
-                    (ended_at - self._started_at).total_seconds(),
-                )
             if self._appointment:
                 payload["appointmentOutcome"] = self._appointment
-            if self._pending:
-                await self._pending
+            remaining = deadline - loop.time() - CLOSEOUT_SECONDS
+            settled = self._settle_checkpoints(remaining)
+            if report is None:
+                await settled
+            else:
+                payload["transcript"] = report
+                payload["closeoutPayload"]["evaluation"], _ = await asyncio.gather(
+                    evaluate_call(
+                        report,
+                        self._gateway_key,
+                        (ended_at - self._started_at).total_seconds(),
+                        budget=remaining,
+                    ),
+                    settled,
+                )
             if not await self._send(payload):
                 raise ReportingError("Product did not acknowledge call closeout")

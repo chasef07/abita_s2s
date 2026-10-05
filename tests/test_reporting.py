@@ -186,7 +186,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         async def drain():
             events.append("drain")
 
-        async def evaluate(report, api_key, _):
+        async def evaluate(report, api_key, _, **__):
             self.assertEqual(report, REPORT)
             events.append("evaluate")
             return evidence
@@ -280,10 +280,35 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(evaluation["status"], "incomplete")
             self.assertEqual(evaluation["reason"], reason)
 
+    async def test_hung_checkpoint_cannot_hold_back_closeout(self):
+        async def handler(request):
+            if json.loads(request.content)["kind"] != "CLOSEOUT":
+                await asyncio.Event().wait()
+            return httpx.Response(201, json=ACK)
+
+        budgets = []
+
+        async def evaluate(*_, budget):
+            budgets.append(budget)
+            return {}
+
+        reporter = self.reporter(handler=handler, evaluate=evaluate)
+        reporter.started = True
+        reporter.appointment(OUTCOME)
+        with (
+            patch("abita_s2s.runtime.reporting.FINISH_SECONDS", 0.5),
+            patch("abita_s2s.runtime.reporting.CLOSEOUT_SECONDS", 0.3),
+            self.assertLogs("abita_s2s.runtime.reporting", "ERROR"),
+        ):
+            await asyncio.wait_for(reporter.finish(lambda: REPORT), 1)
+        self.assertEqual(self.requests[-1]["kind"], "CLOSEOUT")
+        self.assertEqual(self.requests[-1]["appointmentOutcome"]["action"], "BOOKED")
+        self.assertLess(budgets[0], 0.2)
+
     async def test_closeout_evaluates_with_configured_gateway_key(self):
         keys = []
 
-        async def evaluate(report, api_key, _):
+        async def evaluate(report, api_key, _, **__):
             keys.append(api_key)
             return {}
 
