@@ -289,6 +289,19 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(calls, [])
 
+    async def test_repeating_fuzzy_phone_name_keeps_patient_and_insurance(self):
+        r, calls = self.resolver([receipt("chart-john", "John")])
+        await self.preload(r)
+        self.assertEqual((await r.resolve("Jon", None))["outcome"], "verified")
+        active, revision = r.state.patient.active, r.state.patient.revision
+
+        result = await r.resolve("Jon", None)
+
+        self.assertEqual(result["outcome"], "verified")
+        self.assertIs(r.state.patient.active, active)
+        self.assertEqual(r.state.patient.revision, revision)
+        self.assertEqual(len(calls), 1)
+
     async def test_appointment_load_error_is_retained_and_reloaded(self):
         r, calls = self.resolver([receipt(appointmentsStatus="error"), receipt()])
         self.assertEqual((await r.resolve("Jane", "01/02/1980"))["outcome"], "verified")
