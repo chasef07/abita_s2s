@@ -7,11 +7,7 @@ through clear_acceptance and rebind_acceptance.
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Literal
 
-from abita_s2s.insurance_contract import (
-    CoverageType,
-    InsuranceDecision,
-    InsuranceOption,
-)
+from abita_s2s.insurance_contract import CoverageType, InsuranceDecision
 from abita_s2s.offices import same_office
 
 if TYPE_CHECKING:
@@ -32,8 +28,7 @@ class OfferedPlans:
     office_key: str
     patient_revision: int
     coverage_type: CoverageType
-    options: tuple[InsuranceOption, ...]
-    question: str
+    plan_ids: tuple[str, ...]
 
 
 @dataclass(repr=False)
@@ -77,7 +72,7 @@ def accepted_insurance(
 def offered_plans(
     state: "CallState", coverage_type: CoverageType
 ) -> OfferedPlans | None:
-    """Return the plans just offered only for the same office, patient and visit type."""
+    """Return the plan IDs just offered only for the same office, patient and visit type."""
     offered = state.insurance.offered
     if (
         offered is None

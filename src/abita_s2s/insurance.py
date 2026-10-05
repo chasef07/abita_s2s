@@ -7,7 +7,6 @@ from typing import Literal
 from pydantic import ConfigDict
 
 from abita_s2s.identity import PatientResolver
-from abita_s2s.insurance_contract import InsuranceOption
 from abita_s2s.insurance_state import (
     AcceptedInsurance,
     CoverageType,
@@ -31,38 +30,6 @@ from abita_s2s.state import CallState
 
 def normalize(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.casefold().replace("&", " and ")).strip()
-
-
-FILLER_WORDS = frozenset(
-    (
-        "the a an one that this my it its i im have is card on"
-        " plan insurance health healthcare care"
-        " uh um yes yeah yep please ok okay sure so well just"
-    ).split()
-)
-
-
-def plan_words(text: str) -> list[str]:
-    return normalize(re.sub(r"['\u2019]", "", text)).split()
-
-
-def offered_choice(answer: str, options: tuple[InsuranceOption, ...]) -> str | None:
-    """Map an answer to the one offered label it names.
-
-    Filler and generic words such as "health" never pick an option alone. An answer
-    naming exactly one option's words, or fitting inside only one option, picks it.
-    Returns None when nothing is left or every word belongs to the offered options,
-    so the caller is asked again. Any other word makes the answer another plan.
-    """
-    said = set(plan_words(answer)) - FILLER_WORDS
-    labels = [set(plan_words(option.label)) - FILLER_WORDS for option in options]
-    for fits in (said.__eq__, said.__le__):
-        named = [o for o, words in zip(options, labels) if said and fits(words)]
-        if len(named) == 1:
-            return named[0].label
-    if not said or said <= set().union(*labels):
-        return None
-    return answer
 
 
 def full_name(person) -> str:
@@ -122,18 +89,16 @@ class InsuranceRegistration:
         clear_acceptance(self.state)
         offered = offered_plans(self.state, coverage_type)
         self.state.insurance.offered = None
-        if offered:
-            choice = offered_choice(plan, offered.options)
-            if choice is None:
-                self.state.insurance.offered = offered
-                return reply("needs_clarification", offered.question)
-            plan = choice
         check_revision = self.state.insurance.check_revision
         patient = self.state.patient
         revision, active, absence = patient.revision, patient.active, patient.absence
         office = self.state.call.called_office_key
         decision = await self._middleware.check(
-            office, plan.strip(), coverage_type, active.dob if active else ""
+            office,
+            plan.strip(),
+            coverage_type,
+            active.dob if active else "",
+            offered.plan_ids if offered else (),
         )
         if (
             patient.revision != revision
@@ -154,8 +119,7 @@ class InsuranceRegistration:
                 office,
                 revision,
                 coverage_type,
-                tuple(decision.options),
-                decision.answer,
+                tuple(option.planId for option in decision.options),
             )
         if decision.participation == "accepted" and decision.canonicalPlan:
             self.state.insurance.accepted = AcceptedInsurance(

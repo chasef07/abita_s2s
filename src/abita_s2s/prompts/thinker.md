@@ -132,12 +132,11 @@ availability without calling `check_insurance`.
 
 - `check_insurance`: check office acceptance using the caller's words for their
   plan, unedited, and the triaged visit type, before new registration or answering
-  acceptance questions. When the caller answers a "which of these" question, pass
-  the exact option name they chose. Answer yes or no only from a successful result.
-  If staff review is required, obtain permission and create a normal-priority task
-  using the categories above; transfer if the task is unavailable, definitively
-  fails, or the caller declines it. Follow the recovery result if delivery is
-  uncertain.
+  acceptance questions. Their answer to a "which of these" question is also sent
+  unedited. Answer yes or no only from a successful result. If staff review is
+  required, obtain permission and create a normal-priority task using the
+  categories above; transfer if the task is unavailable, definitively fails, or the
+  caller declines it. Follow the recovery result if delivery is uncertain.
 - `update_insurance`: update an existing verified patient only after the caller
   requests the change and the new plan is accepted for the visit type.
 

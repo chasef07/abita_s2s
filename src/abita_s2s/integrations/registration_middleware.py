@@ -34,21 +34,26 @@ class WriteFailure(Record):
 
 class RegistrationMiddleware(Middleware):
     async def check(
-        self, office: str, plan: str, coverage: str, dob: str = ""
+        self,
+        office: str,
+        plan: str,
+        coverage: str,
+        dob: str = "",
+        offered_plan_ids: tuple[str, ...] = (),
     ) -> InsuranceDecision | None:
         if not self._configured:
             return None
         try:
             async with asyncio.timeout(self._deadline):
-                response = await self._send(
-                    "/api/insurance/decision",
-                    {
-                        "office": office,
-                        "plan": plan,
-                        "coverageType": coverage,
-                        "dob": dob,
-                    },
-                )
+                body = {
+                    "office": office,
+                    "plan": plan,
+                    "coverageType": coverage,
+                    "dob": dob,
+                }
+                if offered_plan_ids:
+                    body["offeredPlanIds"] = list(offered_plan_ids)
+                response = await self._send("/api/insurance/decision", body)
                 response.raise_for_status()
                 decision = InsuranceDecision.model_validate(response.json())
                 if (
