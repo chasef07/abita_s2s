@@ -107,12 +107,12 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                     (
                         "update_insurance",
                         {"insuranceMemberId": "member-private"},
-                        "updated",
+                        "success",
                     ),
                     (
                         "update_insurance",
                         {"insuranceMemberId": "member-private"},
-                        "updated",
+                        "success",
                     ),
                     (
                         "resolve_patient",
@@ -122,7 +122,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                     (
                         "update_insurance",
                         {"insuranceMemberId": "member-private"},
-                        "needs_resolution",
+                        "needs_input",
                     ),
                 ]
                 for name, args, outcome in cases:

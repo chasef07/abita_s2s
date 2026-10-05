@@ -322,19 +322,21 @@ class InsuranceRegistration:
         checked = accepted_insurance(self.state)
         if active is None:
             return reply(
-                "needs_resolution", "Verify the patient before changing insurance."
+                "needs_resolution",
+                "needs_input: Verify the patient before changing insurance.",
             )
         if checked is None:
             return reply(
                 "needs_insurance",
-                "Check accepted coverage for this patient and visit type before changing insurance.",
+                "needs_input: Check accepted coverage for this patient and visit type before changing insurance.",
             )
         if checked.decision.participation != "accepted":
             return reply(checked.decision.outcome, checked.decision.answer)
         member_id = "self pay" if checked.decision.selfPay else member_id.strip()
         if not member_id:
             return reply(
-                "needs_member_id", "What is the member ID on the insurance card?"
+                "needs_member_id",
+                "needs_input: What is the member ID on the insurance card?",
             )
         key = (
             checked.office_key,
@@ -398,12 +400,13 @@ class InsuranceRegistration:
                 )
                 if self._resolver.refresh_insurance(active, updated, checked):
                     answer = reply(
-                        "updated", f"Updated insurance to {result.newInsurance}."
+                        "updated",
+                        f"success: Updated insurance to {result.newInsurance}.",
                     )
                 else:
                     answer = reply(
                         "updated",
-                        f"Updated insurance for {active.name}. Patient context changed; the receipt was not applied to the current patient.",
+                        f"blocked: Updated insurance for {active.name}. Patient context changed; the receipt was not applied to the current patient. Do not repeat this write.",
                     )
             if self.state.reporter:
                 self.state.reporter.record(
