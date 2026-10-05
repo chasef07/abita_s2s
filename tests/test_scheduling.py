@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
-from livekit.agents import AgentSession, ToolError, llm
+from livekit.agents import AgentSession, llm
 from livekit.agents.llm.tool_context import ToolContext
 from livekit.agents.llm.utils import build_strict_openai_schema
 from test_patient_resolution import CONFIG, call_state, receipt
@@ -1759,13 +1759,52 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 operation = SchedulingTools(owner).book_appointment(
                     context, ref, "Eye exam", "none", True
                 )
-                if failure == "closed":
-                    self.assertTrue((await operation).startswith("blocked:"))
-                else:
-                    with self.assertRaises((ToolError, TimeoutError)):
-                        await operation
+                result = await operation
+                self.assertTrue(result.startswith("blocked:"), result)
+                if failure != "closed":
+                    self.assertIn("No appointment was changed", result)
                 self.assertEqual(len(requests), 1)
                 self.assertFalse(owner._receipts)
+
+    async def test_rejected_change_is_never_announced(self):
+        owner, requests = self.owner([inventory()])
+        ref = await self.slots(owner)
+        context = speech_context(owner.state)
+        tools = SchedulingTools(owner)
+        for slot, reason in (("ST_UNKNOWN", "Eye exam"), (ref, " ")):
+            with self.subTest(slot=slot):
+                result = await tools.book_appointment(
+                    context, slot, reason, "none", True
+                )
+                self.assertTrue(result.startswith("needs_input:"), result)
+        context.session.generate_reply.assert_not_called()
+        self.assertEqual(len(requests), 1)
+
+    async def test_cancelled_tool_call_during_announcement_sends_nothing(self):
+        owner, requests = self.owner([inventory(), booking()])
+        ref = await self.slots(owner)
+        context = speech_context(owner.state)
+        speaking = asyncio.Event()
+
+        async def playout():
+            speaking.set()
+            await asyncio.Event().wait()
+
+        context.session.generate_reply.return_value.wait_for_playout.side_effect = (
+            playout
+        )
+        call = asyncio.create_task(
+            SchedulingTools(owner).book_appointment(
+                context, ref, "Eye exam", "none", True
+            )
+        )
+        await speaking.wait()
+        call.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await call
+        await owner.aclose()
+        self.assertEqual(len(requests), 1)
+        self.assertFalse(owner._receipts)
 
     async def test_foreign_session_blocks_changes_before_announcing(self):
         owner, requests = self.owner([])

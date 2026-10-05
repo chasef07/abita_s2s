@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime
 from typing import Literal
 
-from livekit.agents import RunContext, ToolError, function_tool
+from livekit.agents import RunContext, function_tool
 
 from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.offices import EASTERN, SharedSchedulingOffice
@@ -13,11 +13,15 @@ from abita_s2s.state import CallState
 from abita_s2s.tools.context import bound, say_only
 
 
-async def _announce(context: RunContext[CallState], action: str) -> None:
-    async with asyncio.timeout(15):
-        spoken = await say_only(context, f"you are {action} their appointment")
-    if not spoken:
-        raise ToolError("Announcement did not complete. No appointment was changed.")
+def _announcer(context: RunContext[CallState], action: str):
+    async def announce() -> bool:
+        try:
+            async with asyncio.timeout(15):
+                return await say_only(context, f"you are {action} their appointment")
+        except Exception:
+            return False
+
+    return announce
 
 
 class SchedulingTools:
@@ -113,14 +117,13 @@ class SchedulingTools:
         """
         if not bound(self._scheduling, context):
             return UNAVAILABLE
-        if readBack is True:
-            await _announce(context, "booking")
         return await self._scheduling.book(
             slot_ref=appointmentSlotRef,
             reason=appointmentReason,
             referrer=referringDoctor,
             confirmed=readBack,
             call_id=context.function_call.call_id,
+            announce=_announcer(context, "booking"),
         )
 
     @function_tool
@@ -167,8 +170,6 @@ class SchedulingTools:
         """
         if not bound(self._scheduling, context):
             return UNAVAILABLE
-        if readBack is True:
-            await _announce(context, "rescheduling")
         return await self._scheduling.reschedule(
             slot_ref=appointmentSlotRef,
             reason=appointmentReason,
@@ -176,4 +177,5 @@ class SchedulingTools:
             confirmed=readBack,
             old_ref=oldAppointmentRef,
             call_id=context.function_call.call_id,
+            announce=_announcer(context, "rescheduling"),
         )
