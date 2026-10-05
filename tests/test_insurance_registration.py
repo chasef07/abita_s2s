@@ -230,6 +230,10 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             )
             body = self.requests[-1][1]
             self.assertEqual(body["subscriberNum"], member)
+            self.assertEqual(body["insurance"], plan)
+            self.assertEqual(
+                body["insurancePlanId"], decision(plan, "routine_vision")["planId"]
+            )
             self.assertNotIn("ssn", body)
             self.assertEqual(body["coverageType"], "routine_vision")
             self.assertEqual(state.call.caller_phone, "+15555550101")
@@ -315,6 +319,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_write_decision_must_match_requested_plan_office_and_coverage(self):
         for changed in (
             decision("Different Product"),
+            decision(planId="different-product"),
             decision(office="hollywood"),
             decision(coverage="routine_vision"),
         ):
@@ -329,6 +334,23 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(insurance_ready(state))
                 await owner.add(registration())
                 self.assertEqual(len(self.requests), 2)
+
+    async def test_receipt_without_plan_id_confirms_a_plan_id_write(self):
+        legacy = {k: v for k, v in decision().items() if k != "planId"}
+        for operation in ("registration", "update"):
+            with self.subTest(operation=operation):
+                if operation == "registration":
+                    state, _, owner = self.owner([created(insuranceDecision=legacy)])
+                    await owner.check("Aetna", "medical")
+                    result = await owner.add(registration())
+                else:
+                    state, _, owner = self.owner([updated(insuranceDecision=legacy)])
+                    state.patient.active = Receipt.model_validate(receipt())
+                    await owner.check("Aetna", "medical")
+                    result = await owner.update("member-example")
+                self.assertIn(result["outcome"], ("created", "updated"))
+                self.assertEqual(self.requests[-1][1]["insurancePlanId"], "aetna")
+                self.assertFalse(state.insurance.write_uncertain)
 
     async def test_invalid_receipts_and_network_uncertainty_never_retry(self):
         for result in [
@@ -558,8 +580,8 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             body for path, body in self.requests if path.endswith("update-insurance")
         ]
         self.assertEqual(
-            [body["insurance"] for body in writes],
-            ["Aetna", "VSP", "Aetna"],
+            [(body["insurance"], body["insurancePlanId"]) for body in writes],
+            [("Aetna", "aetna"), ("VSP", "vsp"), ("Aetna", "aetna")],
         )
         self.assertTrue(insurance_ready(state))
 

@@ -6,11 +6,11 @@ def decision(plan="Aetna", coverage="medical", office="spring_hill", **changes):
         dict(
             outcome="accepted",
             participation="accepted",
+            planId=plan.casefold().replace(" ", "-"),
             canonicalPlan=plan,
             carrierCode="",
             coverageType=coverage,
             officeId=office,
-            routing="all_three",
             allowedProviders=["Dr. Example"],
             requirements=[],
             eligibility="not_checked",
@@ -38,6 +38,7 @@ def check_response(request):
                 dict(
                     outcome="needs_clarification",
                     participation="unknown",
+                    planId="",
                     canonicalPlan="",
                     canSchedule=False,
                     answer="needs_input: Ask for the exact plan.",

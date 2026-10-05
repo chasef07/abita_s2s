@@ -23,9 +23,18 @@ class AcceptedInsurance:
     decision: InsuranceDecision = field(hash=False)
 
 
+@dataclass(frozen=True, repr=False)
+class OfferedPlans:
+    office_key: str
+    patient_revision: int
+    coverage_type: CoverageType
+    plan_ids: tuple[str, ...]
+
+
 @dataclass(repr=False)
 class InsuranceState:
     accepted: AcceptedInsurance | None = None
+    offered: OfferedPlans | None = None
     registrations: dict[str, Literal["created", "partial"]] = field(
         default_factory=dict
     )
@@ -58,6 +67,21 @@ def accepted_insurance(
         if checked.patient_id is None and checked.absence is patient.absence
         else None
     )
+
+
+def offered_plans(
+    state: "CallState", coverage_type: CoverageType
+) -> OfferedPlans | None:
+    """Return the plan IDs just offered only for the same office, patient and visit type."""
+    offered = state.insurance.offered
+    if (
+        offered is None
+        or offered.office_key != state.call.called_office_key
+        or offered.patient_revision != state.patient.revision
+        or offered.coverage_type != coverage_type
+    ):
+        return None
+    return offered
 
 
 def clear_acceptance(state: "CallState") -> None:

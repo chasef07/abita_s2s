@@ -10,8 +10,10 @@ from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance_state import (
     AcceptedInsurance,
     CoverageType,
+    OfferedPlans,
     accepted_insurance,
     clear_acceptance,
+    offered_plans,
 )
 from abita_s2s.integrations.patient_middleware import Receipt
 from abita_s2s.name_matcher import dob_matches, exact_name, parse_dob
@@ -85,12 +87,18 @@ class InsuranceRegistration:
 
     async def check(self, plan: str, coverage_type: CoverageType) -> dict:
         clear_acceptance(self.state)
+        offered = offered_plans(self.state, coverage_type)
+        self.state.insurance.offered = None
         check_revision = self.state.insurance.check_revision
         patient = self.state.patient
         revision, active, absence = patient.revision, patient.active, patient.absence
         office = self.state.call.called_office_key
         decision = await self._middleware.check(
-            office, plan.strip(), coverage_type, active.dob if active else ""
+            office,
+            plan.strip(),
+            coverage_type,
+            active.dob if active else "",
+            offered.plan_ids if offered else (),
         )
         if (
             patient.revision != revision
@@ -105,6 +113,13 @@ class InsuranceRegistration:
             return reply(
                 "unavailable",
                 "blocked: Insurance participation could not be checked. Ask office staff for help.",
+            )
+        if decision.outcome == "needs_clarification" and decision.options:
+            self.state.insurance.offered = OfferedPlans(
+                office,
+                revision,
+                coverage_type,
+                tuple(option.planId for option in decision.options),
             )
         if decision.participation == "accepted" and decision.canonicalPlan:
             self.state.insurance.accepted = AcceptedInsurance(
@@ -242,6 +257,8 @@ class InsuranceRegistration:
             subscriberName=r.subscriberName or f"{r.firstName} {r.lastName}",
             subscriberNum="self pay" if self_pay else r.insuranceMemberId,
         )
+        if checked.decision.planId:
+            payload["insurancePlanId"] = checked.decision.planId
         if r.email:
             payload["email"] = r.email
         if checked.decision.coverageType == "routine_vision":
@@ -361,6 +378,8 @@ class InsuranceRegistration:
                 "coverageType": checked.decision.coverageType,
                 "subscriberNum": member_id,
             }
+            if checked.decision.planId:
+                payload["insurancePlanId"] = checked.decision.planId
             result = await self._middleware.update(checked.office_key, payload)
             if isinstance(result, WriteFailure):
                 if result.status == "failed":
