@@ -85,7 +85,7 @@ class PatientMiddleware(Middleware):
                         response = await self._send(
                             "/api/patient/resolve", {**identity, "office": office_key}
                         )
-                    except httpx.TransportError:
+                    except httpx.HTTPError:
                         if attempt == 0:
                             continue
                         return Failure(reason="network_error")

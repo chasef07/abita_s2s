@@ -84,6 +84,14 @@ class PatientMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(count, 2)
 
+    async def test_any_request_error_is_a_failure_not_an_exception(self):
+        def handler(request):
+            raise httpx.DecodingError("bad body", request=request)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            result = await PatientMiddleware(client, CONFIG).resolve("spring-hill", {})
+        self.assertEqual(result, Failure(reason="network_error"))
+
     async def test_total_deadline_cancels_transport(self):
         cancelled = asyncio.Event()
 
