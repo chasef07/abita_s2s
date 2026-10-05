@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.12.0](https://github.com/chasef07/abita_s2s/compare/v0.11.4...v0.12.0) (2026-10-05)
+
+
+### Features
+
+* **insurance:** send insurance plan IDs on registration writes ([#129](https://github.com/chasef07/abita_s2s/issues/129)) ([c96b6f2](https://github.com/chasef07/abita_s2s/commit/c96b6f27377fa3a8ea78055c92813d2124aed3a7))
+
+
+### Bug Fixes
+
+* correctness fixes from codebase review ([#132](https://github.com/chasef07/abita_s2s/issues/132)) ([7ed2971](https://github.com/chasef07/abita_s2s/commit/7ed2971939b6e6af7b07b2889e50261e8d557c83))
+* **reporting:** deliver the closeout within the process shutdown budget ([#133](https://github.com/chasef07/abita_s2s/issues/133)) ([64b862c](https://github.com/chasef07/abita_s2s/commit/64b862ce0402df0d5536b9f5e361ecca8da3d2b8))
+
 ## [0.11.4](https://github.com/chasef07/abita_s2s/compare/v0.11.3...v0.11.4) (2026-10-02)
 
 
