@@ -37,6 +37,7 @@ FILLER_WORDS = frozenset(
     (
         "the a an one that this my it its i im have is card on"
         " plan insurance health healthcare care"
+        " uh um yes yeah yep please ok okay sure so well just"
     ).split()
 )
 
@@ -48,27 +49,20 @@ def plan_words(text: str) -> list[str]:
 def offered_choice(answer: str, options: tuple[InsuranceOption, ...]) -> str | None:
     """Map an answer to the one offered label it names.
 
-    Filler and generic words such as "health" never pick an option alone. Returns
-    None when the answer is empty or fits several options, so the caller is asked
-    again. An answer sharing no word with any option is another plan.
+    Filler and generic words such as "health" never pick an option alone. An answer
+    naming exactly one option's words, or fitting inside only one option, picks it.
+    Returns None when nothing is left or every word belongs to the offered options,
+    so the caller is asked again. Any other word makes the answer another plan.
     """
-    exact = " ".join(answer.split()).casefold()
-    for option in options:
-        if " ".join(option.label.split()).casefold() == exact:
-            return option.label
-    said = {word for word in plan_words(answer) if word not in FILLER_WORDS}
-    labels = [set(plan_words(option.label)) for option in options]
-    named = [o for o, words in zip(options, labels) if said and said <= words]
-    if len(named) == 1:
-        return named[0].label
-    if not said or any(said & words for words in labels):
+    said = set(plan_words(answer)) - FILLER_WORDS
+    labels = [set(plan_words(option.label)) - FILLER_WORDS for option in options]
+    for fits in (said.__eq__, said.__le__):
+        named = [o for o, words in zip(options, labels) if said and fits(words)]
+        if len(named) == 1:
+            return named[0].label
+    if not said or said <= set().union(*labels):
         return None
     return answer
-
-
-def spoken_options(options: tuple[InsuranceOption, ...]) -> str:
-    *rest, last = [option.label for option in options]
-    return f"{', '.join(rest)}, or {last}" if rest else last
 
 
 def full_name(person) -> str:
@@ -132,11 +126,7 @@ class InsuranceRegistration:
             choice = offered_choice(plan, offered.options)
             if choice is None:
                 self.state.insurance.offered = offered
-                return reply(
-                    "needs_clarification",
-                    "needs_input: The answer did not pick one option. Read the options again: "
-                    f"Which of these is on your card: {spoken_options(offered.options)}?",
-                )
+                return reply("needs_clarification", offered.question)
             plan = choice
         check_revision = self.state.insurance.check_revision
         patient = self.state.patient
@@ -161,7 +151,11 @@ class InsuranceRegistration:
             )
         if decision.outcome == "needs_clarification" and decision.options:
             self.state.insurance.offered = OfferedPlans(
-                office, revision, coverage_type, tuple(decision.options)
+                office,
+                revision,
+                coverage_type,
+                tuple(decision.options),
+                decision.answer,
             )
         if decision.participation == "accepted" and decision.canonicalPlan:
             self.state.insurance.accepted = AcceptedInsurance(

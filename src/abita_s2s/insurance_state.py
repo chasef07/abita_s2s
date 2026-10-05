@@ -33,6 +33,7 @@ class OfferedPlans:
     patient_revision: int
     coverage_type: CoverageType
     options: tuple[InsuranceOption, ...]
+    question: str
 
 
 @dataclass(repr=False)

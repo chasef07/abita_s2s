@@ -89,9 +89,7 @@ answers. Clarify unclear details without guessing and apply volunteered correcti
 2. Ask: "Could you spell your first and last name?"
 3. Ask for date of birth.
 4. Ask the insurance plan. Use `check_insurance` silently with the caller's words
-   and the visit type, and follow its result before continuing intake. If it asks
-   which plan, read its options and check again with the exact option name the
-   caller chose.
+   and the visit type, and follow its result before continuing intake.
 5. Ask for the member ID. Skip it for self-pay.
 6. Ask: "Is your name on the insurance card, or someone else's?" Reuse the patient's
    name or collect the other policyholder's name as `subscriberName`.
