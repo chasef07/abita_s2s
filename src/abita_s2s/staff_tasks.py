@@ -12,6 +12,12 @@ import httpx
 
 from abita_s2s.config import Config
 from abita_s2s.identity import PatientResolver
+from abita_s2s.name_matcher import (
+    dob_matches,
+    first_names,
+    names_match,
+    phone_name_matches,
+)
 from abita_s2s.offices import e164, get_office_profile, get_product_office_key
 from abita_s2s.results import reply
 from abita_s2s.state import CallState
@@ -33,6 +39,29 @@ Urgency = Literal["high_priority", "normal", "non_urgent"]
 def _phone(value: str | None) -> str:
     phone = e164(value or "")
     return phone if re.fullmatch(r"\+[1-9][0-9]{7,14}", phone) else ""
+
+
+def _same_patient(old: dict | None, new: dict | None) -> bool:
+    """A draft may follow its patient as details are added, never move to another one.
+
+    Unverified details may only be extended. A named, unverified patient may move to
+    the verified chart that matches that name and any DOB already given.
+    """
+    if old == new:
+        return True
+    if not old or not new or "id" in old:
+        return False
+    if "id" not in new:
+        return old.items() <= new.items()
+    name = old.get("name")
+    return (
+        bool(name)
+        and any(
+            names_match(name, n) or phone_name_matches(name, n)
+            for n in first_names(new["name"])
+        )
+        and (not old.get("dob") or dob_matches(old["dob"], new["dob"]))
+    )
 
 
 @dataclass(frozen=True, repr=False)
@@ -87,7 +116,9 @@ class StaffTasks:
             return reply("failed", f"{exc} Existing drafts are unchanged.")
         patient = payload.get("patient")
         if draft_id is not None:
-            if self._drafts[draft_id].payload.get("patient") != patient:
+            if not _same_patient(
+                self._drafts[draft_id].payload.get("patient"), patient
+            ):
                 return reply(
                     "failed",
                     "Patient context changed. Existing draft is unchanged. "

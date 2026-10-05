@@ -50,4 +50,4 @@ class InsuranceTools:
         result = await self._insurance.update(
             insuranceMemberId, call_id=context.function_call.call_id
         )
-        return f"{result['outcome']}: {result['answer']}"
+        return result["answer"]

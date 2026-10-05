@@ -23,8 +23,8 @@ available. Configuration is documented in [.env.example](../.env.example).
 
 Read the prerequisite comments in each YAML. The appointment scenario books,
 reschedules, and cancels the same visit in one call so the shared chart ends where
-it started. The slot-identity regression requires specific October 2026 slots and a call date
-before October 13, 2026. Its userdata neither creates those slots nor sets the clock.
+it started. The slot-identity regression requires 11 AM slots on two consecutive weekdays,
+seeded 7-20 days after the run date. Its userdata neither creates those slots nor sets the clock.
 Missing fixtures or failed middleware leave the scenario unproven.
 
 ## Run a suite

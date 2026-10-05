@@ -8,7 +8,6 @@ import httpx
 from pydantic import (
     AwareDatetime,
     Field,
-    ValidationError,
     field_validator,
     model_validator,
 )
@@ -180,7 +179,7 @@ class SchedulingHTTP(Middleware):
                         return result
                 return SchedulingFailure(reason="http_error", uncertain=write)
             return record.model_validate(response.json())
-        except (httpx.TransportError, TimeoutError):
+        except (httpx.HTTPError, TimeoutError):
             return SchedulingFailure(reason="transport_error", uncertain=write)
-        except (ValueError, ValidationError):
+        except ValueError:
             return SchedulingFailure(reason="invalid_response", uncertain=write)

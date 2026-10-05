@@ -76,6 +76,7 @@ class PatientResolver:
         self._closed = False
         self._previous_id: str | None = None
         self._token: object | None = None
+        self._verified_as: tuple[str, str] | None = None
 
     def staff_task_patient(self) -> dict[str, str] | None:
         """Snapshot current caller-reported identity without promoting it to verified."""
@@ -86,6 +87,17 @@ class PatientResolver:
         if active:
             return {"id": active.patientId, "name": active.name, "dob": active.dob}
         return None
+
+    def _same_as_active(
+        self, active: Receipt, name: str | None, dob: str | None
+    ) -> bool:
+        """Repeating the name that verified this chart, even fuzzily, keeps it active."""
+        named = (
+            not name
+            or self._verified_as == (active.patientId, exact_name(name))
+            or any(names_match(name, n) for n in first_names(active.name))
+        )
+        return named and (not dob or dob_matches(dob, active.dob))
 
     def _begin_lookup(self) -> object:
         self._token = object()
@@ -168,15 +180,7 @@ class PatientResolver:
         if checked is not None and checked.patient_id is None:
             clear_acceptance(self.state)
         active = self.state.patient.active
-        if active and (
-            (
-                first_name
-                and not any(
-                    names_match(first_name, n) for n in first_names(active.name)
-                )
-            )
-            or (dob and not dob_matches(dob, active.dob))
-        ):
+        if active and not self._same_as_active(active, first_name, dob):
             self._previous_id = active.patientId
             self.state.patient.active = None
             self.state.patient.revision += 1
@@ -232,7 +236,11 @@ class PatientResolver:
             and (not dob or dob_matches(dob, c.dob))
         ]
         active = self.state.patient.active
-        if active and _matches(active, name, dob) and (dob or len(selected) < 2):
+        if (
+            active
+            and self._same_as_active(active, name, dob)
+            and (dob or len(selected) < 2)
+        ):
             if active.appointmentsStatus != "error":
                 self._pending = (None, None)
                 return self._facts(active, "verified", call_id=call_id)
@@ -315,6 +323,7 @@ class PatientResolver:
         self.state.patient.absence = None
         self._pending = (None, None)
         self._previous_id = None
+        self._verified_as = (receipt.patientId, exact_name(name))
         return self._facts(
             receipt, "switched" if switched else "verified", call_id=call_id
         )
@@ -345,7 +354,7 @@ class PatientResolver:
             self._closed
             or not exact_name(first_name)
             or not parse_dob(dob)
-            or (active and _matches(active, first_name, dob))
+            or (active and self._same_as_active(active, first_name, dob))
         ):
             return False
         self._token = None
