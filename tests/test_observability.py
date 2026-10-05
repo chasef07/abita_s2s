@@ -234,6 +234,10 @@ class ObservabilityTests(unittest.TestCase):
         self.assertEqual(
             self.spans("openai.audio_activity")[0].attributes["openai.frame_count"], 100
         )
+        transcript = self.spans("openai.transcript_activity")
+        self.assertEqual(len(transcript), 1)
+        self.assertEqual(transcript[0].attributes["openai.frame_count"], 1)
+        self.assertFalse(self.spans("openai.received.session.input_transcript.delta"))
 
     def test_livekit_pii_filter_removes_all_captured_content(self):
         self.backend("response.created", response={"id": "public-id"})

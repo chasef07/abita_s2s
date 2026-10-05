@@ -16,6 +16,13 @@ from abita_s2s.runtime.silence import BackendResponses
 
 logger = logging.getLogger(__name__)
 
+ACTIVITY = {
+    "session.input_audio.append": "openai.audio_activity",
+    "session.output_audio.delta": "openai.audio_activity",
+    "session.input_transcript.delta": "openai.transcript_activity",
+    "session.output_transcript.delta": "openai.transcript_activity",
+}
+
 
 class OpenAITimeline:
     """One connection timeline; retain only currently running backend spans."""
@@ -25,7 +32,7 @@ class OpenAITimeline:
         self.session_id = ""
         self.context = trace.set_span_in_context(trace.get_current_span())
         self.responses: dict[str | None, trace.Span] = {}
-        self.audio: dict[str, tuple[int, int, int]] = {}
+        self.activity: dict[str, tuple[int, int, int]] = {}
 
     def record(self, direction: str, event: dict) -> None:
         try:
@@ -36,12 +43,12 @@ class OpenAITimeline:
     def _record(self, direction: str, event: dict) -> None:
         kind = event.get("type", "")
         now = time.time_ns()
-        if kind in ("session.input_audio.append", "session.output_audio.delta"):
-            count, start, end = self.audio.get(kind, (0, now, now))
+        if kind in ACTIVITY:
+            count, start, end = self.activity.get(kind, (0, now, now))
             if now - start >= 1_000_000_000:
-                self._audio_span(kind, count, start, end)
+                self._activity_span(kind, count, start, end)
                 count, start = 0, now
-            self.audio[kind] = (count + 1, start, now)
+            self.activity[kind] = (count + 1, start, now)
             return
         if not (
             kind.startswith("session.")
@@ -152,8 +159,6 @@ class OpenAITimeline:
                 span.set_status(trace.StatusCode.ERROR)
             if gen_ai.capture_content_enabled():
                 content = {}
-                if kind.endswith("transcript.delta"):
-                    content["delta"] = event.get("delta")
                 if kind in (
                     "session.instructions.append",
                     "session.thinking.append",
@@ -190,8 +195,7 @@ class OpenAITimeline:
                         content["arguments"] = item.get("arguments")
                 if content:
                     span.set_attribute("lk.pii.openai_content", json.dumps(content))
-        if "transcript.delta" not in kind:
-            logger.info("openai_timeline %s %s", direction, inner_kind, extra=attrs)
+        logger.info("openai_timeline %s %s", direction, inner_kind, extra=attrs)
         if inner_kind in (
             "response.completed",
             "response.failed",
@@ -210,9 +214,10 @@ class OpenAITimeline:
                 span.set_status(trace.StatusCode.ERROR)
             span.end()
 
-    def _audio_span(self, kind: str, count: int, start: int, end: int) -> None:
+    def _activity_span(self, kind: str, count: int, start: int, end: int) -> None:
+        """One span per second of high-rate audio or transcript chunks, never one per chunk."""
         span = tracer.start_span(
-            "openai.audio_activity",
+            ACTIVITY[kind],
             context=self.context,
             start_time=start,
             attributes={
@@ -230,9 +235,9 @@ class OpenAITimeline:
     def close(self, reason: str) -> None:
         for d_id in list(self.responses):
             self._finish(d_id, reason)
-        for kind, (count, start, end) in self.audio.items():
-            self._audio_span(kind, count, start, end)
-        self.audio.clear()
+        for kind, (count, start, end) in self.activity.items():
+            self._activity_span(kind, count, start, end)
+        self.activity.clear()
 
 
 class ObservedGPTLiveSession(GPTLiveSession):
