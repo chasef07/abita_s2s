@@ -221,6 +221,34 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
                 [r["patient"]["id"] for r in requests], ["synthetic-1", "synthetic-2"]
             )
 
+    async def test_draft_follows_its_patient_from_pending_to_verified(self):
+        async with self.setup_session() as (
+            session,
+            agent,
+            state,
+            owner,
+            requests,
+            middleware,
+        ):
+            await self.invoke(
+                session, agent, {"firstName": "Jane", "dob": None}, "resolve_patient"
+            )
+            draft = owner.save(**NEED)
+            self.assertFalse(draft["patient"]["verified"])
+            middleware.resolve.return_value = patient("Doe, Jane")
+            await self.invoke(
+                session,
+                agent,
+                {"firstName": "Jane", "dob": "01/01/1980"},
+                "resolve_patient",
+            )
+            self.assertIsNotNone(state.patient.active)
+            result = owner.save(**NEED, draft_id=draft["draftId"])
+            self.assertEqual(result["outcome"], "saved")
+            self.assertTrue(result["patient"]["verified"])
+            await owner.aclose()
+            self.assertEqual([r["patient"]["id"] for r in requests], ["synthetic-1"])
+
     async def test_unresolved_patient_from_real_resolution_not_old_patient(self):
         async with self.setup_session() as (
             session,
