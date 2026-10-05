@@ -11,7 +11,7 @@ import test_office_startup as existing
 from test_staff_tasks import CONFIG, NEED, receipt
 
 from abita_s2s.config import load_config
-from abita_s2s.runtime import session_startup as startup
+from abita_s2s.runtime import reporting, session_startup as startup
 
 
 class Room:
@@ -215,7 +215,14 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
             pending.cancel()
             await asyncio.gather(pending, return_exceptions=True)
         self.assertGreater(startup.CLEANUP_SECONDS, 40)
-        self.assertGreater(startup.SHUTDOWN_PROCESS_SECONDS, startup.CLEANUP_SECONDS)
+        self.assertLess(
+            startup.CLEANUP_SECONDS + reporting.CLOSEOUT_SECONDS,
+            reporting.FINISH_SECONDS,
+        )
+        self.assertLess(
+            reporting.FINISH_SECONDS + startup.TRANSPORT_CLOSE_SECONDS,
+            startup.SHUTDOWN_PROCESS_SECONDS,
+        )
 
 
 class StagingConfigTests(unittest.TestCase):

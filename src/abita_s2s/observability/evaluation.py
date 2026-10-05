@@ -13,6 +13,7 @@ from abita_s2s.observability.judges import QUESTIONS, appointment_datetime_corre
 
 logger = logging.getLogger(__name__)
 EVALUATION_SECONDS = 20
+EVALUATION_GRACE_SECONDS = 1
 RETRY_SECONDS = 0.25
 MIN_CALL_SECONDS = 30
 EVALUATOR_VERSION = "typesafe-scorecard-v5"
@@ -43,7 +44,11 @@ def validate_answer(name: str, result: dict) -> None:
 
 
 async def evaluate_judges(
-    history: ChatContext, *, agent_purpose: str, api_key: str
+    history: ChatContext,
+    *,
+    agent_purpose: str,
+    api_key: str,
+    seconds: float = EVALUATION_SECONDS,
 ) -> dict:
     """Run independent judges within one deadline; retain all completed results."""
     if not agent_purpose.strip():
@@ -61,8 +66,8 @@ async def evaluate_judges(
             "status": "not_applicable",
             "reason": "no_appointment_action_result",
         }
-    deadline = asyncio.get_running_loop().time() + EVALUATION_SECONDS
-    async with httpx.AsyncClient(timeout=EVALUATION_SECONDS) as client:
+    deadline = asyncio.get_running_loop().time() + seconds
+    async with httpx.AsyncClient(timeout=seconds) as client:
 
         async def judge(name):
             attempts = 0
@@ -139,8 +144,18 @@ async def evaluate_judges(
     return {"results": results, "errors": errors}
 
 
-async def evaluate_call(report: dict, api_key: str | None, seconds: float) -> dict:
-    """Return a persistable result without letting a judge failure break closeout."""
+async def evaluate_call(
+    report: dict,
+    api_key: str | None,
+    seconds: float,
+    *,
+    budget: float = math.inf,
+) -> dict:
+    """Return a persistable result without letting a judge failure break closeout.
+
+    The whole evaluation fits in ``budget`` seconds so shutdown can still deliver it.
+    """
+    window = min(EVALUATION_SECONDS, budget - EVALUATION_GRACE_SECONDS)
     evaluation = {
         "evaluator": "jev",
         "evaluatorVersion": EVALUATOR_VERSION,
@@ -158,6 +173,8 @@ async def evaluate_call(report: dict, api_key: str | None, seconds: float) -> di
             evaluation.update(status="skipped", reason="call_too_short")
         elif not api_key:
             evaluation.update(status="skipped", reason="gateway_key_not_configured")
+        elif window <= 0:
+            evaluation.update(status="skipped", reason="shutdown_budget_exhausted")
         else:
             instructions = next(
                 (
@@ -170,10 +187,13 @@ async def evaluate_call(report: dict, api_key: str | None, seconds: float) -> di
             if not instructions:
                 evaluation["reason"] = "agent_instructions_missing"
             else:
-                async with asyncio.timeout(EVALUATION_SECONDS + 1):
+                async with asyncio.timeout(window + EVALUATION_GRACE_SECONDS):
                     evaluation.update(
                         await evaluate_judges(
-                            history, agent_purpose=str(instructions), api_key=api_key
+                            history,
+                            agent_purpose=str(instructions),
+                            api_key=api_key,
+                            seconds=window,
                         )
                     )
                 if evaluation["errors"]:
