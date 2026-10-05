@@ -335,6 +335,23 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                 await owner.add(registration())
                 self.assertEqual(len(self.requests), 2)
 
+    async def test_receipt_without_plan_id_confirms_a_plan_id_write(self):
+        legacy = {k: v for k, v in decision().items() if k != "planId"}
+        for operation in ("registration", "update"):
+            with self.subTest(operation=operation):
+                if operation == "registration":
+                    state, _, owner = self.owner([created(insuranceDecision=legacy)])
+                    await owner.check("Aetna", "medical")
+                    result = await owner.add(registration())
+                else:
+                    state, _, owner = self.owner([updated(insuranceDecision=legacy)])
+                    state.patient.active = Receipt.model_validate(receipt())
+                    await owner.check("Aetna", "medical")
+                    result = await owner.update("member-example")
+                self.assertIn(result["outcome"], ("created", "updated"))
+                self.assertEqual(self.requests[-1][1]["insurancePlanId"], "aetna")
+                self.assertFalse(state.insurance.write_uncertain)
+
     async def test_invalid_receipts_and_network_uncertainty_never_retry(self):
         for result in [
             created(name="Other, Person"),

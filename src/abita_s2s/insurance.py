@@ -7,11 +7,14 @@ from typing import Literal
 from pydantic import ConfigDict
 
 from abita_s2s.identity import PatientResolver
+from abita_s2s.insurance_contract import InsuranceOption
 from abita_s2s.insurance_state import (
     AcceptedInsurance,
     CoverageType,
+    OfferedPlans,
     accepted_insurance,
     clear_acceptance,
+    offered_plans,
 )
 from abita_s2s.integrations.patient_middleware import Receipt
 from abita_s2s.name_matcher import dob_matches, exact_name, parse_dob
@@ -28,6 +31,44 @@ from abita_s2s.state import CallState
 
 def normalize(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.casefold().replace("&", " and ")).strip()
+
+
+FILLER_WORDS = frozenset(
+    (
+        "the a an one that this my it its i im have is card on"
+        " plan insurance health healthcare care"
+    ).split()
+)
+
+
+def plan_words(text: str) -> list[str]:
+    return normalize(re.sub(r"['\u2019]", "", text)).split()
+
+
+def offered_choice(answer: str, options: tuple[InsuranceOption, ...]) -> str | None:
+    """Map an answer to the one offered label it names.
+
+    Filler and generic words such as "health" never pick an option alone. Returns
+    None when the answer is empty or fits several options, so the caller is asked
+    again. An answer sharing no word with any option is another plan.
+    """
+    exact = " ".join(answer.split()).casefold()
+    for option in options:
+        if " ".join(option.label.split()).casefold() == exact:
+            return option.label
+    said = {word for word in plan_words(answer) if word not in FILLER_WORDS}
+    labels = [set(plan_words(option.label)) for option in options]
+    named = [o for o, words in zip(options, labels) if said and said <= words]
+    if len(named) == 1:
+        return named[0].label
+    if not said or any(said & words for words in labels):
+        return None
+    return answer
+
+
+def spoken_options(options: tuple[InsuranceOption, ...]) -> str:
+    *rest, last = [option.label for option in options]
+    return f"{', '.join(rest)}, or {last}" if rest else last
 
 
 def full_name(person) -> str:
@@ -85,6 +126,18 @@ class InsuranceRegistration:
 
     async def check(self, plan: str, coverage_type: CoverageType) -> dict:
         clear_acceptance(self.state)
+        offered = offered_plans(self.state, coverage_type)
+        self.state.insurance.offered = None
+        if offered:
+            choice = offered_choice(plan, offered.options)
+            if choice is None:
+                self.state.insurance.offered = offered
+                return reply(
+                    "needs_clarification",
+                    "needs_input: The answer did not pick one option. Read the options again: "
+                    f"Which of these is on your card: {spoken_options(offered.options)}?",
+                )
+            plan = choice
         check_revision = self.state.insurance.check_revision
         patient = self.state.patient
         revision, active, absence = patient.revision, patient.active, patient.absence
@@ -105,6 +158,10 @@ class InsuranceRegistration:
             return reply(
                 "unavailable",
                 "blocked: Insurance participation could not be checked. Ask office staff for help.",
+            )
+        if decision.outcome == "needs_clarification" and decision.options:
+            self.state.insurance.offered = OfferedPlans(
+                office, revision, coverage_type, tuple(decision.options)
             )
         if decision.participation == "accepted" and decision.canonicalPlan:
             self.state.insurance.accepted = AcceptedInsurance(

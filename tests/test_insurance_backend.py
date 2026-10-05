@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from dataclasses import replace
 import unittest
 from unittest.mock import AsyncMock
 
@@ -100,6 +101,111 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(accepted_insurance(state).decision.planId, "synthetic-ppo")
         self.assertEqual(requests, ["Synthetic", "Synthetic PPO"])
+
+    def offering(self, *labels, asked="Aetna"):
+        requests = []
+        options = [dict(planId=label.casefold(), label=label) for label in labels]
+        question = decision(
+            outcome="needs_clarification",
+            participation="unknown",
+            planId="",
+            canonicalPlan="",
+            canSchedule=False,
+            options=options,
+            answer="needs_input: Which of these is on your card?",
+        )
+
+        def handler(request):
+            body = json.loads(request.content)
+            requests.append(body["plan"])
+            if body["plan"] == asked:
+                return httpx.Response(
+                    200, json=question | dict(officeId=body["office"])
+                )
+            return httpx.Response(
+                200,
+                json=decision(
+                    body["plan"], body["coverageType"], office=body["office"]
+                ),
+            )
+
+        state, owner = self.owner(handler)
+        return state, owner, requests
+
+    async def test_plan_answer_resolves_to_the_one_offered_option(self):
+        labels = ("Aetna EPO", "Aetna HMO", "Aetna Medicare", "Meritain Health")
+        for answer, sent in (
+            ("Medicare", "Aetna Medicare"),
+            ("HMO", "Aetna HMO"),
+            ("it's the Medicare one", "Aetna Medicare"),
+            ("  aetna   HMO ", "Aetna HMO"),
+            ("Meritain", "Meritain Health"),
+        ):
+            with self.subTest(answer=answer):
+                state, owner, requests = self.offering(*labels)
+                await owner.check("Aetna", "medical")
+                self.assertEqual(
+                    [o.label for o in state.insurance.offered.options], list(labels)
+                )
+                self.assertEqual(
+                    (await owner.check(answer, "medical"))["outcome"], "accepted"
+                )
+                self.assertEqual(requests, ["Aetna", sent])
+                self.assertEqual(accepted_insurance(state).decision.canonicalPlan, sent)
+                self.assertIsNone(state.insurance.offered)
+                await owner.check("Medicare", "medical")
+                self.assertEqual(requests[-1], "Medicare")
+
+    async def test_unclear_plan_answer_reads_the_options_again(self):
+        state, owner, requests = self.offering(
+            "Aetna EPO", "Aetna HMO", "Aetna Medicare", "Meritain Health"
+        )
+        await owner.check("Aetna", "medical")
+        for answer in (
+            "the Health one",
+            "the healthcare plan",
+            "Aetna",
+            "Aetna PPO",
+            "that one on my card",
+        ):
+            with self.subTest(answer=answer):
+                result = await owner.check(answer, "medical")
+                self.assertEqual(result["outcome"], "needs_clarification")
+                self.assertIn(
+                    "Aetna EPO, Aetna HMO, Aetna Medicare, or Meritain Health?",
+                    result["answer"],
+                )
+                self.assertIsNone(accepted_insurance(state))
+        self.assertEqual(requests, ["Aetna"])
+        await owner.check("Meritain Health", "medical")
+        self.assertEqual(requests, ["Aetna", "Meritain Health"])
+
+    async def test_plan_answer_naming_other_insurance_is_checked_as_given(self):
+        for answer in ("PPO", "Humana"):
+            with self.subTest(answer=answer):
+                state, owner, requests = self.offering(
+                    "Aetna EPO", "Aetna HMO", "Aetna Medicare", "Meritain Health"
+                )
+                await owner.check("Aetna", "medical")
+                self.assertEqual(
+                    (await owner.check(answer, "medical"))["outcome"], "accepted"
+                )
+                self.assertEqual(requests, ["Aetna", answer])
+                self.assertIsNone(state.insurance.offered)
+                await owner.check("Medicare", "medical")
+                self.assertEqual(requests[-1], "Medicare")
+
+    async def test_offered_options_apply_only_to_the_same_visit_type_and_office(self):
+        state, owner, requests = self.offering("Aetna HMO", "Aetna Medicare")
+        await owner.check("Aetna", "medical")
+        await owner.check("Medicare", "routine_vision")
+        self.assertEqual(requests[-1], "Medicare")
+        self.assertIsNone(state.insurance.offered)
+        await owner.check("Aetna", "medical")
+        state.call = replace(state.call, called_office_key="hollywood")
+        await owner.check("Medicare", "medical")
+        self.assertEqual(requests[-1], "Medicare")
+        self.assertIsNone(state.insurance.offered)
 
     async def test_writes_send_checked_plan_id_and_name(self):
         legacy = {

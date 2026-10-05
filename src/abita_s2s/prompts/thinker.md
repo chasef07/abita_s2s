@@ -90,7 +90,8 @@ answers. Clarify unclear details without guessing and apply volunteered correcti
 3. Ask for date of birth.
 4. Ask the insurance plan. Use `check_insurance` silently with the caller's words
    and the visit type, and follow its result before continuing intake. If it asks
-   which plan, read its options and check again with the caller's choice.
+   which plan, read its options and check again with the exact option name the
+   caller chose.
 5. Ask for the member ID. Skip it for self-pay.
 6. Ask: "Is your name on the insurance card, or someone else's?" Reuse the patient's
    name or collect the other policyholder's name as `subscriberName`.
@@ -132,11 +133,13 @@ For existing patients with unchanged insurance, proceed from resolution to
 availability without calling `check_insurance`.
 
 - `check_insurance`: check office acceptance using the caller's words for their
-  plan, unedited, and the triaged visit type, before new registration or answering acceptance questions. Answer
-  yes or no only from a successful result. If staff review is required, obtain
-  permission and create a normal-priority task using the categories above;
-  transfer if the task is unavailable, definitively fails, or the caller declines it.
-  Follow the recovery result if delivery is uncertain.
+  plan, unedited, and the triaged visit type, before new registration or answering
+  acceptance questions. When the caller answers a "which of these" question, pass
+  the exact option name they chose. Answer yes or no only from a successful result.
+  If staff review is required, obtain permission and create a normal-priority task
+  using the categories above; transfer if the task is unavailable, definitively
+  fails, or the caller declines it. Follow the recovery result if delivery is
+  uncertain.
 - `update_insurance`: update an existing verified patient only after the caller
   requests the change and the new plan is accepted for the visit type.
 

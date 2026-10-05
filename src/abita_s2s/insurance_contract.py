@@ -14,6 +14,12 @@ class InsuranceRequirement(BaseModel):
     verification: Literal["unverified"]
 
 
+class InsuranceOption(BaseModel):
+    model_config = ConfigDict(strict=True, frozen=True)
+    planId: str
+    label: str
+
+
 class InsuranceDecision(BaseModel):
     model_config = ConfigDict(strict=True, frozen=True)
     outcome: Literal[
@@ -25,14 +31,13 @@ class InsuranceDecision(BaseModel):
     carrierCode: str = ""
     coverageType: CoverageType
     officeId: str
-    routing: str = ""
-    credentialedProviders: list[str] = Field(default_factory=list)
     allowedProviders: list[str]
     requirements: list[InsuranceRequirement]
     eligibility: Literal["not_checked"]
     canSchedule: bool
     selfPay: bool
     answer: str
+    options: list[InsuranceOption] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def coherent(self):

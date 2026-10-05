@@ -111,7 +111,8 @@ class RegistrationMiddleware(Middleware):
                 or decision.coverageType != payload.get("coverageType", "medical")
                 or decision.canonicalPlan != payload["insurance"]
                 or (
-                    "insurancePlanId" in payload
+                    decision.planId
+                    and "insurancePlanId" in payload
                     and decision.planId != payload["insurancePlanId"]
                 )
             ):

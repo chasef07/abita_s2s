@@ -21,11 +21,12 @@ class InsuranceTools:
     ) -> str:
         """Check office participation for the caller's insurance and triaged visit type.
 
-        Pass whatever the caller said about their insurance, word for word: a name,
-        part of a name, or what is on the card. If the result asks which plan, read
-        the options and call again with the one the caller picks. Use before
-        registration or a requested insurance change. Follow staff-review
-        instructions; acceptance does not establish active benefits.
+        On the first check, pass whatever the caller said about their insurance, word
+        for word: a name, part of a name, or what is on the card. If the result asks
+        which plan, read the options and call again with the exact option name the
+        caller chose. Use before registration or a requested insurance change.
+        Follow staff-review instructions; acceptance does not establish active
+        benefits.
         """
         if not bound(self._insurance, context):
             return staff()["answer"]
