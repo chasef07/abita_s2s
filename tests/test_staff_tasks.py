@@ -16,7 +16,7 @@ from abita_s2s.config import Config, load_config
 from abita_s2s.identity import PatientResolver
 from abita_s2s.integrations.patient_middleware import Failure, Receipt
 from abita_s2s.offices import get_office_profile
-from abita_s2s.staff_tasks import StaffTasks
+from abita_s2s.staff_tasks import StaffTasks, _same_patient
 
 CONFIG = Config(
     "offline",
@@ -248,6 +248,24 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(result["patient"]["verified"])
             await owner.aclose()
             self.assertEqual([r["patient"]["id"] for r in requests], ["synthetic-1"])
+
+    def test_draft_never_moves_to_a_different_patient(self):
+        chart = {"id": "synthetic-1", "name": "Doe, Jane", "dob": "01/01/1980"}
+        cases = [
+            ({"name": "Jane"}, {"name": "Jane", "dob": "01/01/1980"}, True),
+            ({"name": "Jane"}, chart, True),
+            ({"name": "Jane", "dob": "01/01/1980"}, chart, True),
+            ({"name": "Jane"}, {"name": "Janet"}, False),
+            ({"name": "Jane", "dob": "01/01/1980"}, {"name": "Jane"}, False),
+            ({"dob": "01/01/1980"}, chart, False),
+            ({"name": "Jane", "dob": "02/02/1990"}, chart, False),
+            ({"name": "Alex"}, chart, False),
+            (chart, {**chart, "id": "synthetic-2"}, False),
+            (None, {"name": "Jane"}, False),
+        ]
+        for old, new, expected in cases:
+            with self.subTest(old=old, new=new):
+                self.assertIs(_same_patient(old, new), expected)
 
     async def test_unresolved_patient_from_real_resolution_not_old_patient(self):
         async with self.setup_session() as (

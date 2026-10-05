@@ -42,17 +42,26 @@ def _phone(value: str | None) -> str:
 
 
 def _same_patient(old: dict | None, new: dict | None) -> bool:
-    """A draft may follow its unverified patient once that patient is identified."""
+    """A draft may follow its patient as details are added, never move to another one.
+
+    Unverified details may only be extended. A named, unverified patient may move to
+    the verified chart that matches that name and any DOB already given.
+    """
     if old == new:
         return True
     if not old or not new or "id" in old:
         return False
+    if "id" not in new:
+        return old.items() <= new.items()
     name = old.get("name")
-    names = first_names(new.get("name", "")) if "id" in new else [new.get("name", "")]
     return (
-        not name
-        or any(names_match(name, n) or phone_name_matches(name, n) for n in names)
-    ) and (not old.get("dob") or dob_matches(old["dob"], new.get("dob", "")))
+        bool(name)
+        and any(
+            names_match(name, n) or phone_name_matches(name, n)
+            for n in first_names(new["name"])
+        )
+        and (not old.get("dob") or dob_matches(old["dob"], new["dob"]))
+    )
 
 
 @dataclass(frozen=True, repr=False)
