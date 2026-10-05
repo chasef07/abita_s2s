@@ -31,6 +31,7 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
                     side_effect=failure,
                 ),
                 patch("abita_s2s.observability.evaluation.EVALUATION_SECONDS", 0.01),
+                patch("abita_s2s.observability.evaluation.EVALUATION_GRACE_SECONDS", 0),
                 self.assertLogs("abita_s2s.observability.evaluation", "ERROR") as logs,
             ):
                 result = await evaluate_call(report, "offline", 60)
