@@ -44,14 +44,21 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+  # The Verify run that triggered this workflow already passed on its head commit.
   verify-release:
-    if: needs.release-please.outputs.release_created == 'true'
+    if: >-
+      needs.release-please.outputs.release_created == 'true' &&
+      needs.release-please.outputs.release_sha != github.event.workflow_run.head_sha
     needs: [release-please]
     uses: ./.github/workflows/ci.yml
     with:
       release_sha: ${{ needs.release-please.outputs.release_sha }}
 
   publish:
+    if: >-
+      !cancelled() &&
+      needs.release-please.outputs.release_created == 'true' &&
+      contains(fromJSON('["success", "skipped"]'), needs.verify-release.result)
     needs: [release-please, verify-release]
     permissions:
       contents: write
@@ -60,6 +67,7 @@ jobs:
       commit: ${{ needs.release-please.outputs.release_sha }}
 
   deploy:
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
     needs: [release-please, publish]
     uses: ./.github/workflows/deploy.yml
     with:
