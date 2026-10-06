@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/chasef07/abita_s2s/compare/v0.13.0...v0.13.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* stop spoken announcements from blocking appointment writes and transfers ([#145](https://github.com/chasef07/abita_s2s/issues/145)) ([7e097f3](https://github.com/chasef07/abita_s2s/commit/7e097f36d85cead44467f7823dd53d878e03e298))
+
 ## [0.13.0](https://github.com/chasef07/abita_s2s/compare/v0.12.1...v0.13.0) (2026-10-06)
 
 
