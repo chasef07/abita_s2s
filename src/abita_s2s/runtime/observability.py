@@ -12,6 +12,7 @@ from livekit.agents.telemetry import gen_ai, tracer
 from livekit.plugins.openai.realtime import GPTLiveModel, GPTLiveSession
 from opentelemetry import trace
 
+from abita_s2s.runtime.delegation_watchdog import DelegationWatchdog
 from abita_s2s.runtime.silence import BackendResponses
 
 logger = logging.getLogger(__name__)
@@ -253,6 +254,15 @@ class ObservedGPTLiveSession(GPTLiveSession):
             lambda event: self.timeline.record("queued", event),
         )
 
+    @property
+    def backend_busy(self) -> bool:
+        """Whether a backend response, tool call, or continuation is still outstanding."""
+        return bool(
+            self._backend_running_responses
+            or self._backend_open_calls
+            or self._backend_response_pending
+        )
+
     async def aclose(self) -> None:
         try:
             await super().aclose()
@@ -269,4 +279,5 @@ class ObservedGPTLiveModel(GPTLiveModel):
     def session(self) -> GPTLiveSession:
         live = ObservedGPTLiveSession(self, self.call_id)
         live.on("openai_server_event_received", self.backend.record)
+        live.on("openai_server_event_received", DelegationWatchdog(live).record)
         return live
