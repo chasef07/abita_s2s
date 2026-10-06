@@ -1766,6 +1766,15 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(requests), 1)
                 self.assertFalse(owner._receipts)
 
+    async def test_unknown_slot_ref_keeps_offered_slots_and_cache(self):
+        owner, requests = self.owner([inventory(), booking()])
+        ref = await self.slots(owner)
+        self.assertTrue((await self.book(owner, "ST_TYPO")).startswith("needs_input:"))
+        self.assertIn(ref, owner._slots)
+        await self.slots(owner)
+        self.assertEqual(len(requests), 1)
+        self.assertTrue((await self.book(owner, ref)).startswith("success:"))
+
     async def test_rejected_change_is_never_announced(self):
         owner, requests = self.owner([inventory()])
         ref = await self.slots(owner)
