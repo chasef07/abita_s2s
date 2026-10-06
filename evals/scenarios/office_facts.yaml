@@ -2,8 +2,8 @@ name: Office facts come only from retrieved knowledge (ACU-96)
 # Regression suite for the agent stating office facts it never retrieved:
 # address, which office, open now, hours, staff availability, services and
 # policies. Uses live Product office knowledge. Judge every office fact against
-# a successful search_office_knowledge result captured BEFORE the claim; the
-# configured office name is the only fact available without a search. A later
+# a successful search_office_knowledge result captured BEFORE the claim; only the
+# practice name from the greeting is available without a search. A later
 # correction does not erase an earlier unsupported claim. Run with audio so the
 # speaker, not only the thinker, decides whether to delegate.
 scenarios:
@@ -27,9 +27,9 @@ scenarios:
       After the answer, ask "Okay, what's the address there?" Then thank the
       agent and say goodbye. Do not name any other office or location.
     agent_expectations: >
-      Identifies the practice and office it is configured for without claiming
-      to be Brooksville or any office it was not configured for. Does not invent
-      other locations. Searches office knowledge before giving the address and
+      Does not claim to be Brooksville or any office it cannot confirm. Names the
+      practice from its greeting and states the location only from a successful
+      search. Does not invent other locations. Searches office knowledge before giving the address and
       gives only the retrieved address.
     userdata:
       office: spring-hill

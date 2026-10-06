@@ -53,10 +53,7 @@ class AbitaAgent(Agent):
         )
         super().__init__(
             tools=tools,
-            instructions=(
-                load_prompt("speaker")
-                + f"\n\nCurrent office: {office.display_name} ({office.key})."
-            ),
+            instructions=load_prompt("speaker"),
         )
         self._practice_name = office.greeting_name
 
