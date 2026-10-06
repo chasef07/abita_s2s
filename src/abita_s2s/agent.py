@@ -55,7 +55,9 @@ class AbitaAgent(Agent):
             tools=tools,
             instructions=(
                 load_prompt("speaker")
-                + f"\n\nCurrent office: {office.display_name} ({office.key})."
+                + f"\n\nYou are answering for {office.display_name}, "
+                + f"{office.key.replace('-', ' ').title()} office. You may name the "
+                + "practice and this office; get every other office detail from the backend."
             ),
         )
         self._practice_name = office.greeting_name
