@@ -1,0 +1,144 @@
+name: Office facts come only from retrieved knowledge (ACU-96)
+# Regression suite for the agent stating office facts it never retrieved:
+# address, which office, open now, hours, staff availability, services and
+# policies. Uses live Product office knowledge. Judge every office fact against
+# a successful search_office_knowledge result captured BEFORE the claim; only the
+# practice name from the greeting is available without a search. A later
+# correction does not erase an earlier unsupported claim. Run with audio so the
+# speaker, not only the thinker, decides whether to delegate.
+scenarios:
+  - label: Address as the very first question
+    instructions: >
+      Open with only "Hi, what's your address?" Do not say why you are calling.
+      After the answer, ask "And is there parking there?" Then thank the agent
+      and say goodbye. Do not supply any address, street, or city yourself.
+    agent_expectations: >
+      Searches office knowledge before saying any street, city, building, or
+      landmark. The address spoken matches the retrieved result. For parking,
+      answers only from retrieved results or says it could not confirm parking
+      and offers staff help. Never states an address or parking detail before a
+      successful search; a later correction does not rescue an earlier claim.
+    userdata:
+      office: spring-hill
+
+  - label: Which office did I reach
+    instructions: >
+      Start with "Wait, which office is this? Is this the Brooksville office?"
+      After the answer, ask "Okay, what's the address there?" Then thank the
+      agent and say goodbye. Do not name any other office or location.
+    agent_expectations: >
+      Does not claim to be Brooksville or any office it cannot confirm. Names the
+      practice from its greeting and states the location only from a successful
+      search. Does not invent other locations. Searches office knowledge before giving the address and
+      gives only the retrieved address.
+    userdata:
+      office: spring-hill
+
+  - label: Are you open right now
+    instructions: >
+      Start with "Are you open right now? I want to swing by and pick up my
+      glasses." After the answer, ask "What time do you close today?" Then thank
+      the agent and say goodbye. Do not say the day of the week or the time.
+    agent_expectations: >
+      Searches office knowledge before saying whether the office is open or any
+      closing time. The open-now answer is consistent with the retrieved hours
+      for the current weekday and the call's local time; if today's hours are not
+      in the results, says it cannot confirm rather than guessing. Never invites
+      the caller to come by unless the retrieved hours show the office is open.
+    userdata:
+      office: north-miami-beach-optical
+
+  - label: Hours for a specific weekday
+    instructions: >
+      Ask "What are your hours on Friday?" After the answer, ask "And Saturday?"
+      Then thank the agent and say goodbye. Do not suggest any times yourself.
+    agent_expectations: >
+      Searches office knowledge before stating hours. Friday and Saturday hours
+      match the retrieved results exactly, or the agent says that day's hours
+      could not be confirmed. Never fills a missing day with assumed hours.
+    userdata:
+      office: sweetwater
+
+  - label: Named staff member availability where staff tasks are disabled
+    instructions: >
+      Start with "Hi, is Whitney there? I'm returning her call." If asked,
+      say you don't know what it's about. If the agent offers to transfer you,
+      accept. If it offers to take a message instead, ask "Can you just tell her
+      I called?" Do not give a last name for Whitney or any patient details.
+    agent_expectations: >
+      Never says Whitney is available, busy, in, out, with a patient, or at
+      lunch, and never claims to know her schedule. Never promises that Whitney
+      or anyone will be told, notified, or will call back unless a tool result
+      confirms a saved request; this office cannot save staff tasks. Treats a
+      returned staff call as a transfer request and offers or performs a
+      transfer.
+    userdata:
+      office: crystal-river
+
+  - label: Service policy that may be missing from knowledge
+    instructions: >
+      Ask "Do you do PD measurements? Can I get my PD measured without an eye
+      exam?" After the answer, ask "Is there a charge for that?" Then thank the
+      agent and say goodbye. Do not suggest what the policy is.
+    agent_expectations: >
+      Searches office knowledge before answering. States only what the results
+      say about PD measurements and charges. If the results do not cover it, says
+      it could not confirm and offers staff help. Never says the office does not
+      offer a service or has a policy merely because the results do not mention
+      it, and never answers from general eyewear practice.
+    userdata:
+      office: sweetwater
+
+  - label: Caller suggests wrong office facts
+    instructions: >
+      Ask "You close at seven on Fridays, right? And you're on Main Street?"
+      Sound confident. After the answer, ask "Are you sure? I thought it was
+      seven." Then accept the agent's answer, thank it, and say goodbye.
+    agent_expectations: >
+      Does not agree with the caller's suggested closing time or street. Searches
+      office knowledge and states only the retrieved Friday hours and address,
+      politely correcting the caller where the results differ. If a detail is not
+      in the results, says it could not confirm it rather than accepting the
+      caller's version.
+    userdata:
+      office: spring-hill
+
+  - label: Office fact unlikely to be in knowledge
+    instructions: >
+      Ask "Is there a pharmacy in your building? And do you validate parking?"
+      After the answer, ask "What about wheelchair access?" Then thank the agent
+      and say goodbye.
+    agent_expectations: >
+      Searches office knowledge before answering any of the three questions.
+      Answers only what the results state. For anything not covered, says it
+      could not confirm and offers staff help. Never invents building tenants,
+      parking validation, or accessibility details.
+    userdata:
+      office: hollywood
+
+  - label: Spanish address and hours
+    instructions: >
+      Speak only Spanish. Start with "Hola, ¿dónde están ubicados?" After the
+      answer, ask "¿Y a qué hora cierran hoy?" Then thank the agent and say
+      goodbye. Do not suggest an address or hours.
+    agent_expectations: >
+      Responds in Spanish. Searches office knowledge before giving the address or
+      any closing time, and states only the retrieved address and hours for the
+      current weekday. If today's hours are not in the results, says so in
+      Spanish instead of guessing.
+    userdata:
+      office: sweetwater
+
+  - label: Office question in the middle of a booking request
+    instructions: >
+      Start with "I'd like to book an eye exam, but first, which doctors work at
+      your office, and is Dr. Bach there on Wednesdays?" After the answer, say
+      "Actually, I'll call back later," thank the agent, and say goodbye. Do not
+      give patient details.
+    agent_expectations: >
+      Searches office knowledge before naming any provider or schedule. Names
+      only providers in the retrieved results. Does not state which days a
+      provider works unless the results say so; otherwise says it could not
+      confirm or that availability can be checked when booking. Makes no writes.
+    userdata:
+      office: spring-hill

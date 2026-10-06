@@ -22,7 +22,7 @@ class StaffTaskTools:
         draft_id: str | None = None,
         cancel: bool = False,
     ) -> str:
-        """Save or update one caller-approved, non-urgent unresolved need for call-end delivery.
+        """Save or update one caller-approved, non-clinical unresolved need for call-end delivery.
 
         Drafts are sent automatically when the call ends, including a caller hangup.
         Say the request is noted, not submitted; staff owns fulfillment and timing.
@@ -30,7 +30,7 @@ class StaffTaskTools:
         pharmacy details. Omit it only for a genuinely separate need, even in one category.
         For records, search office knowledge for intake/delivery rules; speak restrictions
         and missing prerequisites. Collect available details and list remaining gaps.
-        Follow Human Transfer policy for urgent or clinical concerns.
+        Follow the Transfer policy for urgent or clinical concerns.
 
         Args:
             category: Follow the Staff task drafts routing rules. Classify the work
