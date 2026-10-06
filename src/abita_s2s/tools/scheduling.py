@@ -1,6 +1,5 @@
 """Model-facing appointment tools and availability presentation."""
 
-import asyncio
 from datetime import datetime
 from typing import Literal
 
@@ -10,18 +9,7 @@ from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.offices import EASTERN, SharedSchedulingOffice
 from abita_s2s.scheduling import UNAVAILABLE, Scheduling
 from abita_s2s.state import CallState
-from abita_s2s.tools.context import bound, say_only
-
-
-def _announcer(context: RunContext[CallState], action: str):
-    async def announce() -> bool:
-        try:
-            async with asyncio.timeout(15):
-                return await say_only(context, f"you are {action} their appointment")
-        except Exception:
-            return False
-
-    return announce
+from abita_s2s.tools.context import bound
 
 
 class SchedulingTools:
@@ -123,7 +111,6 @@ class SchedulingTools:
             referrer=referringDoctor,
             confirmed=readBack,
             call_id=context.function_call.call_id,
-            announce=_announcer(context, "booking"),
         )
 
     @function_tool
@@ -177,5 +164,4 @@ class SchedulingTools:
             confirmed=readBack,
             old_ref=oldAppointmentRef,
             call_id=context.function_call.call_id,
-            announce=_announcer(context, "rescheduling"),
         )

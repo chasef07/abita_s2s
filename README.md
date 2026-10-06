@@ -66,7 +66,7 @@ in their named owner.
 
 ```mermaid
 flowchart LR
-  tool["<b>Tool</b><br/>tools/scheduling.py<br/>bind · announce · format"]
+  tool["<b>Tool</b><br/>tools/scheduling.py<br/>bind · format"]
   owner["<b>Owner</b><br/>scheduling.py<br/>state · fences · receipts"]
   record["<b>Record</b><br/>scheduling_http records<br/>typed results + failures"]
   integration["<b>Integration</b><br/>integrations/scheduling_http.py<br/>deadline · validation"]
