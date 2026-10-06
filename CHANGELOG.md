@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.1](https://github.com/chasef07/abita_s2s/compare/v0.12.0...v0.12.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* **deps:** bump LiveKit agents, uv, Python, and CI actions ([#140](https://github.com/chasef07/abita_s2s/issues/140)) ([d534d45](https://github.com/chasef07/abita_s2s/commit/d534d455a3017818b066103ce3ad4870d42ec0e3))
+* **voice:** report partial registrations and keep slots on a mistyped ref ([#136](https://github.com/chasef07/abita_s2s/issues/136)) ([26c0357](https://github.com/chasef07/abita_s2s/commit/26c035775943d98d1c6e29ce86c42867395e89e7))
+
 ## [0.12.0](https://github.com/chasef07/abita_s2s/compare/v0.11.4...v0.12.0) (2026-10-05)
 
 
