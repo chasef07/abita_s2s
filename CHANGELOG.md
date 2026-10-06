@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.13.0](https://github.com/chasef07/abita_s2s/compare/v0.12.1...v0.13.0) (2026-10-06)
+
+
+### Features
+
+* **voice:** hand undelegated caller turns to the backend ([#142](https://github.com/chasef07/abita_s2s/issues/142)) ([57e7ee7](https://github.com/chasef07/abita_s2s/commit/57e7ee7c095839d5459efe89f1462b592c5feee9))
+* **voice:** run the thinker at high reasoning effort ([#143](https://github.com/chasef07/abita_s2s/issues/143)) ([5b909cf](https://github.com/chasef07/abita_s2s/commit/5b909cfe2ba57b4df61954010cd495be276b52f0))
+
+
+### Bug Fixes
+
+* **prompts:** delegate first, never claim unconfirmed outcomes, ground office facts ([#141](https://github.com/chasef07/abita_s2s/issues/141)) ([52dfa78](https://github.com/chasef07/abita_s2s/commit/52dfa78844d2f9d044dc1cd11d59c5b6ec21cc98))
+
 ## [0.12.1](https://github.com/chasef07/abita_s2s/compare/v0.12.0...v0.12.1) (2026-10-06)
 
 
