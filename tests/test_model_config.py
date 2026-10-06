@@ -39,3 +39,10 @@ class ModelConfigTests(unittest.TestCase):
                         "Use this clinic-local date to interpret relative dates.",
                     )
             self.assertEqual(clock.now.call_count, len(cases))
+
+    def test_thinker_reasons_at_high_effort(self):
+        with patch("abita_s2s.model_config.GPTLiveModel") as model:
+            create_model(Config(openai_api_key="offline"))
+        options = model.call_args.kwargs["responses_options"]
+        self.assertEqual(options["model"], "gpt-6-luna")
+        self.assertEqual(options["reasoning"], {"effort": "high"})

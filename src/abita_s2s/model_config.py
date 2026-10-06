@@ -11,6 +11,7 @@ from abita_s2s.prompt import load_prompt
 
 SPEAKER_MODEL = "gpt-live-1"
 THINKER_MODEL = "gpt-6-luna"
+THINKER_REASONING_EFFORT = "high"
 
 
 def create_model(config: Config, *, call_id: str = "") -> GPTLiveModel:
@@ -22,6 +23,7 @@ def create_model(config: Config, *, call_id: str = "") -> GPTLiveModel:
         voice=config.voice,
         responses_options={
             "model": THINKER_MODEL,
+            "reasoning": {"effort": THINKER_REASONING_EFFORT},
             "instructions": (
                 load_prompt("thinker")
                 + f"\n\nCall started: {now:%A, %Y-%m-%d %H:%M %Z} "
