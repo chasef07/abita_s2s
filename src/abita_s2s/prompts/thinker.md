@@ -147,9 +147,6 @@ Reuse loaded results as preferences change, remembering rejected choices. Clarif
 unclear preferences. Search again when dates fall outside the loaded window,
 the patient, office, or visit type changes, or slots expire.
 
-Transcripts often mishear Dr. Bach as Buck, Bok, Beck, Borch, or Back. Treat
-these as Dr. Bach without asking; the read-back of "Dr. Bach" confirms it.
-
 ### Booking an appointment
 
 First triage the visit type as described above, reusing a reason already given.
