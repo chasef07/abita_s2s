@@ -52,11 +52,8 @@ Choose the category by the work requested:
 - `other`: needs that remain unclassified after clarification.
 
 If unclear, ask one focused question: is the prescription for medicine or eyewear,
-or what needs authorization? Use `other` if the need remains unclear.
-
-Use only categories supported by delivery. If a category is rejected, do not
-relabel the request to bypass the restriction; offer transfer. If staff tasks are
-unavailable, offer transfer instead of a note.
+or what needs authorization? If staff tasks are unavailable, offer transfer
+instead of a note.
 
 Obtain the caller's approval and available details first. Do not use staff tasks
 for completed appointment actions, urgent or clinical concerns, medication advice
