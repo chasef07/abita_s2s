@@ -98,8 +98,8 @@ class LiveKit:
     def __init__(self, config):
         self.agent = target(config)
         self.prefix = ["lk", "--config", os.path.relpath(config.resolve()), "--yes"]
-        if run("lk", "--version") != "lk version 2.18.6":
-            raise ValueError("LiveKit CLI 2.18.6 is required")
+        if run("lk", "--version") != "lk version 2.18.8":
+            raise ValueError("LiveKit CLI 2.18.8 is required")
 
     def command(self, *args):
         return run(*self.prefix, "agent", *args)
