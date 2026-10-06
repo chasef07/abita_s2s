@@ -1,5 +1,6 @@
 import asyncio
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from livekit.plugins.openai.realtime import GPTLiveSession
@@ -7,6 +8,7 @@ from livekit.plugins.openai.realtime import GPTLiveSession
 from abita_s2s.runtime import delegation_watchdog
 from abita_s2s.runtime.delegation_watchdog import DelegationWatchdog
 from abita_s2s.runtime.observability import ObservedGPTLiveModel, ObservedGPTLiveSession
+from abita_s2s.runtime.silence import BackendResponses
 
 
 class FakeLive:
@@ -57,15 +59,23 @@ class DelegationWatchdogTests(unittest.IsolatedAsyncioTestCase):
     async def test_backchannels_and_fragments_are_not_handed_off(self):
         for words in (" Mm-hmm.", " I", " ,"):
             self.watchdog.record(caller(words))
+            self.watchdog.record(voice(" Okay."))
             await self.quiet()
+        self.assertEqual(self.live.sent, [])
+
+    async def test_a_turn_the_voice_model_has_not_answered_is_left_alone(self):
+        self.watchdog.record(caller(" I'd like to book for Thursday at"))
+        await self.quiet()
         self.assertEqual(self.live.sent, [])
 
     async def test_words_while_the_backend_works_are_not_handed_off(self):
         self.live.backend_busy = True
         self.watchdog.record(caller(" Okay."))
+        self.watchdog.record(voice(" One moment."))
         await self.quiet()
         self.live.backend_busy = False
         self.watchdog.record(caller(" Thanks."))
+        self.watchdog.record(voice(" You're welcome."))
         self.live.backend_busy = True
         await self.quiet()
         self.assertEqual(self.live.sent, [])
@@ -86,11 +96,20 @@ class DelegationWatchdogTests(unittest.IsolatedAsyncioTestCase):
 
 
 class WiringTests(unittest.TestCase):
-    def test_backend_busy_reads_the_plugin_backend_state(self):
+    def test_backend_busy_tracks_responses_calls_and_cancellations(self):
         live = object.__new__(ObservedGPTLiveSession)
-        live._backend_running_responses, live._backend_open_calls = {}, set()
-        live._backend_response_pending = False
+        live._live_model = SimpleNamespace(backend=BackendResponses())
+        live._backend_open_calls, live._backend_response_pending = set(), False
         self.assertFalse(live.backend_busy)
+        for kind, busy in (("response.created", True), ("response.cancelled", False)):
+            live._live_model.backend.record(
+                {
+                    "type": "response.event",
+                    "delegation_id": "d1",
+                    "event": {"type": kind},
+                }
+            )
+            self.assertEqual(live.backend_busy, busy)
         live._backend_open_calls = {"call_1"}
         self.assertTrue(live.backend_busy)
 

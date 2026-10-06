@@ -1,8 +1,10 @@
 """Hand the backend any caller turn the voice model answered without delegating.
 
 GPT-Live sometimes acknowledges a request ("Sure", "Listo, confirmada") and never
-delegates it. Prompts reduce this but cannot prevent it, so once the call goes quiet
-the caller's undelegated words are sent to the backend, which acts on them or not.
+delegates it. Prompts reduce this but cannot prevent it, so once the voice model has
+answered and the call goes quiet, the caller's undelegated words go to the backend,
+which acts on them or not. A turn the voice model has not answered is left alone: the
+caller may still be talking, and the silence check-in covers a model that goes quiet.
 """
 
 import asyncio
@@ -12,7 +14,7 @@ import re
 from livekit.agents import utils
 
 logger = logging.getLogger(__name__)
-HANDOFF_SECONDS = 3.0
+HANDOFF_SECONDS = 5.0
 BACKCHANNELS = frozenset({"mm-hmm", "mhm", "uh-huh", "hmm", "um", "uh"})
 
 
@@ -59,12 +61,17 @@ class DelegationWatchdog:
         voice = "".join(self._voice).strip()
         self._reset()
         words = re.sub(r"[^\w\s-]", "", caller.lower()).strip()
-        if len(words) < 2 or words in BACKCHANNELS or self._live.backend_busy:
+        if (
+            not voice
+            or len(words) < 2
+            or words in BACKCHANNELS
+            or self._live.backend_busy
+        ):
             return
         logger.warning("delegation_watchdog_handoff caller_chars=%d", len(caller))
         message = (
             f"The caller said: {caller}\n"
-            f"The voice assistant answered without handing it to you: {voice or '(nothing)'}\n"
+            f"The voice assistant answered without handing it to you: {voice}\n"
             "If the caller asked for or approved something, do it now and correct any claim "
             "that it is already done. If no backend work is needed, return an empty response."
         )

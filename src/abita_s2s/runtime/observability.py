@@ -256,9 +256,12 @@ class ObservedGPTLiveSession(GPTLiveSession):
 
     @property
     def backend_busy(self) -> bool:
-        """Whether a backend response, tool call, or continuation is still outstanding."""
+        """Whether a backend response, tool call, or continuation is still outstanding.
+
+        Running responses come from our own tracker, which also clears cancelled ones.
+        """
         return bool(
-            self._backend_running_responses
+            self._live_model.backend.running
             or self._backend_open_calls
             or self._backend_response_pending
         )
