@@ -12,6 +12,7 @@ insurance, appointments, or availability.
 | [knowledge.yaml](scenarios/knowledge.yaml) | Office and provider knowledge from Product. |
 | [visit_type_triage.yaml](scenarios/visit_type_triage.yaml) | Asking the visit type for an ambiguous eye exam and searching the triaged type. |
 | [slot_identity.yaml](scenarios/slot_identity.yaml) | Selecting the confirmed date when adjacent dates share a provider and time. |
+| [office_facts.yaml](scenarios/office_facts.yaml) | Office facts (address, office, open now, hours, staff, services) stated only from retrieved knowledge (ACU-96). |
 | [ai_disclosure.yaml](scenarios/ai_disclosure.yaml) | Saying it is an AI assistant when a caller asks, in English and Spanish. |
 
 ## Before running
