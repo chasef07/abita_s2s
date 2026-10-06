@@ -3,7 +3,6 @@
 import asyncio
 import hashlib
 import json
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal
@@ -36,10 +35,6 @@ UNAVAILABLE = "blocked: Scheduling is unavailable."
 STALE_BEFORE_WRITE = (
     "blocked: The call or patient changed before the appointment operation started."
 )
-NOT_ANNOUNCED = (
-    "blocked: The announcement did not complete. No appointment was changed."
-)
-Announce = Callable[[], Awaitable[bool]]
 CHOOSE_LOADED_APPOINTMENT = "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed."
 
 
@@ -405,11 +400,9 @@ class Scheduling:
         referrer: str,
         confirmed: Literal[True] | None,
         call_id: str,
-        announce: Announce | None = None,
     ) -> str:
         return await self._execute(
             self._book,
-            announce=announce,
             slot_ref=slot_ref,
             reason=reason,
             referrer=referrer,
@@ -433,11 +426,9 @@ class Scheduling:
         confirmed: Literal[True] | None,
         old_ref: str,
         call_id: str,
-        announce: Announce | None = None,
     ) -> str:
         return await self._execute(
             self._reschedule,
-            announce=announce,
             slot_ref=slot_ref,
             reason=reason,
             referrer=referrer,
@@ -446,9 +437,7 @@ class Scheduling:
             call_id=call_id,
         )
 
-    async def _execute(
-        self, operation, *, announce: Announce | None = None, **arguments
-    ) -> str:
+    async def _execute(self, operation, **arguments) -> str:
         if self._closed:
             return UNAVAILABLE
         if self._write_task and not self._write_task.done():
@@ -463,26 +452,6 @@ class Scheduling:
             ):
                 return receipt.result["answer"] + self.appointments_text()
         captured = self._context()
-        announcing = False
-
-        async def before_write() -> str | None:
-            """Announce only a fully validated change, then confirm it is still current.
-
-            Nothing is sent before the announcement finishes, so a tool call cancelled
-            while announcing cancels its write too.
-            """
-            nonlocal announcing
-            announcing = True
-            try:
-                spoken = await announce()
-            finally:
-                announcing = False
-            if self._closed or self._context() != captured:
-                return STALE_BEFORE_WRITE
-            return None if spoken else NOT_ANNOUNCED
-
-        if announce:
-            arguments["before_write"] = before_write
 
         async def change():
             if self._closed or self._context() != captured:
@@ -491,12 +460,7 @@ class Scheduling:
             return self._finish_change(result, captured)
 
         self._write_task = asyncio.create_task(change())
-        try:
-            result = await asyncio.shield(self._write_task)
-        except asyncio.CancelledError:
-            if announcing:
-                self._write_task.cancel()
-            raise
+        result = await asyncio.shield(self._write_task)
         return result["answer"] + self.appointments_text()
 
     def _target(self, patient: Receipt, action: str, ref: str):
@@ -603,7 +567,6 @@ class Scheduling:
         confirmed: bool | None,
         call_id: str,
         old: Appointment | None = None,
-        before_write: Callable[[], Awaitable[str | None]] | None = None,
     ) -> dict:
         slot_ref = slot_ref.strip().upper()
         receipt_key = (
@@ -697,11 +660,6 @@ class Scheduling:
             body["insurancePlan"] = decision.canonicalPlan
         if old:
             body["rescheduleToken"] = old.rescheduleToken
-        if before_write:
-            if blocked := await before_write():
-                return reply("not_sent", blocked)
-            if self._slots.get(slot_ref) is not offered:
-                return reply("stale", STALE_BEFORE_WRITE)
         self._invalidate()
         self._receipts[receipt_key] = MutationReceipt(
             self._write_failure(
@@ -835,7 +793,6 @@ class Scheduling:
         referrer: str,
         confirmed: bool | None,
         call_id: str,
-        before_write: Callable[[], Awaitable[str | None]] | None = None,
     ) -> dict:
         old, receipt_key = self._target(p, "reschedule", old_ref)
         saved = self._receipts.get(receipt_key)
@@ -870,7 +827,6 @@ class Scheduling:
             confirmed=confirmed,
             call_id=call_id,
             old=old,
-            before_write=before_write,
         )
 
     def _report(

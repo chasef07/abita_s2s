@@ -206,30 +206,15 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.control.status, "accepted")
         self.sip.transfer_sip_participant.assert_awaited_once()
 
-    async def test_preparation_deadline_returns_bounded_retry_and_drains(self):
+    async def test_hung_announcement_is_bounded_and_still_transfers(self):
         async def hang():
             await asyncio.Event().wait()
 
         ctx = SimpleNamespace(disallow_interruptions=Mock(), wait_for_playout=hang)
-        self.state.reporter = SimpleNamespace(transfer_status="idle")
-        timeout = asyncio.timeout
-        with patch(
-            "abita_s2s.call_control.asyncio.timeout",
-            side_effect=lambda seconds: timeout(0.01 if seconds == 40 else seconds),
-        ):
-            first = await self.tools.transfer_call(ctx)
-            self.assertEqual(
-                first, "failed: No SIP transfer was sent. You may try once more."
-            )
-            self.assertEqual(self.state.reporter.transfer_status, "retryable")
-            second = await self.tools.transfer_call(ctx)
-            self.assertEqual(second, "failed: No SIP transfer was sent. Do not retry.")
-            self.assertEqual(self.state.reporter.transfer_status, "failed")
-            self.assertTrue(
-                (await self.tools.transfer_call(ctx)).startswith("blocked:")
-            )
-        self.sip.transfer_sip_participant.assert_not_awaited()
-        await self.control.aclose()
+        with patch("abita_s2s.call_control.ANNOUNCEMENT_SECONDS", 0.01):
+            result = await self.tools.transfer_call(ctx)
+        self.assertTrue(result.startswith("accepted: "), result)
+        self.assertEqual(self.events, ["refer"])
 
     async def test_refer_deadline_returns_uncertainty_and_drains(self):
         async def hang(*args, **kwargs):
@@ -499,23 +484,34 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(self.events, [])
 
-    async def test_announcement_failure_never_sends_refer_and_retry_is_bounded(self):
-        speech = SimpleNamespace(
-            wait_for_playout=AsyncMock(),
-            interrupted=False,
-            exception=lambda: RuntimeError("speech failed"),
-        )
+    async def transfer_after_announcement(self, speech):
         original = self.session.generate_reply
 
         def generate(**kwargs):
             return speech if "instructions" in kwargs else original(**kwargs)
 
         with patch.object(self.session, "generate_reply", side_effect=generate):
-            for _ in range(3):
-                await asyncio.wait_for(self.session.run(user_input="transfer_call"), 4)
-        self.assertEqual(self.model.outputs[-1].split(":", 1)[0], "blocked")
-        self.sip.transfer_sip_participant.assert_not_awaited()
-        self.assertEqual(speech.wait_for_playout.await_count, 2)
+            await asyncio.wait_for(self.session.run(user_input="transfer_call"), 4)
+        return self.model.outputs[-1]
+
+    async def test_failed_announcement_still_transfers(self):
+        speech = SimpleNamespace(
+            wait_for_playout=AsyncMock(),
+            interrupted=False,
+            exception=lambda: RuntimeError("speech failed"),
+        )
+        result = await self.transfer_after_announcement(speech)
+        self.assertTrue(result.startswith("accepted: "), result)
+        self.sip.transfer_sip_participant.assert_awaited_once()
+        self.assertEqual(self.control.attempts, 1)
+
+    async def test_interrupted_announcement_still_transfers(self):
+        speech = SimpleNamespace(
+            wait_for_playout=AsyncMock(), interrupted=True, exception=lambda: None
+        )
+        result = await self.transfer_after_announcement(speech)
+        self.assertTrue(result.startswith("accepted: "), result)
+        self.sip.transfer_sip_participant.assert_awaited_once()
 
     async def test_admission_uses_original_trunk(self):
         self.state.call = replace(

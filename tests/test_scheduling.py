@@ -1700,7 +1700,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.book(owner, ref)).split(":", 1)[0], "needs_input")
         self.assertEqual(len(requests), 2)
 
-    async def test_appointment_announcements_precede_writes(self):
+    async def test_confirmed_changes_write_while_the_agent_is_still_speaking(self):
         for move in (False, True):
             with self.subTest(reschedule=move):
                 owner, requests = self.owner(
@@ -1713,12 +1713,11 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 )
                 ref = await self.slots(owner)
                 context = speech_context(owner.state)
-                speech = context.session.generate_reply.return_value
 
-                async def playout():
-                    self.assertEqual(len(requests), 1)
+                async def speaking_forever():
+                    await asyncio.Event().wait()
 
-                speech.wait_for_playout.side_effect = playout
+                context.wait_for_playout.side_effect = speaking_forever
                 args = dict(
                     appointmentSlotRef=ref,
                     appointmentReason="Eye exam",
@@ -1730,41 +1729,16 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                         "appointmentRef"
                     ]
                 action = "reschedule" if move else "book"
-                result = await getattr(SchedulingTools(owner), action + "_appointment")(
-                    context, **args
+                result = await asyncio.wait_for(
+                    getattr(SchedulingTools(owner), action + "_appointment")(
+                        context, **args
+                    ),
+                    1,
                 )
                 self.assertTrue(result.startswith("success:"), result)
                 self.assertEqual(len(requests), 2)
-                context.session.generate_reply.assert_called_once_with(
-                    instructions=f"In one short sentence, tell the caller you are {'rescheduling' if move else 'booking'} their appointment.",
-                    tool_choice="none",
-                )
-                speech.wait_for_playout.assert_awaited_once()
-
-    async def test_announcement_failure_or_closed_call_prevents_write(self):
-        for failure in ("interrupted", "exception", "timeout", "closed"):
-            with self.subTest(failure=failure):
-                owner, requests = self.owner([inventory()])
-                ref = await self.slots(owner)
-                context = speech_context(owner.state)
-                speech = context.session.generate_reply.return_value
-                speech.interrupted = failure == "interrupted"
-                speech.exception = lambda: (
-                    RuntimeError() if failure == "exception" else None
-                )
-                if failure == "timeout":
-                    speech.wait_for_playout.side_effect = TimeoutError()
-                elif failure == "closed":
-                    speech.wait_for_playout.side_effect = owner.close_admission
-                operation = SchedulingTools(owner).book_appointment(
-                    context, ref, "Eye exam", "none", True
-                )
-                result = await operation
-                self.assertTrue(result.startswith("blocked:"), result)
-                if failure != "closed":
-                    self.assertIn("No appointment was changed", result)
-                self.assertEqual(len(requests), 1)
-                self.assertFalse(owner._receipts)
+                context.wait_for_playout.assert_not_awaited()
+                context.session.generate_reply.assert_not_called()
 
     async def test_unknown_slot_ref_keeps_offered_slots_and_cache(self):
         owner, requests = self.owner([inventory(), booking()])
@@ -1775,47 +1749,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 1)
         self.assertTrue((await self.book(owner, ref)).startswith("success:"))
 
-    async def test_rejected_change_is_never_announced(self):
-        owner, requests = self.owner([inventory()])
-        ref = await self.slots(owner)
-        context = speech_context(owner.state)
-        tools = SchedulingTools(owner)
-        for slot, reason in (("ST_UNKNOWN", "Eye exam"), (ref, " ")):
-            with self.subTest(slot=slot):
-                result = await tools.book_appointment(
-                    context, slot, reason, "none", True
-                )
-                self.assertTrue(result.startswith("needs_input:"), result)
-        context.session.generate_reply.assert_not_called()
-        self.assertEqual(len(requests), 1)
-
-    async def test_cancelled_tool_call_during_announcement_sends_nothing(self):
-        owner, requests = self.owner([inventory(), booking()])
-        ref = await self.slots(owner)
-        context = speech_context(owner.state)
-        speaking = asyncio.Event()
-
-        async def playout():
-            speaking.set()
-            await asyncio.Event().wait()
-
-        context.session.generate_reply.return_value.wait_for_playout.side_effect = (
-            playout
-        )
-        call = asyncio.create_task(
-            SchedulingTools(owner).book_appointment(
-                context, ref, "Eye exam", "none", True
-            )
-        )
-        await speaking.wait()
-        call.cancel()
-        with self.assertRaises(asyncio.CancelledError):
-            await call
-        await owner.aclose()
-        self.assertEqual(len(requests), 1)
-        self.assertFalse(owner._receipts)
-
-    async def test_foreign_session_blocks_changes_before_announcing(self):
+    async def test_foreign_session_blocks_changes(self):
         owner, requests = self.owner([])
         tools = SchedulingTools(owner)
         change = dict(
@@ -1875,20 +1809,11 @@ class SchedulingModel(llm.LLM):
         stream = SchedulingStream(
             self, chat_ctx=chat_ctx, tools=tools or [], conn_options=conn_options
         )
-        stream.speech_only = kwargs.get("tool_choice") == "none"
         return stream
 
 
 class SchedulingStream(llm.LLMStream):
     async def _run(self):
-        if self.speech_only:
-            self._event_ch.send_nowait(
-                llm.ChatChunk(
-                    id="offline-announcement",
-                    delta=llm.ChoiceDelta(role="assistant", content="One moment."),
-                )
-            )
-            return
         items = self._chat_ctx.items
         last_user = max(
             i
