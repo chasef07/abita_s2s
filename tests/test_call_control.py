@@ -216,23 +216,6 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.startswith("accepted: "), result)
         self.assertEqual(self.events, ["refer"])
 
-    async def test_long_agent_sentence_does_not_spend_the_transfer_deadline(self):
-        async def long_sentence():
-            await asyncio.sleep(0.05)
-
-        speech = SimpleNamespace(
-            wait_for_playout=AsyncMock(), interrupted=False, exception=lambda: None
-        )
-        ctx = SimpleNamespace(
-            disallow_interruptions=Mock(),
-            wait_for_playout=long_sentence,
-            session=SimpleNamespace(generate_reply=Mock(return_value=speech)),
-        )
-        with patch("abita_s2s.call_control.TRANSFER_SECONDS", 0.01):
-            result = await self.tools.transfer_call(ctx)
-        self.assertTrue(result.startswith("accepted: "), result)
-        self.assertEqual(self.events, ["refer"])
-
     async def test_refer_deadline_returns_uncertainty_and_drains(self):
         async def hang(*args, **kwargs):
             await asyncio.Event().wait()
@@ -249,7 +232,11 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             session=SimpleNamespace(generate_reply=Mock(return_value=speech)),
         )
         self.state.reporter = SimpleNamespace(transfer_status="idle")
-        with patch("abita_s2s.call_control.TRANSFER_SECONDS", 0.01):
+        timeout = asyncio.timeout
+        with patch(
+            "abita_s2s.call_control.asyncio.timeout",
+            side_effect=lambda seconds: timeout(0.01 if seconds == 40 else seconds),
+        ):
             result = await self.tools.transfer_call(ctx)
         self.assertEqual(
             result,

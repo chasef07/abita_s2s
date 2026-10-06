@@ -14,8 +14,7 @@ from abita_s2s.state import CallState
 
 logger = logging.getLogger(__name__)
 AMBIGUOUS = "ambiguous: Transfer may be in progress. Do not retry or end the call."
-ANNOUNCEMENT_SECONDS = 15
-TRANSFER_SECONDS = 40
+ANNOUNCEMENT_SECONDS = 10
 
 
 class CallControl:
@@ -87,10 +86,10 @@ class CallControl:
         return await asyncio.shield(self._transfer_task)
 
     async def _transfer(self, hold, announce):
-        deadline = asyncio.timeout(None)
+        deadline = asyncio.timeout(40)
         try:
             async with deadline:
-                return await self._perform_transfer(hold, announce, deadline)
+                return await self._perform_transfer(hold, announce)
         except TimeoutError:
             if not deadline.expired():
                 raise
@@ -111,7 +110,7 @@ class CallControl:
         if not spoken:
             logger.warning("Transfer announcement did not complete")
 
-    async def _perform_transfer(self, hold, announce, deadline):
+    async def _perform_transfer(self, hold, announce):
         if self.sandbox:
             return "blocked: Human transfers are unavailable in this sandbox call. No transfer was made."
         if self.status in ("pending", "accepted", "ambiguous"):
@@ -128,7 +127,6 @@ class CallControl:
         phase = "preparing"
         try:
             await self._announce(announce)
-            deadline.reschedule(asyncio.get_running_loop().time() + TRANSFER_SECONDS)
             if not self._active():
                 raise RuntimeError("Caller disconnected")
             phase = "admitting"
