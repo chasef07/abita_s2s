@@ -614,7 +614,12 @@ class Scheduling:
         if not old and (saved := self._receipts.get(receipt_key)):
             return self._replay(p, saved)
         offered = self._slots.get(slot_ref)
-        if not offered or offered.context != captured or offered.expires <= self.now():
+        if not offered:
+            return reply(
+                "needs_input",
+                "needs_input: That slot reference was not returned. Choose a slot exactly as listed in the latest results.",
+            )
+        if offered.context != captured or offered.expires <= self.now():
             self._invalidate()
             return reply(
                 "needs_input",

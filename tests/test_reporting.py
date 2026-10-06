@@ -400,33 +400,37 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
     async def test_resolving_late_created_chart_preserves_new_patient_classification(
         self,
     ):
-        reporter = self.reporter()
-        state = call_state(None)
-        state.reporter = reporter
-        state.insurance.registrations["chart-jane"] = "created"
-        reporter.record(
-            "patient",
-            {
-                "outcome": "created",
-                "externalPatientId": "chart-jane",
-                "superseded": True,
-            },
-        )
-        responses = [receipt()]
-        async with httpx.AsyncClient(
-            transport=httpx.MockTransport(
-                lambda request: httpx.Response(200, json=responses.pop(0))
-            )
-        ) as client:
-            resolver = PatientResolver(state, PatientMiddleware(client, CONFIG))
-            self.addAsyncCleanup(resolver.aclose)
-            await resolver.resolve("Jane", "01/02/1980", call_id="identity-call")
-        await reporter.finish(lambda: REPORT)
-        facts = self.requests[-1]["closeoutPayload"]["domainOutcomes"]
-        current = [f for f in facts if not f["evidence"].get("superseded")]
-        self.assertEqual(current[-1]["outcome"], "patient_created")
-        self.assertEqual(current[-1]["status"], "success")
-        self.assertEqual(current[-1]["callId"], "identity-call")
+        for registered, status in (("created", "success"), ("partial", "partial")):
+            with self.subTest(registered=registered):
+                reporter = self.reporter()
+                state = call_state(None)
+                state.reporter = reporter
+                state.insurance.registrations["chart-jane"] = registered
+                reporter.record(
+                    "patient",
+                    {
+                        "outcome": registered,
+                        "externalPatientId": "chart-jane",
+                        "superseded": True,
+                    },
+                )
+                responses = [receipt()]
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(
+                        lambda request: httpx.Response(200, json=responses.pop(0))
+                    )
+                ) as client:
+                    resolver = PatientResolver(state, PatientMiddleware(client, CONFIG))
+                    self.addAsyncCleanup(resolver.aclose)
+                    await resolver.resolve(
+                        "Jane", "01/02/1980", call_id="identity-call"
+                    )
+                await reporter.finish(lambda: REPORT)
+                facts = self.requests[-1]["closeoutPayload"]["domainOutcomes"]
+                current = [f for f in facts if not f["evidence"].get("superseded")]
+                self.assertEqual(current[-1]["outcome"], f"patient_{registered}")
+                self.assertEqual(current[-1]["status"], status)
+                self.assertEqual(current[-1]["callId"], "identity-call")
 
     async def test_transient_delivery_retries_identical_envelope(self):
         async def handler(request):

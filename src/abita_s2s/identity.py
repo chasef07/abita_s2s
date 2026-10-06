@@ -393,8 +393,8 @@ class PatientResolver:
         self, receipt: Receipt, outcome: str, *, call_id: str | None = None
     ) -> dict:
         if self.state.reporter:
-            created = receipt.patientId in self.state.insurance.registrations
-            for recorded in (outcome, "created") if created else (outcome,):
+            registered = self.state.insurance.registrations.get(receipt.patientId)
+            for recorded in (outcome, registered) if registered else (outcome,):
                 self.state.reporter.record(
                     "patient",
                     {"outcome": recorded, "externalPatientId": receipt.patientId},
