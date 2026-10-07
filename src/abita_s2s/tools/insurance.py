@@ -25,8 +25,7 @@ class InsuranceTools:
         call: a name, part of a name, or what is on the card. If the result asks
         which plan, read the options and call again with the caller's answer, also
         word for word. Use before registration or a requested insurance change.
-        Follow staff-review instructions; acceptance does not establish active
-        benefits.
+        Follow staff-review instructions.
         """
         if not bound(self._insurance, context):
             return staff()["answer"]
