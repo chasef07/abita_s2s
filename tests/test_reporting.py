@@ -239,13 +239,17 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             set(evaluation["results"]),
             {
                 "appointment_datetime_correct",
-                "conversation_responsive",
+                "time_offered",
+                "booking_requested",
+                "need_understood",
+                "right_help",
+                "clear_and_responsive",
                 "expressed_sentiment",
             },
         )
         self.assertEqual(
-            evaluation["results"]["conversation_responsive"]["answers"][
-                "conversation_responsive"
+            evaluation["results"]["clear_and_responsive"]["answers"][
+                "clear_and_responsive"
             ],
             {"type": "noul", "noul": 0.8},
         )

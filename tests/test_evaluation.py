@@ -19,6 +19,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         *,
         tool="reschedule_appointment",
         returned=True,
+        extra_tool=None,
     ):
         history = ChatContext()
         history.items.append(
@@ -46,6 +47,18 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         )
         if not returned:
             history.items.pop()
+        if extra_tool:
+            history.items.extend(
+                [
+                    FunctionCall(call_id="extra-1", name=extra_tool, arguments="{}"),
+                    FunctionCallOutput(
+                        call_id="extra-1",
+                        name=extra_tool,
+                        output="success: done",
+                        is_error=False,
+                    ),
+                ]
+            )
         history.add_message(role="assistant", content="It is rescheduled.")
         history.add_message(
             role="user", content="This is frustrating. Please get a person."
@@ -94,7 +107,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             )
         return requests, result
 
-    async def test_datetime_judge_requires_a_returned_appointment_action(self):
+    async def test_gated_judges_require_their_returned_tool_results(self):
         for tool in (
             "book_appointment",
             "reschedule_appointment",
@@ -108,21 +121,20 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                     requests, result = await self.run_evaluation(
                         tool=tool, returned=returned
                     )
-                    applies = returned and tool in {
+                    sent = {name for r in requests for name in r["questions"]}
+                    datetime_applies = returned and tool in {
                         "book_appointment",
                         "reschedule_appointment",
                         "cancel_appointment",
                     }
+                    time_applies = returned and tool == "list_available_appointments"
                     self.assertEqual(
-                        any(
-                            "appointment_datetime_correct" in r["questions"]
-                            for r in requests
-                        ),
-                        applies,
+                        "appointment_datetime_correct" in sent, datetime_applies
                     )
-                    self.assertEqual(len(requests), 4 if applies else 3)
+                    self.assertEqual("time_offered" in sent, time_applies)
+                    self.assertEqual(len(requests), 6 + datetime_applies + time_applies)
                     self.assertEqual(result["status"], "complete")
-                    if not applies:
+                    if not datetime_applies:
                         self.assertEqual(
                             result["results"]["appointment_datetime_correct"],
                             {
@@ -130,33 +142,70 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                                 "reason": "no_appointment_action_result",
                             },
                         )
+                    if not time_applies:
+                        self.assertEqual(
+                            result["results"]["time_offered"],
+                            {
+                                "status": "not_applicable",
+                                "reason": "no_availability_result",
+                            },
+                        )
 
-    async def test_four_judges_receive_full_history_and_return_decisions(self):
+    async def test_v6_sends_exactly_the_scorecard_questions(self):
         requests, result = await self.run_evaluation(
-            values={
-                "appointment_datetime_correct": 0.1,
-                "conversation_responsive": 0.05,
-            }
+            tool="list_available_appointments", extra_tool="book_appointment"
         )
-        self.assertEqual(len(requests), 4)
-        self.assertEqual(result["status"], "complete")
-        self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v5")
+        sent = {}
+        for request in requests:
+            self.assertEqual(len(request["questions"]), 1)
+            sent.update(request["questions"])
         self.assertEqual(
-            set(result["results"]),
+            set(sent),
             {
-                "appointment_datetime_correct",
+                "booking_requested",
+                "time_offered",
+                "need_understood",
+                "right_help",
+                "clear_and_responsive",
                 "office_rules_grounded",
-                "conversation_responsive",
+                "appointment_datetime_correct",
                 "expressed_sentiment",
             },
         )
+        self.assertEqual(len(requests), 8)
+        self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v6")
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(set(result["results"]), set(sent))
+        for name, question in sent.items():
+            if name != "expressed_sentiment":
+                self.assertEqual(question["type"], "noul")
+                self.assertEqual(set(question["criteria"]), {"true", "false"})
+        self.assertTrue(
+            sent["booking_requested"]["instructions"].startswith(
+                "Did the caller ask to book a new appointment"
+            )
+        )
+        self.assertEqual(
+            sent["time_offered"]["criteria"]["true"],
+            "The agent offered at least one specific date and time from returned availability.",
+        )
+
+    async def test_judges_receive_full_history_and_return_decisions(self):
+        requests, result = await self.run_evaluation(
+            values={
+                "appointment_datetime_correct": 0.1,
+                "clear_and_responsive": 0.05,
+            }
+        )
+        self.assertEqual(len(requests), 7)
+        self.assertEqual(result["status"], "complete")
         answer = result["results"]["appointment_datetime_correct"]["answers"][
             "appointment_datetime_correct"
         ]
         self.assertEqual(answer, {"type": "noul", "noul": 0.1})
         self.assertEqual(
-            result["results"]["conversation_responsive"]["answers"][
-                "conversation_responsive"
+            result["results"]["clear_and_responsive"]["answers"][
+                "clear_and_responsive"
             ],
             {"type": "noul", "noul": 0.05},
         )
@@ -192,7 +241,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLogs("abita_s2s.observability.evaluation", "ERROR"),
             ):
                 _, result = await self.run_evaluation(behavior)
-                self.assertEqual(len(result["results"]), 3)
+                self.assertEqual(len(result["results"]), 7)
                 self.assertNotIn("office_rules_grounded", result["results"])
                 self.assertEqual(
                     result["errors"]["office_rules_grounded"]["cause"], "ValueError"
@@ -205,9 +254,9 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertLogs("abita_s2s.observability.evaluation", "ERROR"):
             requests, result = await self.run_evaluation(behavior)
-        self.assertEqual(len(requests), 4)
+        self.assertEqual(len(requests), 7)
         self.assertEqual(result["errors"]["office_rules_grounded"]["httpStatus"], 429)
-        self.assertEqual(len(result["results"]), 3)
+        self.assertEqual(len(result["results"]), 7)
 
     async def test_exhausted_http_and_transport_retries_remain_visible(self):
         for transport_failure in (False, True):
@@ -225,8 +274,8 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLogs("abita_s2s.observability.evaluation", "ERROR") as logs,
             ):
                 requests, result = await self.run_evaluation(behavior)
-            self.assertEqual(len(requests), 5)
-            self.assertEqual(len(result["results"]), 3)
+            self.assertEqual(len(requests), 8)
+            self.assertEqual(len(result["results"]), 7)
             error = result["errors"]["office_rules_grounded"]
             self.assertEqual(error["attempts"], 2)
             self.assertEqual(
@@ -235,7 +284,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertNotIn("synthetic-secret", str(result) + str(logs.output))
 
-    async def test_invalid_sentiment_preserves_all_three_checks(self):
+    async def test_invalid_sentiment_preserves_all_other_judges(self):
         for answer in [
             {"type": "score", "score": 5, "probabilities": {"2": 1}},
             {"type": "score", "score": True, "probabilities": {"2": 1}},
@@ -252,7 +301,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLogs("abita_s2s.observability.evaluation", "ERROR"),
             ):
                 _, result = await self.run_evaluation(behavior)
-            self.assertEqual(len(result["results"]), 3)
+            self.assertEqual(len(result["results"]), 7)
             self.assertEqual(
                 result["errors"]["expressed_sentiment"]["cause"], "ValueError"
             )
