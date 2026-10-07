@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.2](https://github.com/chasef07/abita_s2s/compare/v0.13.1...v0.13.2) (2026-10-07)
+
+
+### Bug Fixes
+
+* **prompts:** drop the active-benefits disclaimer from insurance answers ([#149](https://github.com/chasef07/abita_s2s/issues/149)) ([1f005b3](https://github.com/chasef07/abita_s2s/commit/1f005b3121edb226cc511f28f36c85cf5cc3f270))
+
 ## [0.13.1](https://github.com/chasef07/abita_s2s/compare/v0.13.0...v0.13.1) (2026-10-06)
 
 
