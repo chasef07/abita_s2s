@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Call Review Scorecard</title>
+<!-- Rendered by build_review_page.py. The built page embeds patient transcripts: never commit or share it. -->
+<style>
+:root{
+  --bg:#f6f5f2;--panel:#ffffff;--ink:#1d1d1b;--muted:#6b6a65;--line:#e4e2dc;
+  --caller:#eef3fb;--caller-ink:#173b6b;--agent:#f3f1ec;--tool:#fbf6ea;--tool-ink:#6b4a0c;
+  --yes:#1f7a4d;--yes-bg:#e5f3ea;--no:#b3261e;--no-bg:#fbe9e7;--accent:#3c3489;--accent-bg:#eeedfe;--gap:#b3261e;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#171716;--panel:#20201f;--ink:#ecebe6;--muted:#a3a19a;--line:#33322f;
+  --caller:#1c2a3d;--caller-ink:#b9d2f2;--agent:#2a2927;--tool:#2e2716;--tool-ink:#efcf8a;
+  --yes:#7fd3a3;--yes-bg:#16301f;--no:#f2a49c;--no-bg:#3a1a17;--accent:#c9c5f7;--accent-bg:#2b2850;--gap:#f2a49c;
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;height:100vh;display:grid;grid-template-columns:230px 1fr 360px;overflow:hidden}
+aside,main,section{overflow-y:auto;height:100vh}
+aside{border-right:1px solid var(--line);background:var(--panel)}
+.brand{padding:14px 14px 8px;font-weight:600}
+.progress{padding:0 14px 12px;color:var(--muted);font-size:12px}
+.bar{height:4px;background:var(--line);border-radius:2px;margin-top:6px}.bar>div{height:4px;background:var(--yes);border-radius:2px}
+.call{display:flex;gap:8px;align-items:center;padding:8px 14px;cursor:pointer;border-left:3px solid transparent}
+.call:hover{background:var(--agent)}.call.active{border-left-color:var(--accent);background:var(--accent-bg)}
+.dot{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--muted);flex:none}.dot.done{background:var(--yes);border-color:var(--yes)}.dot.part{background:linear-gradient(90deg,var(--yes) 50%,transparent 50%);border-color:var(--yes)}.dot.excl{background:var(--muted)}
+.call small{color:var(--muted);display:block;font-size:11px}
+main{padding:18px 26px 80px}
+.head h1{font-size:18px;margin:0 0 2px;font-weight:600}.head .sub{color:var(--muted);font-size:12px;user-select:all}
+.facts{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 16px}
+.fact{font-size:12px;padding:3px 8px;border-radius:12px;background:var(--agent);color:var(--muted)}.fact b{color:var(--ink);font-weight:600}.fact.flag b{color:var(--no)}
+.ev{display:grid;grid-template-columns:48px 1fr;gap:10px;margin:6px 0}
+.ts{color:var(--muted);font-size:11px;text-align:right;padding-top:7px;font-variant-numeric:tabular-nums}
+.bubble{padding:7px 11px;border-radius:10px;max-width:760px;white-space:pre-wrap}
+.caller .bubble{background:var(--caller);color:var(--caller-ink)}.agent .bubble{background:var(--agent)}
+.who{font-size:11px;font-weight:600;color:var(--muted);margin-bottom:1px}.caller .who{color:var(--caller-ink)}
+.int{font-size:10px;color:var(--muted);margin-left:6px;font-weight:400}
+.tool .bubble{background:var(--tool);color:var(--tool-ink);font:12px/1.45 ui-monospace,Menlo,monospace;cursor:pointer}
+.tool .bubble .det{display:none;margin-top:6px;white-space:pre-wrap;word-break:break-word}.tool.open .bubble .det{display:block}
+.gap{grid-column:2;font-size:11px;color:var(--gap);margin:2px 0}
+section{border-left:1px solid var(--line);background:var(--panel);padding:16px}
+section h2{font-size:14px;margin:0 0 4px}.hint{color:var(--muted);font-size:12px;margin:0 0 12px}
+.q{border:1px solid var(--line);border-radius:10px;padding:10px 11px;margin-bottom:9px}
+.q.hidden{display:none}.q .lbl{font-weight:600;font-size:13px}.q .help{color:var(--muted);font-size:12px;margin:2px 0 8px}
+.yn{display:flex;gap:6px}.yn button{flex:1;padding:6px 0;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--ink);font:inherit;cursor:pointer}
+.yn button.y.on{background:var(--yes-bg);border-color:var(--yes);color:var(--yes);font-weight:600}.yn button.n.on{background:var(--no-bg);border-color:var(--no);color:var(--no);font-weight:600}
+.jev{display:none;margin-top:7px;font-size:12px;color:var(--muted)}.reveal .jev{display:block}
+.agree{font-weight:600;margin-left:4px}.agree.ok{color:var(--yes)}.agree.bad{color:var(--no)}
+textarea{width:100%;min-height:70px;border:1px solid var(--line);border-radius:8px;padding:8px;background:transparent;color:var(--ink);font:inherit;resize:vertical}
+.row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.btn{padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--ink);font:inherit;cursor:pointer}.btn.primary{background:var(--accent-bg);border-color:var(--accent);color:var(--accent);font-weight:600}
+label.ex{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted);margin:4px 0 10px}
+.extra{display:none;font-size:12px;color:var(--muted);border-top:1px solid var(--line);margin-top:12px;padding-top:10px}.reveal .extra{display:block}
+kbd{font-size:11px;border:1px solid var(--line);border-radius:4px;padding:0 4px}
+</style>
+</head>
+<body>
+<aside>
+  <div class="brand">Call review · __BATCH_LABEL__</div>
+  <div class="progress"><span id="prog"></span><div class="bar"><div id="progbar"></div></div></div>
+  <div id="list"></div>
+</aside>
+<main id="main"></main>
+<section id="card"></section>
+<script>
+const CALLS = __DATA__;
+const QS = [
+  {id:"B1", label:"Booking requested?", help:"Did the caller ask to book, reschedule, or cancel?"},
+  {id:"B5", label:"Specific time offered?", help:"Did the agent offer a real date and time from availability?", gate:"B1"},
+  {id:"H1", label:"Understood what the caller needed?", help:"Every request identified, including corrections."},
+  {id:"H2", label:"Caller got the right help?", help:"Each request completed, or a correct, clearly explained next step."},
+  {id:"H4", label:"Clear and responsive?", help:"No avoidable repeats, wasted questions, confusing statements, or silences."},
+  {id:"A1", label:"Office facts supported?", help:"Every office fact backed by retrieved or injected info (yes if none stated)."},
+];
+const KEY = "acuity-call-review-" + __BATCH_DATE__;
+const reviewer = () => { try { return localStorage.getItem(KEY+"-reviewer") || ""; } catch(e) { return ""; } };
+let state = {}; try { state = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch(e) {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch(e) {} };
+let cur = 0, revealed = false;
+const ans = c => state[c.scl] || (state[c.scl] = {});
+const applicable = (c, q) => !q.gate || ans(c)[q.gate] === "yes";
+const doneCount = c => QS.filter(q => applicable(c,q) && ans(c)[q.id]).length;
+const needCount = c => QS.filter(q => applicable(c,q)).length;
+const isDone = c => ans(c).exclude || doneCount(c) === needCount(c);
+const esc = s => String(s).replace(/[&<>"]/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
+const mmss = t => { t = Math.max(0, t); return Math.floor(t/60) + ":" + String(Math.floor(t%60)).padStart(2,"0"); };
+const jevYes = v => /^yes/i.test(v||"") ? "yes" : /^no/i.test(v||"") ? "no" : null;
+
+function renderList(){
+  const d = CALLS.filter(isDone).length;
+  document.getElementById("prog").textContent = d + " of " + CALLS.length + " reviewed";
+  document.getElementById("progbar").style.width = (100*d/CALLS.length) + "%";
+  document.getElementById("list").innerHTML = CALLS.map((c,i) => {
+    const a = ans(c), cls = a.exclude ? "excl" : isDone(c) ? "done" : doneCount(c) ? "part" : "";
+    return `<div class="call ${i===cur?"active":""}" data-i="${i}"><span class="dot ${cls}"></span><div>#${c.n} ${esc(c.office)} · ${c.time}<small>${mmss(c.secs)} · ${esc(c.status.toLowerCase())}</small></div></div>`;
+  }).join("");
+  document.querySelectorAll(".call").forEach(el => el.onclick = () => go(+el.dataset.i));
+}
+
+function renderMain(){
+  const c = CALLS[cur];
+  let html = `<div class="head"><h1>#${c.n} · ${esc(c.office)} · ${c.time} ET · ${mmss(c.secs)}</h1><div class="sub">${esc(c.scl)} · ${esc(c.room)}</div></div><div class="facts">`;
+  for (const [k,v] of Object.entries(c.d)) html += `<span class="fact ${k.startsWith("Callback")&&v.startsWith("yes")?"flag":""}">${esc(k)}: <b>${esc(v)}</b></span>`;
+  html += `</div>`;
+  let last = null;
+  for (const e of c.events){
+    if (last !== null && e.t - last >= 8) html += `<div class="ev"><div></div><div class="gap">${Math.round(e.t-last)}s gap</div></div>`;
+    last = e.t;
+    if (e.k === "tool"){
+      html += `<div class="ev tool"><div class="ts">${mmss(e.t)}</div><div class="bubble" onclick="this.parentNode.classList.toggle('open')">⚙ ${esc(e.name)} → ${esc((e.out||"").split(/[:\n]/)[0])}<div class="det">args: ${esc(e.args)}\n\nresult: ${esc(e.out||"")}</div></div></div>`;
+    } else {
+      html += `<div class="ev ${e.k}"><div class="ts">${mmss(e.t)}</div><div><div class="who">${e.k==="caller"?"Caller":"Agent"}${e.int?'<span class="int">interrupted</span>':""}</div><div class="bubble">${esc(e.text)}</div></div></div>`;
+    }
+  }
+  document.getElementById("main").innerHTML = html;
+  document.getElementById("main").scrollTop = 0;
+}
+
+function renderCard(){
+  const c = CALLS[cur], a = ans(c);
+  let html = `<h2>Scorecard</h2><input id="who" placeholder="Your name" value="${esc(reviewer())}" style="width:100%;margin:4px 0 8px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--ink);font:inherit"><p class="hint">Answer before revealing Jev. Saves automatically. <kbd>j</kbd>/<kbd>k</kbd> next/prev call.</p>
+  <label class="ex"><input type="checkbox" id="ex" ${a.exclude?"checked":""}> Exclude (test or internal call)</label>`;
+  for (const q of QS){
+    const v = a[q.id], jv = c.jev[q.id], jy = jevYes(jv);
+    const agree = v && jy ? (v === jy ? '<span class="agree ok">agrees</span>' : '<span class="agree bad">disagrees</span>') : "";
+    html += `<div class="q ${applicable(c,q)?"":"hidden"}"><div class="lbl">${q.id} · ${q.label}</div><div class="help">${q.help}</div>
+      <div class="yn"><button class="y ${v==="yes"?"on":""}" data-q="${q.id}" data-v="yes">Yes</button><button class="n ${v==="no"?"on":""}" data-q="${q.id}" data-v="no">No</button></div>
+      <div class="jev">Jev: ${esc(jv||"—")} ${agree}</div></div>`;
+  }
+  html += `<textarea id="note" placeholder="Note: what went wrong, timestamps…">${esc(a.note||"")}</textarea>
+  <div class="row"><button class="btn primary" id="rev">${revealed?"Hide Jev":"Reveal Jev"}</button><button class="btn" id="exp">Export CSV</button></div>
+  <div class="extra">Production judges (current scorecard)<br>conversation_responsive: ${esc(c.jev.prod_responsive||"—")}<br>appointment_datetime_correct: ${esc(c.jev.prod_appt||"—")}<br>expressed_sentiment (0–4): ${esc(c.jev.sentiment||"—")}</div>`;
+  const card = document.getElementById("card");
+  card.innerHTML = html; card.classList.toggle("reveal", revealed);
+  card.querySelectorAll(".yn button").forEach(b => b.onclick = () => {
+    a[b.dataset.q] = a[b.dataset.q] === b.dataset.v ? undefined : b.dataset.v;
+    if (b.dataset.q === "B1" && a.B1 !== "yes") delete a.B5;
+    save(); renderCard(); renderList();
+  });
+  document.getElementById("ex").onchange = e => { a.exclude = e.target.checked; save(); renderList(); };
+  document.getElementById("who").oninput = e => { try { localStorage.setItem(KEY+"-reviewer", e.target.value.trim()); } catch(err) {} };
+  document.getElementById("note").oninput = e => { a.note = e.target.value; save(); };
+  document.getElementById("rev").onclick = () => { revealed = !revealed; renderCard(); };
+  document.getElementById("exp").onclick = exportCsv;
+}
+
+function exportCsv(){
+  const who = (reviewer() || "reviewer").toLowerCase().replace(/[^a-z0-9]+/g,"_");
+  const head = ["#","source_call_id","room","office","time_ET","exclude",...QS.map(q=>who+"_"+q.id),...QS.map(q=>"jev_"+q.id),who+"_note"];
+  const q = s => `"${String(s??"").replace(/"/g,'""')}"`;
+  const rows = CALLS.map(c => { const a = ans(c); return [c.n,c.scl,c.room,c.office,c.time,a.exclude?"yes":"",...QS.map(x=>applicable(c,x)?(a[x.id]||""):"n/a"),...QS.map(x=>c.jev[x.id]||""),a.note||""].map(q).join(","); });
+  const blob = new Blob([[head.map(q).join(","),...rows].join("\n")], {type:"text/csv"});
+  const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = who+"-scorecard-"+__BATCH_DATE__+".csv"; link.click();
+}
+
+function go(i){ cur = Math.max(0, Math.min(CALLS.length-1, i)); revealed = false; renderList(); renderMain(); renderCard(); }
+document.addEventListener("keydown", e => { if (e.target.tagName === "TEXTAREA") return; if (e.key === "j") go(cur+1); if (e.key === "k") go(cur-1); });
+go(0);
+</script>
+</body>
+</html>

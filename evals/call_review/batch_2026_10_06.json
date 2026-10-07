@@ -1,0 +1,727 @@
+{
+ "date": "2026-10-06",
+ "sample": "18 random calls >=30s from Oct 6 (Spanish calls replaced by the next random English call) + 2 booking calls picked on purpose (#2, #10)",
+ "threshold": 0.4,
+ "calls": [
+  {
+   "n": 1,
+   "source_call_id": "SCL_Z2ed3jri9z4G",
+   "room": "RM_p7SLSi9Kq5eN",
+   "office": "Sweetwater",
+   "time_et": "15:00",
+   "secs": 31,
+   "sample": "random",
+   "code_checks": {
+    "availability_searched": "no",
+    "booking_tool_called": "no",
+    "staff_task_created": "no",
+    "transferred": "yes",
+    "callback_within_1h": "no",
+    "insurance_verified": "n/a"
+   },
+   "jev": {
+    "v1": {
+     "booking_requested": 0.05,
+     "time_offered": 0.04,
+     "need_understood": 0.82,
+     "right_help": 0.76,
+     "clear_and_responsive": 0.82
+    },
+    "v2": {
+     "need_understood": 0.85,
+     "clear_and_responsive": 0.89
+    },
+    "production": {
+     "office_rules_grounded": 0.94,
+     "appointment_datetime_correct": "n/a",
+     "conversation_responsive": 0.88,
+     "expressed_sentiment": 2
+    }
+   }
+  },
+  {
+   "n": 2,
+   "source_call_id": "SCL_44KkgrVPqnqZ",
+   "room": "RM_3UhYPzeHK2to",
+   "office": "Hollywood",
+   "time_et": "15:34",
+   "secs": 465,
+   "sample": "booking_pick",
+   "code_checks": {
+    "availability_searched": "yes",
+    "booking_tool_called": "yes",
+    "staff_task_created": "yes",
+    "transferred": "no",
+    "callback_within_1h": "no",
+    "insurance_verified": "yes"
+   },
+   "jev": {
+    "v1": {
+     "booking_requested": 0.99,
+     "time_offered": 0.99,
+     "need_understood": 0.66,
+     "right_help": 0.79,
+     "clear_and_responsive": 0.41
+    },
+    "v2": {
+     "need_understood": 0.64,
+     "clear_and_responsive": 0.45
+    },
+    "production": {
+     "office_rules_grounded": 0.79,
+     "appointment_datetime_correct": 0.92,
+     "conversation_responsive": 0.89,
+     "expressed_sentiment": 2.32
+    }
+   }
+  },
+  {
+   "n": 3,
+   "source_call_id": "SCL_8WhaDZobaGSe",
+   "room": "RM_drjSGaJR7zrG",
+   "office": "Hollywood",
+   "time_et": "10:31",
+   "secs": 72,
+   "sample": "random",
+   "code_checks": {
+    "availability_searched": "no",
+    "booking_tool_called": "no",
+    "staff_task_created": "yes",
+    "transferred": "no",
+    "callback_within_1h": "yes (3, first right after)",
+    "insurance_verified": "n/a"
+   },
+   "jev": {
+    "v1": {
+     "booking_requested": 0.06,
+     "time_offered": 0.05,
+     "need_understood": 0.68,
+     "right_help": 0.44,
+     "clear_and_responsive": 0.56
+    },
+    "v2": {
+     "need_understood": 0.72,
+     "clear_and_responsive": 0.56
+    },
+    "production": {
+     "office_rules_grounded": 0.93,
+     "appointment_datetime_correct": "n/a",
+     "conversation_responsive": 0.77,
+     "expressed_sentiment": 2
+    }
+   }
+  },
+  {
+   "n": 4,
+   "source_call_id": "SCL_dWuAxDJ3ni8q",
+   "room": "RM_YjFhmE74UQx2",
+   "office": "Hollywood",
+   "time_et": "16:07",
+   "secs": 105,
+   "sample": "random",
+   "code_checks": {
+    "availability_searched": "no",
+    "booking_tool_called": "no",
+    "staff_task_created": "no",
+    "transferred": "no",
+    "callback_within_1h": "no",
+    "insurance_verified": "n/a"
+   },
+   "jev": {
+    "v1": {
+     "booking_requested": 0.14,
+     "time_offered": 0.05,
+     "need_understood": 0.46,
+     "right_help": 0.24,
+     "clear_and_responsive": 0.17
+    },
+    "v2": {
+     "need_understood": 0.46,
+     "clear_and_responsive": 0.23
+    },
+    "production": {
+     "office_rules_grounded": 0.94,
+     "appointment_datetime_correct": "n/a",
+     "conversation_responsive": 0.43,
+     "expressed_sentiment": 2
+    }
+   }
+  },
+  {
+   "n": 5,
+   "source_call_id": "SCL_ZfuNUvLaiNC3",
+   "room": "RM_Ry2fkAM9m8g9",
+   "office": "Hollywood",
+   "time_et": "10:37",
+   "secs": 110,
+   "sample": "random",
+   "code_checks": {
+    "availability_searched": "no",
+    "booking_tool_called": "no",
+    "staff_task_created": "yes",
+    "transferred": "no",
+    "callback_within_1h": "no",
+    "insurance_verified": "n/a"
+   },
+   "jev": {
+    "v1": {
+     "booking_requested": 0.06,
+     "time_offered": 0.05,
+     "need_understood": 0.79,
+     "right_help": 0.81,
+     "clear_and_responsive": 0.33
+    },
+    "v2": {
+     "need_understood": 0.81,
+     "clear_and_responsive": 0.42
+    },
+    "production": {
+     "office_rules_grounded": 0.95,
+     "appointment_datetime_correct": "n/a",
+     "conversation_responsive": 0.7,
+     "expressed_sentiment": 1.99
+    }
+   }
+  },
+  {
+   "n": 6,
+   "source_call_id": "SCL_FiZ6Rz2KPkLY",
+   "room": "RM_ixT2ti4Ja55N",
+   "office": "Abita (727)",
+   "time_et": "16:18",
+   "secs": 107,
+   "sample": "random",
+   "code_checks": {
+    "availability_searched": "no",
+    "booking_tool_called": "no",
+    "staff_task_created": "no",
+    "transferred": "no",
+    "callback_within_1h": "no",
+    "insurance_verified": "yes"
+   },
+   "jev": {
+    "v1": {
+     "booking_requested": 0.11,
+     "time_offered": 0.06,
+     "need_understood": 0.71,
+     "right_help": 0.47,
+     "clear_and_responsive": 0.43
+    },
+    "v2": {
+     "need_understood": 0.7,
+     "clear_and_responsive": 0.44
+    },
+    "production": {
+     "office_rules_grounded": 0.83,
+     "appointment_datetime_correct": "n/a",
+     "conversation_responsive": 0.9,
+     "expressed_sentiment": 1.97
+    }
+   }
+  },
+  {
+   "n": 7,
+   "source_call_id": "SCL_ELWyCYubmvpY",
+   "room": "RM_n73y5jeFH2Nq",
+   "office": "Hollywood",
+   "time_et": "12:16",
+   "secs": 428,
+   "sample": "random",
+   "code_checks": {
+    "availability_searched": "no",
+    "booking_tool_called": "no",
+    "staff_task_created": "yes",
+    "transferred": "no",
+    "callback_within_1h": "yes (right after)",
+    "insurance_verified": "n/a"
+   },
+   "jev": {
+    "v1": {
+     "booking_requested": 0.06,
+     "time_offered": 0.06,
+     "need_understood": 0.78,
+     "right_help": 0.81,
+     "clear_and_responsive": 0.3
+    },
+    "v2": {
+     "need_understood": 0.8,
+     "clear_and_responsive": 0.33
+    },
+    "production": {
+     "office_rules_grounded": 0.87,
+     "appointment_datetime_correct": "n/a",
+     "conversation_responsive": 0.48,
+     "expressed_sentiment": 2.48
+    }
+   }
+  },
+  {
+   "n": 8,
+   "source_call_id": "SCL_oH2xPR5SC2VQ",
+   "room": "RM_DjHnMBrUVDWG",
+   "office": "Sweetwater",
+   "time_et": "10:57",
+   "secs": 31,
+   "sample": "random",
+   "code_checks": {
+    "availability_searched": "no",
+    "booking_tool_called": "no",
+    "staff_task_created": "no",
+    "transferred": "no",
+    "callback_within_1h": "yes (right after)",
+    "insurance_verified": "n/a"
+   },
+   "jev": {
+    "v1": {
+     "booking_requested": 0.07,
+     "time_offered": 0.05,
+     "need_understood": 0.37,
+     "right_help": 0.1,
+     "clear_and_responsive": 0.18
+    },
+    "v2": {
+     "need_understood": 0.46,
+     "clear_and_responsive": 0.2
+    },
+    "production": {
+     "office_rules_grounded": 0.17,
+     "appointment_datetime_correct": "n/a",
+     "conversation_responsive": 0.48,
+     "expressed_sentiment": 2
+    }
+   }
+  },
+  {
+   "n": 9,
+   "source_call_id": "SCL_afAYnoxuFQPk",
+   "room": "RM_f6zRndzVgtot",
+   "office": "Abita (727)",
+   "time_et": "09:43",
+   "secs": 80,
+   "sample": "random",
+   "code_checks": {
+    "availability_searched": "no",
+    "booking_tool_called": "no",
+    "staff_task_created": "yes",
+    "transferred": "yes",
+    "callback_within_1h": "no",
+    "insurance_verified": "n/a"
+   },
+   "jev": {
+    "v1": {
+     "booking_requested": 0.05,
+     "time_offered": 0.04,
+     "need_understood": 0.74,
+     "right_help": 0.84,
+     "clear_and_responsive": 0.74
+    },
+    "v2": {
+     "need_understood": 0.77,
+     "clear_and_responsive": 0.79
+    },
+    "production": {
+     "office_rules_grounded": 0.92,
+     "appointment_datetime_correct": "n/a",
+     "conversation_responsive": 0.91,
+     "expressed_sentiment": 2
+    }
+   }
+  },
+  {
+   "n": 10,
+   "source_call_id": "SCL_aqW6CuacrMkL",
+   "room": "RM_4CHhXuiyvwZi",
+   "office": "N Miami Beach Optical",
+   "time_et": "17:16",
+   "secs": 873,
+   "sample": "booking_pick",
+   "code_checks": {
+    "availability_searched": "yes",
+    "booking_tool_called": "yes",
+    "staff_task_created": "yes",
+    "transferred": "no",
+    "callback_within_1h": "no",
+    "insurance_verified": "yes"
+   },
+   "jev": {
+    "v1": {
+     "booking_requested": 0.98,
+     "time_offered": 0.99,
+     "need_understood": 0.54,
+     "right_help": 0.82,
+     "clear_and_responsive": 0.3
+    },
+    "v2": {
+     "need_understood": 0.59,
+     "clear_and_responsive": 0.38
+    },
+    "production": {
+     "office_rules_grounded": 0.6,
+     "appointment_datetime_correct": 0.94,
+     "conversation_responsive": 0.83,
+     "expressed_sentiment": 3.17
+    }
+   }
+  },
+  {
+   "n": 11,
+   "source_call_id": "SCL_EG36ab9kJ6de",
+   "room": "RM_897S8rTXc73K",
+   "office": "Sweetwater",
+   "time_et": "09:22",
+   "secs": 33,
+   "sample": "random",
+   "code_checks": {
+    "availability_searched": "no",
+    "booking_tool_called": "no",
+    "staff_task_created": "no",
+    "transferred": "yes",
+    "callback_within_1h": "no",
+    "insurance_verified": "n/a"
+   },
+   "jev": {
+    "v1": {
+     "booking_requested": 0.06,
+     "time_offered": 0.04,
+     "need_understood": 0.6,
+     "right_help": 0.74,
+     "clear_and_responsive": 0.21
+    },
+    "v2": {
+     "need_understood": 0.58,
+     "clear_and_responsive": 0.41
+    },
+    "production": {
+     "office_rules_grounded": 0.93,
+     "appointment_datetime_correct": "n/a",
+     "conversation_responsive": 0.48,
+     "expressed_sentiment": 1.86
+    }
+   }
+  },
+  {
+   "n": 12,
+   "source_call_id": "SCL_ZZ5tXCHUFDiT",
+   "room": "RM_PXRXRbMcy5Px",
+   "office": "Hollywood",
+   "time_et": "15:59",
+   "secs": 76,
+   "sample": "random",
+   "code_checks": {
+    "availability_searched": "no",
+    "booking_tool_called": "no",
+    "staff_task_created": "no",
+    "transferred": "yes",
+    "callback_within_1h": "no",
+    "insurance_verified": "n/a"
+   },
+   "jev": {
+    "v1": {
+     "booking_requested": 0.06,
+     "time_offered": 0.05,
+     "need_understood": 0.65,
+     "right_help": 0.69,
+     "clear_and_responsive": 0.45
+    },
+    "v2": {
+     "need_understood": 0.63,
+     "clear_and_responsive": 0.64
+    },
+    "production": {
+     "office_rules_grounded": 0.79,
+     "appointment_datetime_correct": "n/a",
+     "conversation_responsive": 0.76,
+     "expressed_sentiment": 2.11
+    }
+   }
+  },
+  {
+   "n": 13,
+   "source_call_id": "SCL_UrtkeepLNNX8",
+   "room": "RM_gbgcT4GbEzCf",
+   "office": "Hollywood",
+   "time_et": "09:00",
+   "secs": 63,
+   "sample": "random",
+   "code_checks": {
+    "availability_searched": "no",
+    "booking_tool_called": "no",
+    "staff_task_created": "no",
+    "transferred": "yes",
+    "callback_within_1h": "no",
+    "insurance_verified": "n/a"
+   },
+   "jev": {
+    "v1": {
+     "booking_requested": 0.98,
+     "time_offered": 0.05,
+     "need_understood": 0.54,
+     "right_help": 0.52,
+     "clear_and_responsive": 0.41
+    },
+    "v2": {
+     "need_understood": 0.55,
+     "clear_and_responsive": 0.47
+    },
+    "production": {
+     "office_rules_grounded": 0.92,
+     "appointment_datetime_correct": "n/a",
+     "conversation_responsive": 0.83,
+     "expressed_sentiment": 2
+    }
+   }
+  },
+  {
+   "n": 14,
+   "source_call_id": "SCL_m7uCW7wnvvWX",
+   "room": "RM_3QD7rtQJ62yU",
+   "office": "Hollywood",
+   "time_et": "11:06",
+   "secs": 58,
+   "sample": "random",
+   "code_checks": {
+    "availability_searched": "no",
+    "booking_tool_called": "no",
+    "staff_task_created": "no",
+    "transferred": "yes",
+    "callback_within_1h": "yes (11 min)",
+    "insurance_verified": "n/a"
+   },
+   "jev": {
+    "v1": {
+     "booking_requested": 0.06,
+     "time_offered": 0.04,
+     "need_understood": 0.44,
+     "right_help": 0.49,
+     "clear_and_responsive": 0.2
+    },
+    "v2": {
+     "need_understood": 0.49,
+     "clear_and_responsive": 0.32
+    },
+    "production": {
+     "office_rules_grounded": 0.88,
+     "appointment_datetime_correct": "n/a",
+     "conversation_responsive": 0.67,
+     "expressed_sentiment": 1.9
+    }
+   }
+  },
+  {
+   "n": 15,
+   "source_call_id": "SCL_UKCdYww5pGne",
+   "room": "RM_gYbSWJv4DvCU",
+   "office": "Hollywood",
+   "time_et": "16:00",
+   "secs": 62,
+   "sample": "random",
+   "code_checks": {
+    "availability_searched": "no",
+    "booking_tool_called": "no",
+    "staff_task_created": "no",
+    "transferred": "yes",
+    "callback_within_1h": "no",
+    "insurance_verified": "n/a"
+   },
+   "jev": {
+    "v1": {
+     "booking_requested": 0.94,
+     "time_offered": 0.07,
+     "need_understood": 0.41,
+     "right_help": 0.51,
+     "clear_and_responsive": 0.24
+    },
+    "v2": {
+     "need_understood": 0.39,
+     "clear_and_responsive": 0.44
+    },
+    "production": {
+     "office_rules_grounded": 0.92,
+     "appointment_datetime_correct": "n/a",
+     "conversation_responsive": 0.78,
+     "expressed_sentiment": 1.81
+    }
+   }
+  },
+  {
+   "n": 16,
+   "source_call_id": "SCL_pGCcLioksaUc",
+   "room": "RM_CvMNiSEtyi7A",
+   "office": "Hollywood",
+   "time_et": "12:23",
+   "secs": 36,
+   "sample": "random",
+   "code_checks": {
+    "availability_searched": "no",
+    "booking_tool_called": "no",
+    "staff_task_created": "no",
+    "transferred": "yes",
+    "callback_within_1h": "no",
+    "insurance_verified": "n/a"
+   },
+   "jev": {
+    "v1": {
+     "booking_requested": 0.05,
+     "time_offered": 0.04,
+     "need_understood": 0.77,
+     "right_help": 0.77,
+     "clear_and_responsive": 0.34
+    },
+    "v2": {
+     "need_understood": 0.79,
+     "clear_and_responsive": 0.56
+    },
+    "production": {
+     "office_rules_grounded": 0.93,
+     "appointment_datetime_correct": "n/a",
+     "conversation_responsive": 0.46,
+     "expressed_sentiment": 1.97
+    }
+   }
+  },
+  {
+   "n": 17,
+   "source_call_id": "SCL_N8e9hkGUkpRS",
+   "room": "RM_gxCCjjo64cqP",
+   "office": "Sweetwater",
+   "time_et": "10:10",
+   "secs": 146,
+   "sample": "random",
+   "code_checks": {
+    "availability_searched": "yes",
+    "booking_tool_called": "no",
+    "staff_task_created": "yes",
+    "transferred": "no",
+    "callback_within_1h": "no",
+    "insurance_verified": "n/a"
+   },
+   "jev": {
+    "v1": {
+     "booking_requested": 0.99,
+     "time_offered": 0.98,
+     "need_understood": 0.73,
+     "right_help": 0.76,
+     "clear_and_responsive": 0.48
+    },
+    "v2": {
+     "need_understood": 0.75,
+     "clear_and_responsive": 0.5
+    },
+    "production": {
+     "office_rules_grounded": "error",
+     "appointment_datetime_correct": "n/a",
+     "conversation_responsive": "error",
+     "expressed_sentiment": "error"
+    }
+   }
+  },
+  {
+   "n": 18,
+   "source_call_id": "SCL_5LiEDw54WfEz",
+   "room": "RM_M3xfjM99SZBQ",
+   "office": "Hollywood",
+   "time_et": "11:19",
+   "secs": 61,
+   "sample": "random",
+   "code_checks": {
+    "availability_searched": "no",
+    "booking_tool_called": "no",
+    "staff_task_created": "no",
+    "transferred": "yes",
+    "callback_within_1h": "no",
+    "insurance_verified": "no"
+   },
+   "jev": {
+    "v1": {
+     "booking_requested": 0.06,
+     "time_offered": 0.05,
+     "need_understood": 0.57,
+     "right_help": 0.49,
+     "clear_and_responsive": 0.27
+    },
+    "v2": {
+     "need_understood": 0.65,
+     "clear_and_responsive": 0.42
+    },
+    "production": {
+     "office_rules_grounded": 0.81,
+     "appointment_datetime_correct": "n/a",
+     "conversation_responsive": 0.42,
+     "expressed_sentiment": 1.94
+    }
+   }
+  },
+  {
+   "n": 19,
+   "source_call_id": "SCL_MLuy3PVGF5nF",
+   "room": "RM_qFi9wrtewrjD",
+   "office": "Hollywood",
+   "time_et": "16:45",
+   "secs": 686,
+   "sample": "random",
+   "code_checks": {
+    "availability_searched": "no",
+    "booking_tool_called": "no",
+    "staff_task_created": "yes",
+    "transferred": "no",
+    "callback_within_1h": "no",
+    "insurance_verified": "no"
+   },
+   "jev": {
+    "v1": {
+     "booking_requested": 0.93,
+     "time_offered": 0.06,
+     "need_understood": 0.43,
+     "right_help": 0.68,
+     "clear_and_responsive": 0.13
+    },
+    "v2": {
+     "need_understood": 0.45,
+     "clear_and_responsive": 0.17
+    },
+    "production": {
+     "office_rules_grounded": 0.82,
+     "appointment_datetime_correct": "n/a",
+     "conversation_responsive": 0.22,
+     "expressed_sentiment": 1.66
+    }
+   }
+  },
+  {
+   "n": 20,
+   "source_call_id": "SCL_3oDhaDzH3qcA",
+   "room": "RM_dRmmJCaPJp8f",
+   "office": "Hollywood",
+   "time_et": "11:24",
+   "secs": 195,
+   "sample": "random",
+   "code_checks": {
+    "availability_searched": "no",
+    "booking_tool_called": "no",
+    "staff_task_created": "yes",
+    "transferred": "no",
+    "callback_within_1h": "no",
+    "insurance_verified": "n/a"
+   },
+   "jev": {
+    "v1": {
+     "booking_requested": 0.08,
+     "time_offered": 0.17,
+     "need_understood": 0.76,
+     "right_help": 0.85,
+     "clear_and_responsive": 0.33
+    },
+    "v2": {
+     "need_understood": 0.77,
+     "clear_and_responsive": 0.39
+    },
+    "production": {
+     "office_rules_grounded": 0.78,
+     "appointment_datetime_correct": "n/a",
+     "conversation_responsive": 0.78,
+     "expressed_sentiment": 2.06
+    }
+   }
+  }
+ ]
+}
