@@ -1,8 +1,6 @@
 """One per-call scheduling owner: private references, inventory and write receipts."""
 
 import asyncio
-import hashlib
-import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal
@@ -49,6 +47,56 @@ def provider_name(name):
     return name
 
 
+def eastern_datetime(value: str) -> datetime:
+    start = datetime.fromisoformat(value)
+    return (
+        start.replace(tzinfo=EASTERN)
+        if start.tzinfo is None
+        else start.astimezone(EASTERN)
+    )
+
+
+def slot_identity(slot: Slot) -> tuple[str, datetime]:
+    """One bookable choice per provider and start, whichever middleware column backs it."""
+    return provider_name(slot.provider), eastern_datetime(slot.datetime)
+
+
+def afternoon(start: datetime) -> bool:
+    return start.hour >= 12
+
+
+def slot_reference(slot: Slot) -> str:
+    """A readable reference such as SEP15-0900-BACH: date, 24-hour time, provider surname."""
+    surname = "".join(filter(str.isalpha, provider_name(slot.provider).split()[-1]))
+    return f"{eastern_datetime(slot.datetime):%b%d-%H%M}-{surname}".upper()
+
+
+def soonest(offered: list[tuple[str, Slot]]) -> list[str]:
+    """Refs to offer first: open slots on the earliest day, one morning and one afternoon.
+
+    When that day has only shared starts, offer its earliest shared start and the
+    earliest open slot on a later day.
+    """
+    starts = [(ref, slot, eastern_datetime(slot.datetime)) for ref, slot in offered]
+    first_day = starts[0][2].date()
+    day = [item for item in starts if item[2].date() == first_day]
+    open_slots = [(ref, start) for ref, slot, start in day if not slot.sameStartBooked]
+    if not open_slots:
+        later = [
+            ref
+            for ref, slot, start in starts
+            if start.date() != first_day and not slot.sameStartBooked
+        ]
+        return [day[0][0], *later[:1]]
+    halves = [
+        [ref for ref, start in open_slots if afternoon(start) is half]
+        for half in (False, True)
+    ]
+    if all(halves):
+        return [half[0] for half in halves]
+    return [ref for ref, _ in open_slots[:2]]
+
+
 @dataclass(frozen=True, repr=False)
 class SchedulingContext:
     patient_revision: int
@@ -80,7 +128,7 @@ class OfferedSlot:
 
     @property
     def selection(self):
-        return self.office, self.visit, self.slot.key
+        return self.office, self.visit, slot_identity(self.slot)
 
 
 @dataclass(repr=False)
@@ -103,6 +151,7 @@ class Scheduling:
         self.http = http
         self.now = now or (lambda: datetime.now(UTC))
         self._slots: dict[str, OfferedSlot] = {}
+        self._issued: dict[str, int] = {}
         self._references: dict[tuple, str] = {}
         self._next_ref = 0
         self._generation = 0
@@ -352,21 +401,22 @@ class Scheduling:
             )
             return self._remember(answer)
         expiry = result.bookingTokenExpiresAt
-        unique = {slot.key: slot for slot in result.slots}
-        for slot in unique.values():
-            identity = json.dumps(
-                (generation, key.office, key.visit, slot.key),
-                separators=(",", ":"),
-            )
-            ref = "ST_" + hashlib.sha256(identity.encode()).hexdigest()[:6].upper()
-            collision = 0
+        choices = {}
+        for slot in sorted(
+            result.slots,
+            key=lambda s: (*reversed(slot_identity(s)), s.sameStartBooked),
+        ):
+            choices.setdefault(slot_identity(slot), slot)
+        for slot in choices.values():
+            ref = base = slot_reference(slot)
+            collision = 1
             while ref in self._slots:
                 collision += 1
-                candidate = f"{identity}:{collision}"
-                ref = "ST_" + hashlib.sha256(candidate.encode()).hexdigest()[:6].upper()
+                ref = f"{base}-{collision}"
             self._slots[ref] = OfferedSlot(
                 slot, key.context, key.office, key.visit, expiry
             )
+            self._issued[ref] = generation
         answer = reply(
             "found",
             "success: Found eligible openings.",
@@ -377,9 +427,11 @@ class Scheduling:
                     "appointmentSlotRef": ref,
                     "datetime": item.slot.datetime,
                     "provider": provider_name(item.slot.provider),
+                    "shared": bool(item.slot.sameStartBooked),
                 }
                 for ref, item in self._slots.items()
             ],
+            soonest=soonest([(ref, item.slot) for ref, item in self._slots.items()]),
         )
         return self._remember(answer, expiry)
 
@@ -572,7 +624,7 @@ class Scheduling:
         receipt_key = (
             (p.patientId, "reschedule", old.id)
             if old
-            else (p.patientId, "book", slot_ref)
+            else (p.patientId, "book", (slot_ref, self._issued.get(slot_ref)))
         )
         if not old and (saved := self._receipts.get(receipt_key)):
             return self._replay(p, saved)
