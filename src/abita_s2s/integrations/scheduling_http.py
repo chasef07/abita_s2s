@@ -25,6 +25,7 @@ class Slot(Record):
     columnId: int | str | None = None
     profileId: int | str | None = None
     duration: int | None = Field(default=None, gt=0)
+    sameStartBooked: int = Field(default=0, ge=0)
 
     @field_validator("datetime")
     @classmethod
@@ -38,16 +39,6 @@ class Slot(Record):
     @property
     def date(self) -> str:
         return self.datetime.split("T", 1)[0]
-
-    @property
-    def key(self):
-        return (
-            self.columnId,
-            self.profileId,
-            self.provider,
-            self.datetime,
-            self.duration,
-        )
 
 
 class Inventory(Record):

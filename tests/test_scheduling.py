@@ -35,6 +35,26 @@ from abita_s2s.integrations.scheduling_http import (
 )
 
 NOW = datetime(2026, 9, 14, 17, tzinfo=UTC)
+REF = r"[A-Z]{3}[0-9]{2}-[0-9]{4}-[A-Z]+(?:-[0-9]+)?"
+
+
+def soonest(output):
+    return re.search(r"^Soonest options: (.*)$", output, re.MULTILINE)[1].split(", ")
+
+
+def slot(provider="Dr. Austin Bach", start="2026-09-15T09:00", booked=0, **extra):
+    hour, minute = map(int, start[11:].split(":"))
+    return {
+        "provider": provider,
+        "time": f"{hour % 12 or 12}:{minute:02d} {'AM' if hour < 12 else 'PM'}",
+        "datetime": start,
+        "bookingToken": f"token-{provider}-{start}-{extra.get('columnId', 12)}",
+        "columnId": 12,
+        "profileId": 13,
+        "duration": 15,
+        **({"sameStartBooked": booked} if booked else {}),
+        **extra,
+    }
 
 
 def inventory(**extra):
@@ -159,7 +179,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             owner, "list_available_appointments", visitType="medical", **args
         )
         self.assertTrue(result.startswith("success: "), result)
-        return re.search(r"^(ST_[A-F0-9]{6}) – ", result, re.MULTILINE)[1]
+        return soonest(result)[0]
 
     async def book(self, owner, ref, **extra):
         return await self.tool(
@@ -189,7 +209,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             owner, "list_available_appointments", visitType="routine_vision"
         )
         self.assertTrue(result.startswith("success:"), result)
-        ref = re.search(r"^(ST_[A-F0-9]{6}) – ", result, re.MULTILINE)[1]
+        ref = soonest(result)[0]
         self.assertTrue((await self.book(owner, ref)).startswith("success:"))
         self.assertEqual(
             [path for path, _, _ in requests],
@@ -327,7 +347,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     )
                     self.assertTrue(output.startswith("blocked:"), output)
                     self.assertIn(expected, output)
-                    self.assertNotRegex(output, r"ST_[A-F0-9]{6}")
+                    self.assertNotRegex(output, REF)
                 stopped = await self.tool(
                     owner, "list_available_appointments", visitType="medical"
                 )
@@ -338,37 +358,46 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(len(requests), 2)
 
-    async def test_short_reference_collision_preserves_both_slots(self):
-        base = inventory()["slots"][0]
-        owner, _ = self.owner(
-            [inventory(slots=[base, {**base, "datetime": "2026-09-16T09:00"}])]
-        )
-        with patch("abita_s2s.scheduling.hashlib.sha256") as digest:
-            digest.return_value.hexdigest.side_effect = [
-                "ABC123" + "0" * 58,
-                "ABC123" + "1" * 58,
-                "DEF456" + "2" * 58,
+    async def test_readable_reference_collision_preserves_both_slots(self):
+        owner, requests = self.owner(
+            [
+                inventory(
+                    slots=[slot(), slot("Dr. Miriam Bach", columnId=40, profileId=41)]
+                ),
+                booking(),
             ]
-            await self.slots(owner)
-        self.assertEqual(owner._slots["ST_ABC123"].slot.date, "2026-09-15")
-        self.assertEqual(owner._slots["ST_DEF456"].slot.date, "2026-09-16")
+        )
+        output = await self.tool(
+            owner, "list_available_appointments", visitType="medical"
+        )
+        self.assertIn(
+            "  Dr. Bach morning: open 9:00 AM SEP15-0900-BACH\n"
+            "  Dr. Miriam Bach morning: open 9:00 AM SEP15-0900-BACH-2",
+            output,
+        )
+        self.assertEqual(owner._slots["SEP15-0900-BACH-2"].slot.columnId, 40)
+        result = await self.book(owner, "sep15-0900-bach-2")
+        self.assertTrue(result.startswith("success:"), result)
+        self.assertEqual(
+            requests[-1][1]["bookingToken"], "token-Dr. Miriam Bach-2026-09-15T09:00-40"
+        )
 
     async def test_relative_dates_use_eastern_calendar_and_slot_timezone(self):
         for now, slot_datetime, label in (
             (
                 datetime(2026, 9, 15, 1, tzinfo=UTC),
                 "2026-09-15T09:00",
-                "9:00 AM EDT (tomorrow)",
+                "Tuesday, September 15, 2026 (tomorrow), EDT",
             ),
             (
                 datetime(2026, 10, 31, 17, tzinfo=UTC),
                 "2026-11-01T09:00",
-                "9:00 AM EST (tomorrow)",
+                "Sunday, November 1, 2026 (tomorrow), EST",
             ),
             (
                 datetime(2026, 9, 14, 17, tzinfo=UTC),
                 "2026-09-27T09:00",
-                "9:00 AM EDT (in 13 days)",
+                "Sunday, September 27, 2026 (in 13 days), EDT",
             ),
         ):
             with self.subTest(slot_datetime=slot_datetime):
@@ -420,13 +449,14 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             visitType="medical",
             startDate="2026-10-06",
         )
-        lines = [line for line in output.splitlines() if line.startswith("ST_")]
-        self.assertEqual(len(lines), 2)
-        self.assertIn("Tuesday, October 13, 2026 at 11:00 AM EDT", lines[0])
-        self.assertIn("Wednesday, October 14, 2026 at 11:00 AM EDT", lines[1])
-        selected_ref = lines[0].split(" – ")[0]
-        self.assertNotEqual(selected_ref, lines[1].split(" – ")[0])
-        result = await self.book(owner, selected_ref.lower())
+        self.assertIn(
+            "Tuesday, October 13, 2026 (in 29 days), EDT\n"
+            "  Dr. Melissa Otero morning: open 11:00 AM OCT13-1100-OTERO\n\n"
+            "Wednesday, October 14, 2026 (in 30 days), EDT\n"
+            "  Dr. Melissa Otero morning: open 11:00 AM OCT14-1100-OTERO",
+            output,
+        )
+        result = await self.book(owner, "oct13-1100-otero")
         self.assertTrue(result.startswith("success:"), result)
         self.assertEqual(requests[-1][1]["bookingToken"], "oct13-private")
         self.assertIn("2026-10-13", result)
@@ -450,14 +480,15 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         output = await self.tool(
             owner, "list_available_appointments", visitType="medical"
         )
-        refs = list(owner._slots)
         self.assertEqual(
             output,
             "success: Found eligible openings.\n"
-            "Searched 2026-09-15 through 2026-09-28.\n\n"
-            f"{refs[0]} – Tuesday, September 15, 2026 at 11:30 AM EDT (tomorrow) — Dr. Bach\n"
-            f"{refs[1]} – Tuesday, September 15, 2026 at 11:45 AM EDT (tomorrow) — Dr. Bach\n"
-            f"{refs[2]} – Wednesday, September 16, 2026 at 9:00 AM EDT (in 2 days) — Dr. Bach",
+            "Searched 2026-09-15 through 2026-09-28.\n"
+            "Soonest options: SEP15-1130-BACH, SEP15-1145-BACH\n\n"
+            "Tuesday, September 15, 2026 (tomorrow), EDT\n"
+            "  Dr. Bach morning: open 11:30 AM SEP15-1130-BACH, 11:45 AM SEP15-1145-BACH\n\n"
+            "Wednesday, September 16, 2026 (in 2 days), EDT\n"
+            "  Dr. Bach morning: open 9:00 AM SEP16-0900-BACH",
         )
         for private in (
             "private-signed-slot",
@@ -466,8 +497,8 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             "chart-jane",
         ):
             self.assertNotIn(private, output)
-        self.assertEqual(owner._slots[refs[0]].slot.time, "11:30 AM")
-        self.assertEqual(owner._slots[refs[1]].slot.time, "11:45 AM")
+        self.assertEqual(owner._slots["SEP15-1130-BACH"].slot.time, "11:30 AM")
+        self.assertEqual(owner._slots["SEP15-1145-BACH"].slot.time, "11:45 AM")
         self.assertTrue(
             owner.appointments_text().startswith("\nExisting appointments:")
         )
@@ -542,6 +573,112 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("other dates", result)
             self.assertEqual(owner._cache[1]["outcome"], "unsupported")
             self.assertEqual(requests[0][1]["visitType"], visit)
+
+    async def test_calendar_marks_shared_starts_and_offers_open_slots_first(self):
+        owner, requests = self.owner(
+            [
+                inventory(
+                    slots=[
+                        slot(booked=1),
+                        slot(columnId=14),
+                        slot(start="2026-09-15T09:15", booked=1),
+                        slot("Dr. D. Noel", "2026-09-15T13:00", columnId=20),
+                        slot("Dr. D. Noel", "2026-09-15T13:30", booked=1, columnId=20),
+                        slot(start="2026-09-16T09:00"),
+                    ]
+                ),
+                booking(),
+            ]
+        )
+        output = await self.tool(
+            owner, "list_available_appointments", visitType="medical"
+        )
+        self.assertEqual(
+            output,
+            "success: Found eligible openings.\n"
+            "Searched 2026-09-15 through 2026-09-28.\n"
+            "Soonest options: SEP15-0900-BACH, SEP15-1300-NOEL\n\n"
+            "Tuesday, September 15, 2026 (tomorrow), EDT\n"
+            "  Dr. Bach morning: open 9:00 AM SEP15-0900-BACH; shared 9:15 AM SEP15-0915-BACH\n"
+            "  Dr. Noel afternoon: open 1:00 PM SEP15-1300-NOEL; shared 1:30 PM SEP15-1330-NOEL\n\n"
+            "Wednesday, September 16, 2026 (in 2 days), EDT\n"
+            "  Dr. Bach morning: open 9:00 AM SEP16-0900-BACH",
+        )
+        self.assertTrue(
+            (await self.book(owner, "SEP15-0900-BACH")).startswith("success:")
+        )
+        self.assertEqual(
+            requests[-1][1]["bookingToken"], "token-Dr. Austin Bach-2026-09-15T09:00-14"
+        )
+
+    async def test_soonest_options_prefer_open_slots_on_the_earliest_day(self):
+        for name, slots, expected in (
+            (
+                "open afternoon beats shared morning",
+                [
+                    slot(booked=1),
+                    slot(start="2026-09-15T09:15", booked=1),
+                    slot(start="2026-09-15T14:00"),
+                    slot(start="2026-09-15T14:15"),
+                ],
+                ["SEP15-1400-BACH", "SEP15-1415-BACH"],
+            ),
+            (
+                "one open slot on the earliest day",
+                [
+                    slot(),
+                    slot(start="2026-09-15T09:15", booked=1),
+                    slot(start="2026-09-16T09:00"),
+                ],
+                ["SEP15-0900-BACH"],
+            ),
+            (
+                "earliest day only shared",
+                [
+                    slot(booked=1),
+                    slot(start="2026-09-15T13:00", booked=1),
+                    slot(start="2026-09-16T10:00", booked=1),
+                    slot(start="2026-09-17T10:15"),
+                ],
+                ["SEP15-0900-BACH", "SEP17-1015-BACH"],
+            ),
+            (
+                "nothing open",
+                [slot(booked=1), slot(start="2026-09-15T09:15", booked=1)],
+                ["SEP15-0900-BACH"],
+            ),
+            (
+                "days follow Eastern time",
+                [
+                    slot(start="2026-09-15T14:00", booked=1),
+                    {**slot(), "datetime": "2026-09-16T01:00:00+00:00"},
+                ],
+                ["SEP15-2100-BACH"],
+            ),
+        ):
+            with self.subTest(name):
+                owner, _ = self.owner([inventory(slots=slots)])
+                output = await self.tool(
+                    owner, "list_available_appointments", visitType="medical"
+                )
+                self.assertEqual(soonest(output), expected)
+
+    async def test_rebooking_a_ref_on_another_column_replays_the_booking(self):
+        owner, requests = self.owner(
+            [
+                inventory(slots=[slot(), slot(booked=1, columnId=14)]),
+                booking(),
+                inventory(slots=[slot(booked=1), slot(columnId=14)]),
+            ]
+        )
+        original = await self.book(owner, await self.slots(owner))
+        self.assertTrue(original.startswith("success:"), original)
+        ref = await self.slots(owner)
+        self.assertEqual(owner._slots[ref].slot.columnId, 14)
+        self.assertEqual(await self.book(owner, ref), original)
+        self.assertEqual(
+            [path for path, _, _ in requests].count("/api/appointment/book"), 1
+        )
 
     async def test_eastern_date_and_correction_invalidates_slots(self):
         owner, requests = self.owner(
@@ -748,7 +885,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(replay.startswith("blocked:"), replay)
         self.assertIn("cancelled", replay)
         second = await self.slots(owner)
-        self.assertNotEqual(first, second)
+        self.assertEqual(first, second)
         result = await self.book(owner, second)
         self.assertTrue(result.startswith("success:"), result)
         self.assertEqual([a.id for a in owner.state.patient.active.appointments], [999])
@@ -1849,9 +1986,7 @@ class SchedulingStream(llm.LLMStream):
                     "reschedule_appointment" if user == "move" else "book_appointment"
                 )
                 args = {
-                    "appointmentSlotRef": re.search(
-                        r"^(ST_[A-F0-9]{6}) – ", previous, re.MULTILINE
-                    )[1],
+                    "appointmentSlotRef": soonest(previous)[0],
                     "appointmentReason": "Annual medical follow up",
                     "referringDoctor": "none",
                     "readBack": True,
