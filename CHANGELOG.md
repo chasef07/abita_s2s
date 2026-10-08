@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.3](https://github.com/chasef07/abita_s2s/compare/v0.13.2...v0.13.3) (2026-10-08)
+
+
+### Bug Fixes
+
+* **insurance:** write check_insurance answers here from decision fields ([#151](https://github.com/chasef07/abita_s2s/issues/151)) ([4611ba0](https://github.com/chasef07/abita_s2s/commit/4611ba09a52532e4efc86980641cfa29feb8d675))
+
 ## [0.13.2](https://github.com/chasef07/abita_s2s/compare/v0.13.1...v0.13.2) (2026-10-07)
 
 
