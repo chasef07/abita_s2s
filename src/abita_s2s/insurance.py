@@ -157,7 +157,7 @@ class InsuranceRegistration:
                 coverage_type,
                 tuple(option.planId for option in decision.options),
             )
-        if decision.participation == "accepted" and decision.canonicalPlan:
+        if decision.participation == "accepted":
             self.state.insurance.accepted = AcceptedInsurance(
                 office,
                 revision,
@@ -228,8 +228,6 @@ class InsuranceRegistration:
                 "needs_insurance",
                 "needs_input: Check accepted coverage for this patient and the intended medical or routine vision visit, then call add_patient again.",
             )
-        if checked.decision.participation != "accepted":
-            return reply(checked.decision.outcome, decision_answer(checked.decision))
         self_pay = checked.decision.selfPay
         phone = r.phone or (
             self.state.call.caller_phone if r.inboundPhoneConfirmed else None
@@ -383,8 +381,6 @@ class InsuranceRegistration:
                 "needs_insurance",
                 "needs_input: Check accepted coverage for this patient and visit type before changing insurance.",
             )
-        if checked.decision.participation != "accepted":
-            return reply(checked.decision.outcome, decision_answer(checked.decision))
         member_id = "self pay" if checked.decision.selfPay else member_id.strip()
         if not member_id:
             return reply(
