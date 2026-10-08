@@ -51,7 +51,6 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
                             verification="unverified",
                         )
                     ],
-                    answer="blocked: Staff must verify the PCP referral in the insurer's portal.",
                 ),
             )
 
@@ -63,11 +62,81 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(checked.decision.carrierCode, "SYNTHETIC")
         self.assertEqual(checked.decision.requirements[0].verification, "unverified")
         self.assertFalse(checked.decision.canSchedule)
-        self.assertIn("PCP referral", result["answer"])
+        self.assertIn("pcp referral", result["answer"])
         self.assertEqual(requests[0]["plan"], "Caller's exact unfamiliar wording")
         self.assertEqual(requests[0]["dob"], state.patient.active.dob)
 
-    async def test_plan_question_is_relayed_without_acceptance(self):
+    async def test_answer_is_written_from_decision_fields_not_backend_text(self):
+        for body, expected in (
+            (
+                decision("Sunshine Medicaid Vision", "routine_vision"),
+                "Sunshine Medicaid Vision is accepted for routine vision exams at this office.",
+            ),
+            (
+                decision(
+                    "Cigna",
+                    outcome="not_accepted",
+                    participation="not_accepted",
+                    canSchedule=False,
+                ),
+                "Cigna is not accepted for medical visits at this office.",
+            ),
+            (
+                decision(
+                    outcome="needs_clarification",
+                    participation="unknown",
+                    planId="",
+                    canonicalPlan="",
+                    canSchedule=False,
+                    options=[
+                        dict(planId="aetna-hmo", label="Aetna HMO"),
+                        dict(planId="aetna-ppo", label="Aetna PPO"),
+                    ],
+                ),
+                "Ask which plan is on the card: Aetna HMO, Aetna PPO.",
+            ),
+            (
+                decision(
+                    "Aetna HMO",
+                    outcome="needs_staff_task",
+                    canSchedule=False,
+                    requirements=[
+                        dict(
+                            kind="pcp_referral",
+                            channel="uhc_portal",
+                            verification="unverified",
+                        )
+                    ],
+                ),
+                "Office staff must verify the pcp referral before scheduling medical visits. Aetna HMO is accepted.",
+            ),
+            (
+                decision(
+                    outcome="needs_staff_task",
+                    participation="unknown",
+                    canonicalPlan="",
+                    canSchedule=False,
+                ),
+                "Office staff must verify this plan before scheduling medical visits.",
+            ),
+            (
+                decision(
+                    "Cigna",
+                    outcome="needs_staff_task",
+                    participation="not_accepted",
+                    canSchedule=False,
+                ),
+                "Office staff must verify this plan before scheduling medical visits. Cigna is not accepted.",
+            ),
+        ):
+            body["answer"] = "success: backend wording"
+            with self.subTest(outcome=body["outcome"]):
+                _, owner = self.owner(lambda _, b=body: httpx.Response(200, json=b))
+                result = await owner.check("caller words", body["coverageType"])
+                self.assertEqual(result["outcome"], body["outcome"])
+                self.assertEqual(result["answer"], expected)
+
+    async def test_plan_question_is_asked_without_acceptance(self):
         requests = []
         question = decision(
             outcome="needs_clarification",
@@ -79,7 +148,6 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
                 dict(planId="synthetic-hmo", label="Synthetic HMO"),
                 dict(planId="synthetic-ppo", label="Synthetic PPO"),
             ],
-            answer="needs_input: Which of these is on your card: Synthetic HMO, or Synthetic PPO?",
         )
 
         def handler(request):
@@ -94,7 +162,6 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
         state, owner = self.owner(handler)
         result = await owner.check("Synthetic", "medical")
         self.assertEqual(result["outcome"], "needs_clarification")
-        self.assertEqual(result["answer"], question["answer"])
         self.assertIsNone(accepted_insurance(state))
         self.assertEqual(
             (await owner.check("Synthetic PPO", "medical"))["outcome"], "accepted"
@@ -127,7 +194,6 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
                     canonicalPlan="",
                     canSchedule=False,
                     options=options,
-                    answer="needs_input: Which of these is on your card?",
                 ),
             )
 
@@ -245,6 +311,16 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
             httpx.Response(200, json=decision(coverage="routine_vision")),
             httpx.Response(200, json=decision(canonicalPlan="", canSchedule=False)),
             httpx.Response(200, json=decision(participation="not_accepted")),
+            httpx.Response(200, json=decision(outcome="not_accepted")),
+            httpx.Response(
+                200,
+                json=decision(
+                    outcome="accepted",
+                    participation="unknown",
+                    canonicalPlan="",
+                    canSchedule=False,
+                ),
+            ),
             httpx.Response(
                 200,
                 json=decision(
@@ -273,7 +349,6 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
                     requirements=[
                         dict(kind="prior_authorization", verification="unverified")
                     ],
-                    answer="blocked: This plan requires prior authorization before scheduling.",
                 )
 
                 def handler(request):

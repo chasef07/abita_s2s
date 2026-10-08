@@ -16,7 +16,6 @@ def decision(plan="Aetna", coverage="medical", office="spring_hill", **changes):
             eligibility="not_checked",
             canSchedule=True,
             selfPay=plan == "Self Pay",
-            answer="success: This office participates; active coverage is not verified.",
         )
         | changes
     )
@@ -41,7 +40,6 @@ def check_response(request):
                     planId="",
                     canonicalPlan="",
                     canSchedule=False,
-                    answer="needs_input: Ask for the exact plan.",
                 )
                 if rejected
                 else {}

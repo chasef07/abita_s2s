@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import ConfigDict
 
 from abita_s2s.identity import PatientResolver
+from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.insurance_state import (
     AcceptedInsurance,
     CoverageType,
@@ -60,6 +61,32 @@ def staff(outcome="needs_staff_review"):
         outcome,
         "blocked: Office staff must verify the registration or insurance result before continuing. Do not repeat this write.",
     )
+
+
+VISITS = {"medical": "medical visits", "routine_vision": "routine vision exams"}
+
+
+def decision_answer(decision: InsuranceDecision) -> str:
+    """Model-facing sentence for a participation decision, written here from its fields."""
+    visits = VISITS[decision.coverageType]
+    if decision.outcome == "needs_clarification":
+        labels = ", ".join(option.label for option in decision.options)
+        if labels:
+            return f"Ask which plan is on the card: {labels}."
+        return "Ask for the exact plan name on the card."
+    if decision.outcome == "not_accepted":
+        plan = decision.canonicalPlan or "This plan"
+        return f"{plan} is not accepted for {visits} at this office."
+    if decision.outcome == "needs_staff_task":
+        kinds = ", ".join(r.kind.replace("_", " ") for r in decision.requirements)
+        check = f"the {kinds}" if kinds else "this plan"
+        answer = f"Office staff must verify {check} before scheduling {visits}."
+        if decision.participation == "accepted":
+            answer += f" {decision.canonicalPlan} is accepted."
+        elif decision.participation == "not_accepted":
+            answer += f" {decision.canonicalPlan or 'This plan'} is not accepted."
+        return answer
+    return f"{decision.canonicalPlan} is accepted for {visits} at this office."
 
 
 class InsuranceRegistration:
@@ -129,7 +156,7 @@ class InsuranceRegistration:
                 absence,
                 decision,
             )
-        return reply(decision.outcome, decision.answer)
+        return reply(decision.outcome, decision_answer(decision))
 
     def _write_blocker(self) -> dict | None:
         if self._closed:
@@ -193,7 +220,7 @@ class InsuranceRegistration:
                 "needs_input: Check accepted coverage for this patient and the intended medical or routine vision visit, then call add_patient again.",
             )
         if checked.decision.participation != "accepted":
-            return reply(checked.decision.outcome, checked.decision.answer)
+            return reply(checked.decision.outcome, decision_answer(checked.decision))
         self_pay = checked.decision.selfPay
         phone = r.phone or (
             self.state.call.caller_phone if r.inboundPhoneConfirmed else None
@@ -348,7 +375,7 @@ class InsuranceRegistration:
                 "needs_input: Check accepted coverage for this patient and visit type before changing insurance.",
             )
         if checked.decision.participation != "accepted":
-            return reply(checked.decision.outcome, checked.decision.answer)
+            return reply(checked.decision.outcome, decision_answer(checked.decision))
         member_id = "self pay" if checked.decision.selfPay else member_id.strip()
         if not member_id:
             return reply(
