@@ -3,10 +3,12 @@
 from abita_s2s.observability.judges import (
     appointment_datetime_correct,
     booking_requested,
+    claims_backed,
     clear_and_responsive,
     expressed_sentiment,
     need_understood,
     office_rules_grounded,
+    person_request_honored,
     right_help,
     time_offered,
 )
@@ -17,7 +19,9 @@ QUESTIONS = {
     "need_understood": need_understood.QUESTION,
     "right_help": right_help.QUESTION,
     "clear_and_responsive": clear_and_responsive.QUESTION,
+    "person_request_honored": person_request_honored.QUESTION,
     "office_rules_grounded": office_rules_grounded.QUESTION,
+    "claims_backed": claims_backed.QUESTION,
     "appointment_datetime_correct": appointment_datetime_correct.QUESTION,
     "expressed_sentiment": expressed_sentiment.QUESTION,
 }

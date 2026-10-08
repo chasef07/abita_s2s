@@ -244,6 +244,8 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                 "need_understood",
                 "right_help",
                 "clear_and_responsive",
+                "person_request_honored",
+                "claims_backed",
                 "expressed_sentiment",
             },
         )
