@@ -42,7 +42,6 @@ class InsuranceDecision(BaseModel):
         "office_no_coverage",
         "ask_card",
         "ask_full_name",
-        "ask_coverage",
         "choose_plan",
         "requirement",
         "pending_confirmation",

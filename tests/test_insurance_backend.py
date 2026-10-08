@@ -364,6 +364,7 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
             httpx.Response(200, json=decision(canonicalPlan="", canSchedule=False)),
             httpx.Response(200, json=decision(participation="not_accepted")),
             httpx.Response(200, json=decision(outcome="not_accepted")),
+            httpx.Response(200, json=decision(reason="ask_coverage")),
             httpx.Response(
                 200,
                 json=decision(

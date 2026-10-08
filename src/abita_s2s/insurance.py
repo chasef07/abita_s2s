@@ -75,7 +75,6 @@ ANSWERS = {
     "office_no_coverage": "This office does not accept insurance for {visits}.",
     "ask_card": "Ask what insurance plan is on the card.",
     "ask_full_name": "Ask for the full plan name on the card.",
-    "ask_coverage": "Ask whether this is a medical visit or a routine vision exam.",
     "choose_plan": "Ask which plan is on the card: {options}.",
     "requirement": "Office staff must verify {requirement} before scheduling {visits}. {plan} is accepted.",
     "pending_confirmation": "Office staff must confirm {plan} for {visits} before scheduling.",
