@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/chasef07/abita_s2s/compare/v0.13.4...v0.14.0) (2026-10-08)
+
+
+### Features
+
+* **scheduling:** offer open slots first in a day calendar with readable refs ([#155](https://github.com/chasef07/abita_s2s/issues/155)) ([71c196a](https://github.com/chasef07/abita_s2s/commit/71c196a899b000b59200821022759cfa273be34f))
+
 ## [0.13.4](https://github.com/chasef07/abita_s2s/compare/v0.13.3...v0.13.4) (2026-10-08)
 
 
