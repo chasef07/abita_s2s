@@ -14,6 +14,8 @@ insurance, appointments, or availability.
 | [slot_identity.yaml](scenarios/slot_identity.yaml) | Selecting the confirmed date when adjacent dates share a provider and time. |
 | [office_facts.yaml](scenarios/office_facts.yaml) | Office facts (address, office, open now, hours, staff, services) stated only from retrieved knowledge (ACU-96). |
 | [ai_disclosure.yaml](scenarios/ai_disclosure.yaml) | Saying it is an AI assistant when a caller asks, in English and Spanish. |
+| [grounded_speech.yaml](scenarios/grounded_speech.yaml) | No announced, refused, or invented transfers, staff availability, or office facts. |
+| [intake_order.yaml](scenarios/intake_order.yaml) | Asking the symptom and whether the patient is new before identity work. |
 
 ## Before running
 
