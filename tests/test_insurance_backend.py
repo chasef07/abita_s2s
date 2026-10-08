@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from typing import get_args
 from dataclasses import replace
 import unittest
 from unittest.mock import AsyncMock
@@ -12,8 +13,8 @@ from test_patient_resolution import CONFIG, call_state, receipt
 from test_insurance_registration import created, registration, updated
 
 from abita_s2s.identity import PatientResolver
-from abita_s2s.insurance import InsuranceRegistration
-from abita_s2s.insurance_contract import InsuranceDecision
+from abita_s2s.insurance import ANSWERS, REQUIREMENTS, InsuranceRegistration
+from abita_s2s.insurance_contract import InsuranceDecision, InsuranceRequirement
 from abita_s2s.insurance_state import accepted_insurance, insurance_ready
 from abita_s2s.integrations.patient_middleware import Receipt
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
@@ -66,6 +67,15 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("primary care doctor", result["answer"])
         self.assertEqual(requests[0]["plan"], "Caller's exact unfamiliar wording")
         self.assertEqual(requests[0]["dob"], state.patient.active.dob)
+
+    def test_every_reason_and_requirement_kind_has_wording(self):
+        for wording, model, field in (
+            (ANSWERS, InsuranceDecision, "reason"),
+            (REQUIREMENTS, InsuranceRequirement, "kind"),
+        ):
+            self.assertEqual(
+                set(wording), set(get_args(model.model_fields[field].annotation))
+            )
 
     async def test_answer_is_written_from_decision_fields_not_backend_text(self):
         notice = "At Spring Hill, patients with this plan can only see Dr. Bach."
