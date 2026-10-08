@@ -64,29 +64,39 @@ def staff(outcome="needs_staff_review"):
 
 
 VISITS = {"medical": "medical visits", "routine_vision": "routine vision exams"}
+REQUIREMENTS = {
+    "pcp_referral": "a referral from the patient's primary care doctor",
+    "prior_authorization": "prior authorization",
+    "staff_verify": "this plan's coverage",
+}
+ANSWERS = {
+    "accepted": "{plan} is accepted for {visits} at this office.",
+    "not_accepted": "{plan} is not accepted for {visits} at this office.",
+    "office_no_coverage": "This office does not accept insurance for {visits}.",
+    "ask_card": "Ask what insurance plan is on the card.",
+    "ask_full_name": "Ask for the full plan name on the card.",
+    "ask_coverage": "Ask whether this is a medical visit or a routine vision exam.",
+    "choose_plan": "Ask which plan is on the card: {options}.",
+    "requirement": "Office staff must verify {requirement} before scheduling {visits}. {plan} is accepted.",
+    "pending_confirmation": "Office staff must confirm {plan} for {visits} before scheduling.",
+    "no_provider_for_age": "{plan} is accepted, but no doctor here who takes it can see a patient of this age. Office staff must arrange this visit.",
+    "chart_unverified": "Office staff must verify the insurance on the chart before scheduling.",
+}
 
 
 def decision_answer(decision: InsuranceDecision) -> str:
     """Model-facing sentence for a participation decision, written here from its fields."""
-    visits = VISITS[decision.coverageType]
-    if decision.outcome == "needs_clarification":
-        labels = ", ".join(option.label for option in decision.options)
-        if labels:
-            return f"Ask which plan is on the card: {labels}."
-        return "Ask for the exact plan name on the card."
-    if decision.outcome == "not_accepted":
-        plan = decision.canonicalPlan or "This plan"
-        return f"{plan} is not accepted for {visits} at this office."
-    if decision.outcome == "needs_staff_task":
-        kinds = ", ".join(r.kind.replace("_", " ") for r in decision.requirements)
-        check = f"the {kinds}" if kinds else "this plan"
-        answer = f"Office staff must verify {check} before scheduling {visits}."
-        if decision.participation == "accepted":
-            answer += f" {decision.canonicalPlan} is accepted."
-        elif decision.participation == "not_accepted":
-            answer += f" {decision.canonicalPlan or 'This plan'} is not accepted."
-        return answer
-    return f"{decision.canonicalPlan} is accepted for {visits} at this office."
+    answer = ANSWERS[decision.reason].format(
+        plan=decision.canonicalPlan,
+        visits=VISITS[decision.coverageType],
+        options=", ".join(option.label for option in decision.options),
+        requirement=REQUIREMENTS[decision.requirements[0].kind]
+        if decision.requirements
+        else "",
+    )
+    if decision.callerNotice:
+        answer += f" Note: {decision.callerNotice}"
+    return answer
 
 
 class InsuranceRegistration:

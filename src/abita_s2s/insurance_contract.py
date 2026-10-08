@@ -9,7 +9,7 @@ CoverageType = Literal["medical", "routine_vision"]
 
 class InsuranceRequirement(BaseModel):
     model_config = ConfigDict(strict=True, frozen=True)
-    kind: str
+    kind: Literal["pcp_referral", "prior_authorization", "staff_verify"]
     channel: str = ""
     verification: Literal["unverified"]
 
@@ -36,6 +36,20 @@ class InsuranceDecision(BaseModel):
     eligibility: Literal["not_checked"]
     canSchedule: bool
     selfPay: bool
+    reason: Literal[
+        "accepted",
+        "not_accepted",
+        "office_no_coverage",
+        "ask_card",
+        "ask_full_name",
+        "ask_coverage",
+        "choose_plan",
+        "requirement",
+        "pending_confirmation",
+        "no_provider_for_age",
+        "chart_unverified",
+    ]
+    callerNotice: str = ""
     options: list[InsuranceOption] = Field(default_factory=list)
 
     @model_validator(mode="after")

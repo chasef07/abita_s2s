@@ -16,6 +16,7 @@ def decision(plan="Aetna", coverage="medical", office="spring_hill", **changes):
             eligibility="not_checked",
             canSchedule=True,
             selfPay=plan == "Self Pay",
+            reason="accepted",
         )
         | changes
     )
@@ -36,6 +37,7 @@ def check_response(request):
             **(
                 dict(
                     outcome="needs_clarification",
+                    reason="ask_card",
                     participation="unknown",
                     planId="",
                     canonicalPlan="",

@@ -43,6 +43,7 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
                     "Backend Product",
                     carrierCode="SYNTHETIC",
                     outcome="needs_staff_task",
+                    reason="requirement",
                     canSchedule=False,
                     requirements=[
                         dict(
@@ -62,15 +63,21 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(checked.decision.carrierCode, "SYNTHETIC")
         self.assertEqual(checked.decision.requirements[0].verification, "unverified")
         self.assertFalse(checked.decision.canSchedule)
-        self.assertIn("pcp referral", result["answer"])
+        self.assertIn("primary care doctor", result["answer"])
         self.assertEqual(requests[0]["plan"], "Caller's exact unfamiliar wording")
         self.assertEqual(requests[0]["dob"], state.patient.active.dob)
 
     async def test_answer_is_written_from_decision_fields_not_backend_text(self):
+        notice = "At Spring Hill, patients with this plan can only see Dr. Bach."
+        unknown = dict(participation="unknown", planId="", canonicalPlan="")
         for body, expected in (
             (
                 decision("Sunshine Medicaid Vision", "routine_vision"),
                 "Sunshine Medicaid Vision is accepted for routine vision exams at this office.",
+            ),
+            (
+                decision("Humana Medicaid", callerNotice=notice),
+                f"Humana Medicaid is accepted for medical visits at this office. Note: {notice}",
             ),
             (
                 decision(
@@ -78,8 +85,20 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
                     outcome="not_accepted",
                     participation="not_accepted",
                     canSchedule=False,
+                    reason="not_accepted",
                 ),
                 "Cigna is not accepted for medical visits at this office.",
+            ),
+            (
+                decision(
+                    outcome="not_accepted",
+                    participation="not_accepted",
+                    planId="",
+                    canonicalPlan="",
+                    canSchedule=False,
+                    reason="office_no_coverage",
+                ),
+                "This office does not accept insurance for medical visits.",
             ),
             (
                 decision(
@@ -88,6 +107,29 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
                     planId="",
                     canonicalPlan="",
                     canSchedule=False,
+                    reason="ask_card",
+                ),
+                "Ask what insurance plan is on the card.",
+            ),
+            (
+                decision(
+                    outcome="needs_clarification",
+                    participation="unknown",
+                    planId="",
+                    canonicalPlan="",
+                    canSchedule=False,
+                    reason="ask_full_name",
+                ),
+                "Ask for the full plan name on the card.",
+            ),
+            (
+                decision(
+                    outcome="needs_clarification",
+                    participation="unknown",
+                    planId="",
+                    canonicalPlan="",
+                    canSchedule=False,
+                    reason="choose_plan",
                     options=[
                         dict(planId="aetna-hmo", label="Aetna HMO"),
                         dict(planId="aetna-ppo", label="Aetna PPO"),
@@ -100,37 +142,45 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
                     "Aetna HMO",
                     outcome="needs_staff_task",
                     canSchedule=False,
-                    requirements=[
-                        dict(
-                            kind="pcp_referral",
-                            channel="uhc_portal",
-                            verification="unverified",
-                        )
-                    ],
+                    reason="requirement",
+                    requirements=[dict(kind="pcp_referral", verification="unverified")],
                 ),
-                "Office staff must verify the pcp referral before scheduling medical visits. Aetna HMO is accepted.",
+                "Office staff must verify a referral from the patient's primary care doctor before scheduling medical visits. Aetna HMO is accepted.",
             ),
             (
                 decision(
+                    "VSP",
+                    "routine_vision",
                     outcome="needs_staff_task",
+                    canSchedule=False,
+                    reason="no_provider_for_age",
+                    allowedProviders=[],
+                ),
+                "VSP is accepted, but no doctor here who takes it can see a patient of this age. Office staff must arrange this visit.",
+            ),
+            (
+                decision(
+                    "CarePlus Medicare",
+                    outcome="needs_staff_task",
+                    canSchedule=False,
                     participation="unknown",
-                    canonicalPlan="",
-                    canSchedule=False,
+                    reason="pending_confirmation",
+                    callerNotice="Staff will call you back.",
                 ),
-                "Office staff must verify this plan before scheduling medical visits.",
+                "Office staff must confirm CarePlus Medicare for medical visits before scheduling. Note: Staff will call you back.",
             ),
             (
                 decision(
-                    "Cigna",
                     outcome="needs_staff_task",
-                    participation="not_accepted",
                     canSchedule=False,
+                    **unknown,
+                    reason="chart_unverified",
                 ),
-                "Office staff must verify this plan before scheduling medical visits. Cigna is not accepted.",
+                "Office staff must verify the insurance on the chart before scheduling.",
             ),
         ):
             body["answer"] = "success: backend wording"
-            with self.subTest(outcome=body["outcome"]):
+            with self.subTest(reason=body["reason"]):
                 _, owner = self.owner(lambda _, b=body: httpx.Response(200, json=b))
                 result = await owner.check("caller words", body["coverageType"])
                 self.assertEqual(result["outcome"], body["outcome"])
@@ -140,6 +190,7 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
         requests = []
         question = decision(
             outcome="needs_clarification",
+            reason="choose_plan",
             participation="unknown",
             planId="",
             canonicalPlan="",
@@ -189,6 +240,7 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
                     coverage,
                     office,
                     outcome="needs_clarification",
+                    reason="choose_plan",
                     participation="unknown",
                     planId="",
                     canonicalPlan="",
@@ -345,6 +397,7 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
                 d = decision(
                     "Aetna HMO",
                     outcome="needs_staff_task",
+                    reason="requirement",
                     canSchedule=False,
                     requirements=[
                         dict(kind="prior_authorization", verification="unverified")
