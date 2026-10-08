@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.4](https://github.com/chasef07/abita_s2s/compare/v0.13.3...v0.13.4) (2026-10-08)
+
+
+### Bug Fixes
+
+* **prompts:** stop narrating unstarted actions and ask symptom and new-patient status first ([#153](https://github.com/chasef07/abita_s2s/issues/153)) ([90380d1](https://github.com/chasef07/abita_s2s/commit/90380d122b5b63d85e7561da4f57b0dbb1e89924))
+
 ## [0.13.3](https://github.com/chasef07/abita_s2s/compare/v0.13.2...v0.13.3) (2026-10-08)
 
 
