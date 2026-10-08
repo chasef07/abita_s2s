@@ -428,6 +428,22 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(accepted_insurance(state).decision.canonicalPlan, "Aetna")
         self.assertTrue(insurance_ready(state))
 
+    async def test_completed_update_with_unaccepted_decision_clears_acceptance(self):
+        pending = decision(
+            outcome="needs_staff_task",
+            participation="unknown",
+            canSchedule=False,
+            reason="pending_confirmation",
+        )
+        state, _, owner = self.owner([updated(insuranceDecision=pending)])
+        state.patient.active = Receipt.model_validate(receipt())
+        await owner.check("Aetna", "medical")
+        self.assertEqual((await owner.update("member-example"))["outcome"], "updated")
+        self.assertIsNone(accepted_insurance(state))
+        self.assertEqual(
+            (await owner.update("member-example"))["outcome"], "needs_insurance"
+        )
+
     async def test_no_effect_update_preserves_context_and_allows_corrected_retry(self):
         for status_code in (200, 400):
             with self.subTest(status_code=status_code):

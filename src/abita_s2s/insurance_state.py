@@ -99,7 +99,7 @@ def rebind_acceptance(
     """Carry acceptance onto the patient revision a completed write produced."""
     if state.insurance.accepted is not checked:
         return
-    if decision is None:
+    if decision is None or decision.participation != "accepted":
         clear_acceptance(state)
         return
     state.insurance.accepted = replace(
