@@ -212,15 +212,14 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
 
         def respond(request):
             questions = json.loads(request.content)["questions"]
-            name, question = next(iter(questions.items()))
-            if name == "office_rules_grounded":
-                return httpx.Response(400, json={"error": "private body"})
-            answer = (
-                {"type": "boolean", "probability": 0.8}
+            answers = {
+                name: {"type": "boolean", "probability": 0.8}
                 if question["type"] == "boolean"
                 else {"type": "score", "score": 2, "probabilities": {"2": 1}}
-            )
-            return httpx.Response(200, json={"answers": {name: answer}})
+                for name, question in questions.items()
+            }
+            answers["office_rules_grounded"] = {"type": "boolean", "probability": 2}
+            return httpx.Response(200, json={"answers": answers})
 
         client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
         with (
@@ -259,9 +258,8 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             evaluation["errors"]["office_rules_grounded"]["errors"],
-            {"typesafe-ai/jev": "HTTPStatusError"},
+            {"typesafe-ai/jev": "ValueError"},
         )
-        self.assertNotIn("private body", json.dumps(closeout))
 
     async def test_evaluation_timeout_or_error_still_delivers_completed_call(self):
         history = llm.ChatContext()
