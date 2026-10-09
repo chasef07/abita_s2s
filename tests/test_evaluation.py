@@ -112,6 +112,24 @@ class JudgeStateTests(unittest.TestCase):
         )
         self.assertNotIn("Second rules", str(state))
 
+    def test_judge_state_marks_failed_tool_results(self):
+        history = ChatContext(
+            [
+                FunctionCall(call_id="c1", name="book_appointment", arguments="{}", created_at=10.0),
+                FunctionCallOutput(
+                    call_id="c1",
+                    name="book_appointment",
+                    output="Timed out",
+                    is_error=True,
+                    created_at=11.0,
+                ),
+            ]
+        )
+        self.assertEqual(
+            judge_state(history, "Office rules.")["transcript"],
+            ["[00:01] tool book_appointment({}) -> Timed out (error)"],
+        )
+
 
 class JevTests(unittest.IsolatedAsyncioTestCase):
     async def run_evaluation(
@@ -316,7 +334,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             state["transcript"][1][8:],
-            'tool reschedule_appointment({"time":"10:00"}) -> Timed out',
+            'tool reschedule_appointment({"time":"10:00"}) -> Timed out (error)',
         )
         self.assertEqual(state["transcript"][-1][8:], "caller: Thanks.")
         self.assertNotIn("Office timezone", str(state["transcript"]))
