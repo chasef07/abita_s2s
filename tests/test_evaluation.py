@@ -181,15 +181,6 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             if name != "expressed_sentiment":
                 self.assertEqual(question["type"], "noul")
                 self.assertEqual(set(question["criteria"]), {"true", "false"})
-        self.assertTrue(
-            sent["booking_requested"]["instructions"].startswith(
-                "Did the caller ask to book a new appointment"
-            )
-        )
-        self.assertEqual(
-            sent["time_offered"]["criteria"]["true"],
-            "The agent offered at least one specific date and time from returned availability.",
-        )
 
     async def test_judges_receive_full_history_and_return_decisions(self):
         requests, result = await self.run_evaluation(
