@@ -3,7 +3,7 @@
 from livekit.agents import ChatContext
 
 QUESTION = {
-    "type": "noul",
+    "type": "boolean",
     "instructions": "Did the agent offer the caller at least one specific appointment date and time taken from an availability tool result? A vague promise, a staff request to find a time, or a time the caller proposed that the agent did not confirm as available does not count.",
     "criteria": {
         "true": "The agent offered at least one specific date and time from returned availability.",

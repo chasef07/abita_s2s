@@ -216,8 +216,8 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             if name == "office_rules_grounded":
                 return httpx.Response(400, json={"error": "private body"})
             answer = (
-                {"type": "noul", "noul": 0.8}
-                if question["type"] == "noul"
+                {"type": "boolean", "probability": 0.8}
+                if question["type"] == "boolean"
                 else {"type": "score", "score": 2, "probabilities": {"2": 1}}
             )
             return httpx.Response(200, json={"answers": {name: answer}})
@@ -249,13 +249,17 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertEqual(
-            evaluation["results"]["clear_and_responsive"]["answers"][
-                "clear_and_responsive"
-            ],
-            {"type": "noul", "noul": 0.8},
+            evaluation["results"]["clear_and_responsive"],
+            {
+                "verdict": True,
+                "probability": 0.8,
+                "votes": {"typesafe-ai/jev": 0.8},
+                "errors": {},
+            },
         )
         self.assertEqual(
-            evaluation["errors"]["office_rules_grounded"]["httpStatus"], 400
+            evaluation["errors"]["office_rules_grounded"]["errors"],
+            {"typesafe-ai/jev": "HTTPStatusError"},
         )
         self.assertNotIn("private body", json.dumps(closeout))
 

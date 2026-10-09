@@ -1,4 +1,8 @@
-"""Named judge definitions used by the call evaluator."""
+"""Named judge definitions and the seated jury used by the call evaluator.
+
+Candidate jurors liquid/d1 and convaiinnovations/laya need zero data retention
+enabled in Vercel before they can be seated.
+"""
 
 from abita_s2s.observability.judges import (
     appointment_datetime_correct,
@@ -11,6 +15,8 @@ from abita_s2s.observability.judges import (
     right_help,
     time_offered,
 )
+
+JURORS = ("typesafe-ai/jev",)
 
 QUESTIONS = {
     "booking_requested": booking_requested.QUESTION,

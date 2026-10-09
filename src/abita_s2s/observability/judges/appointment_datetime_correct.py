@@ -3,7 +3,7 @@
 from livekit.agents import ChatContext
 
 QUESTION = {
-    "type": "noul",
+    "type": "boolean",
     "instructions": "For every booking, rescheduling, or cancellation action, did the tool result match the caller's final intended appointment date and time? Use the final agreed date/time, including explicitly accepted alternatives, in the office timezone. For rescheduling check both the original appointment and the new date/time; for cancellation check the targeted appointment. Compare actual tool results, not the assistant's claim. Missing results cannot establish a match.",
     "criteria": {
         "true": "Every appointment action's tool result confirms the caller's intended date and time.",
