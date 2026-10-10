@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/chasef07/abita_s2s/compare/v0.14.0...v0.14.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **deps:** bump LiveKit agents to 1.8.6 and skip unused local model preload ([#158](https://github.com/chasef07/abita_s2s/issues/158)) ([0d677b2](https://github.com/chasef07/abita_s2s/commit/0d677b2fa4b85d1d21c24ff030d80f0137bd942b))
+
 ## [0.14.0](https://github.com/chasef07/abita_s2s/compare/v0.13.4...v0.14.0) (2026-10-08)
 
 
