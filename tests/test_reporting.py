@@ -253,13 +253,13 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             {
                 "verdict": True,
                 "probability": 0.8,
-                "votes": {"typesafe-ai/jev": 0.8},
+                "votes": {"typesafe-ai/jev": 0.8, "microsoft/microsoft-decision-1": 0.8},
                 "errors": {},
             },
         )
         self.assertEqual(
             evaluation["errors"]["office_rules_grounded"]["errors"],
-            {"typesafe-ai/jev": "HTTPStatusError"},
+            {"typesafe-ai/jev": "HTTPStatusError", "microsoft/microsoft-decision-1": "HTTPStatusError"},
         )
         self.assertNotIn("private body", json.dumps(closeout))
 
