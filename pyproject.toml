@@ -9,9 +9,9 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "httpx>=0.28.1,<1",
-    "livekit-agents[openai]>=1.8.5,<2",
+    "livekit-agents[openai]>=1.8.6,<2",
     "metaphone>=0.6,<1",
-    "pydantic>=2.13.5,<3",
+    "pydantic>=2.14.0,<3",
     "python-dotenv>=1.2.4",
     "rapidfuzz>=3,<4",
 ]
@@ -25,7 +25,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "ruff==0.16.10",
+    "ruff==0.17.0",
 ]
 
 [tool.ruff.lint]
