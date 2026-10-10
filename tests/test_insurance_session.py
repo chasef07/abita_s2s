@@ -135,7 +135,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                         if item.type == "function_call_output"
                     ][-1]
                     if name == "check_insurance":
-                        self.assertIn("participates", output.output)
+                        self.assertIn("is accepted for", output.output)
                     else:
                         self.assertTrue(
                             output.output.startswith(outcome + ": "), output.output

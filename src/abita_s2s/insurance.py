@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import ConfigDict
 
 from abita_s2s.identity import PatientResolver
+from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.insurance_state import (
     AcceptedInsurance,
     CoverageType,
@@ -60,6 +61,41 @@ def staff(outcome="needs_staff_review"):
         outcome,
         "blocked: Office staff must verify the registration or insurance result before continuing. Do not repeat this write.",
     )
+
+
+VISITS = {"medical": "medical visits", "routine_vision": "routine vision exams"}
+REQUIREMENTS = {
+    "pcp_referral": "a referral from the patient's primary care doctor",
+    "prior_authorization": "prior authorization",
+    "staff_verify": "this plan's coverage",
+}
+ANSWERS = {
+    "accepted": "{plan} is accepted for {visits} at this office.",
+    "not_accepted": "{plan} is not accepted for {visits} at this office.",
+    "office_no_coverage": "This office does not accept insurance for {visits}.",
+    "ask_card": "Ask what insurance plan is on the card.",
+    "ask_full_name": "Ask for the full plan name on the card.",
+    "choose_plan": "Ask which plan is on the card: {options}.",
+    "requirement": "Office staff must verify {requirement} before scheduling {visits}. {plan} is accepted.",
+    "pending_confirmation": "Office staff must confirm {plan} for {visits} before scheduling.",
+    "no_provider_for_age": "{plan} is accepted, but no doctor here who takes it can see a patient of this age. Office staff must arrange this visit.",
+    "chart_unverified": "Office staff must verify the insurance on the chart before scheduling.",
+}
+
+
+def decision_answer(decision: InsuranceDecision) -> str:
+    """Model-facing sentence for a participation decision, written here from its fields."""
+    answer = ANSWERS[decision.reason].format(
+        plan=decision.canonicalPlan,
+        visits=VISITS[decision.coverageType],
+        options=", ".join(option.label for option in decision.options),
+        requirement=REQUIREMENTS[decision.requirements[0].kind]
+        if decision.requirements
+        else "",
+    )
+    if decision.callerNotice:
+        answer += f" Note: {decision.callerNotice}"
+    return answer
 
 
 class InsuranceRegistration:
@@ -121,7 +157,7 @@ class InsuranceRegistration:
                 coverage_type,
                 tuple(option.planId for option in decision.options),
             )
-        if decision.participation == "accepted" and decision.canonicalPlan:
+        if decision.participation == "accepted":
             self.state.insurance.accepted = AcceptedInsurance(
                 office,
                 revision,
@@ -129,7 +165,7 @@ class InsuranceRegistration:
                 absence,
                 decision,
             )
-        return reply(decision.outcome, decision.answer)
+        return reply(decision.outcome, decision_answer(decision))
 
     def _write_blocker(self) -> dict | None:
         if self._closed:
@@ -192,8 +228,6 @@ class InsuranceRegistration:
                 "needs_insurance",
                 "needs_input: Check accepted coverage for this patient and the intended medical or routine vision visit, then call add_patient again.",
             )
-        if checked.decision.participation != "accepted":
-            return reply(checked.decision.outcome, checked.decision.answer)
         self_pay = checked.decision.selfPay
         phone = r.phone or (
             self.state.call.caller_phone if r.inboundPhoneConfirmed else None
@@ -347,8 +381,6 @@ class InsuranceRegistration:
                 "needs_insurance",
                 "needs_input: Check accepted coverage for this patient and visit type before changing insurance.",
             )
-        if checked.decision.participation != "accepted":
-            return reply(checked.decision.outcome, checked.decision.answer)
         member_id = "self pay" if checked.decision.selfPay else member_id.strip()
         if not member_id:
             return reply(
