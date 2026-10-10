@@ -172,6 +172,37 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             self.requests[1]["appointmentOutcome"]["bookingResult"]["status"], "booked"
         )
 
+    async def test_closeout_reports_versions_and_searched_knowledge_revision(self):
+        reporter = self.reporter(evaluate=AsyncMock(return_value={}))
+        reporter.started = True
+        reporter.observe_knowledge_revision("revision-1")
+        reporter.observe_knowledge_revision("revision-2")
+        await reporter.finish(lambda: REPORT)
+        versions = self.requests[-1]["closeoutPayload"]["versions"]
+        self.assertEqual(
+            set(versions),
+            {
+                "agent",
+                "gitCommit",
+                "prompts",
+                "tools",
+                "judges",
+                "evaluator",
+                "knowledge",
+            },
+        )
+        self.assertEqual(versions["knowledge"], "revision-2")
+        self.assertEqual(versions["evaluator"], "typesafe-scorecard-v4")
+        self.assertTrue(
+            all(isinstance(value, str) and value for value in versions.values())
+        )
+
+    async def test_closeout_omits_knowledge_revision_without_answered_search(self):
+        reporter = self.reporter(evaluate=AsyncMock(return_value={}))
+        reporter.started = True
+        await reporter.finish(lambda: REPORT)
+        self.assertNotIn("knowledge", self.requests[-1]["closeoutPayload"]["versions"])
+
     async def test_evaluation_runs_after_drain_and_is_in_the_same_closeout(self):
         events = []
         evidence = {
