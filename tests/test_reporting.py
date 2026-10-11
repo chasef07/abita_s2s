@@ -212,16 +212,17 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         reporter.started = True
 
         def respond(request):
-            questions = json.loads(request.content)["questions"]
-            name, question = next(iter(questions.items()))
-            if name == "office_rules_grounded":
+            payload = json.loads(request.content)
+            if payload["model"] == JURORS[-1]:
                 return httpx.Response(400, json={"error": "private body"})
-            answer = (
-                {"type": "noul", "noul": 0.5}
+            answers = {
+                name: {"type": "noul", "noul": 0.5}
                 if question["type"] == "noul"
                 else {"type": "score", "score": 2, "probabilities": {"2": 1}}
-            )
-            return httpx.Response(200, json={"answers": {name: answer}})
+                for name, question in payload["questions"].items()
+                if name != "office_rules_grounded"
+            }
+            return httpx.Response(200, json={"answers": answers})
 
         client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
         with (
@@ -254,13 +255,13 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             {
                 "verdict": True,
                 "probability": 0.5,
-                "votes": dict.fromkeys(JURORS, 0.5),
-                "errors": {},
+                "votes": dict.fromkeys(JURORS[:-1], 0.5),
+                "errors": {JURORS[-1]: "HTTPStatusError"},
             },
         )
         self.assertEqual(
             evaluation["errors"]["office_rules_grounded"]["errors"],
-            dict.fromkeys(JURORS, "HTTPStatusError"),
+            {**dict.fromkeys(JURORS[:-1], "ValueError"), JURORS[-1]: "HTTPStatusError"},
         )
         self.assertNotIn("private body", json.dumps(closeout))
 

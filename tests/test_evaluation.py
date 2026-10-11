@@ -77,28 +77,28 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             )
             payload = json.loads(request.content)
             requests.append(payload)
-            name, question = next(iter(payload["questions"].items()))
             juror = payload["model"]
-            attempt = sum(
-                name in p["questions"] and p["model"] == juror for p in requests
-            )
+            attempt = sum(p["model"] == juror for p in requests)
+            answers = {}
+            for name, question in payload["questions"].items():
+                default = 0.9 if question["type"] == "noul" else 2.3
+                value = (values or {}).get(name, default)
+                if isinstance(value, dict):
+                    value = value.get(juror, default)
+                if question["type"] == "noul":
+                    answers[name] = {"type": "noul", "noul": value}
+                else:
+                    answers[name] = {
+                        "type": "score",
+                        "score": value,
+                        "probabilities": {str(i): int(i == 2) for i in range(5)},
+                    }
             if behavior:
-                response = await behavior(name, juror, attempt, request)
+                response = await behavior(juror, attempt, request, answers)
                 if response is not None:
                     return response
-            value = (values or {}).get(name, 0.9 if question["type"] == "noul" else 2.3)
-            if isinstance(value, dict):
-                value = value[juror]
-            if question["type"] == "noul":
-                answer = {"type": "noul", "noul": value}
-            else:
-                answer = {
-                    "type": "score",
-                    "score": value,
-                    "probabilities": {str(i): int(i == 2) for i in range(5)},
-                }
             return httpx.Response(
-                200, json={"answers": {name: answer}, "usage": {"inputTokens": 100}}
+                200, json={"answers": answers, "usage": {"inputTokens": 100}}
             )
 
         client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
@@ -141,7 +141,8 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                         "appointment_datetime_correct" in sent, datetime_applies
                     )
                     self.assertEqual("time_offered" in sent, time_applies)
-                    self.assertEqual(len(requests), 7 + datetime_applies + time_applies)
+                    self.assertEqual(len(requests), 1)
+                    self.assertEqual(len(sent), 7 + datetime_applies + time_applies)
                     self.assertEqual(result["status"], "complete")
                     if not datetime_applies:
                         self.assertEqual(
@@ -160,7 +161,9 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                             },
                         )
 
-    async def test_v6_sends_one_yes_no_question_per_request_with_zero_retention(self):
+    async def test_each_juror_gets_every_question_in_one_request_with_zero_retention(
+        self,
+    ):
         requests, result = await self.run_evaluation(
             tool="list_available_appointments", extra_tool="book_appointment"
         )
@@ -168,7 +171,6 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         for request in requests:
             self.assertEqual(request["model"], "typesafe/jev-1.13")
             self.assertEqual(request["provider"], {"zdr": True})
-            self.assertEqual(len(request["questions"]), 1)
             sent.update(request["questions"])
         self.assertEqual(
             set(sent),
@@ -184,7 +186,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 "expressed_sentiment",
             },
         )
-        self.assertEqual(len(requests), 9)
+        self.assertEqual(len(requests), 1)
         self.assertEqual(result["evaluator"], "jury")
         self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v6")
         self.assertEqual(result["jurors"], ["typesafe/jev-1.13"])
@@ -204,7 +206,8 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 "right_help": 0.41,
             }
         )
-        self.assertEqual(len(requests), 8)
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(len(requests[0]["questions"]), 8)
         self.assertEqual(result["status"], "complete")
         jev = "typesafe/jev-1.13"
         self.assertEqual(
@@ -261,10 +264,10 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 "errors": {},
             },
         )
-        self.assertEqual(len(requests), 8 * 3)
+        self.assertEqual(sorted(r["model"] for r in requests), list(jurors))
 
     async def test_two_of_three_answering_break_a_tie_on_mean_probability(self):
-        async def behavior(name, juror, attempt, request):
+        async def behavior(juror, attempt, request, answers):
             if juror == "juror-c":
                 return httpx.Response(400)
 
@@ -288,9 +291,9 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Thanks", str(logs.output))
 
     async def test_without_quorum_a_question_has_no_verdict(self):
-        async def behavior(name, juror, attempt, request):
-            if name == "need_understood" and juror != "juror-a":
-                return httpx.Response(400)
+        async def behavior(juror, attempt, request, answers):
+            if juror != "juror-a":
+                del answers["need_understood"]
 
         with self.assertLogs("abita_s2s.observability.evaluation", "ERROR"):
             _, result = await self.run_evaluation(
@@ -306,10 +309,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 "need_understood": {
                     "cause": "no_quorum",
                     "votes": {"juror-a": 0.8},
-                    "errors": {
-                        "juror-b": "HTTPStatusError",
-                        "juror-c": "HTTPStatusError",
-                    },
+                    "errors": {"juror-b": "ValueError", "juror-c": "ValueError"},
                 }
             },
         )
@@ -325,10 +325,13 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             {"type": "noul"},
         ]:
 
-            async def behavior(name, juror, attempt, request):
-                if name == "office_rules_grounded":
-                    body = {"answers": {} if answer is None else {name: answer}}
-                    return httpx.Response(200, content=json.dumps(body).encode())
+            async def behavior(juror, attempt, request, answers):
+                if answer is None:
+                    del answers["office_rules_grounded"]
+                else:
+                    answers["office_rules_grounded"] = answer
+                body = {"answers": answers}
+                return httpx.Response(200, content=json.dumps(body).encode())
 
             with (
                 self.subTest(answer=answer),
@@ -347,38 +350,37 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 )
 
     async def test_retry_after_cannot_extend_deadline(self):
-        async def behavior(name, juror, attempt, request):
-            if name == "office_rules_grounded":
-                return httpx.Response(429, headers={"Retry-After": "60"})
+        async def behavior(juror, attempt, request, answers):
+            return httpx.Response(429, headers={"Retry-After": "60"})
 
         with self.assertLogs("abita_s2s.observability.evaluation", "ERROR") as logs:
             requests, result = await self.run_evaluation(behavior)
-        self.assertEqual(len(requests), 8)
+        self.assertEqual(len(requests), 1)
         self.assertEqual(
             result["errors"]["office_rules_grounded"]["errors"],
             {"typesafe/jev-1.13": "TimeoutError"},
         )
         self.assertIn("http_status=429", str(logs.output))
-        self.assertEqual(len(result["results"]), 8)
+        self.assertEqual(len(result["errors"]), 8)
+        self.assertEqual(set(result["results"]), {"time_offered"})
 
     async def test_exhausted_http_and_transport_retries_remain_visible(self):
         for transport_failure in (False, True):
 
-            async def behavior(name, juror, attempt, request):
-                if name == "office_rules_grounded":
-                    if transport_failure:
-                        raise httpx.ConnectError(
-                            "synthetic-secret private details", request=request
-                        )
-                    return httpx.Response(503)
+            async def behavior(juror, attempt, request, answers):
+                if transport_failure:
+                    raise httpx.ConnectError(
+                        "synthetic-secret private details", request=request
+                    )
+                return httpx.Response(503)
 
             with (
                 self.subTest(transport=transport_failure),
                 self.assertLogs("abita_s2s.observability.evaluation", "ERROR") as logs,
             ):
                 requests, result = await self.run_evaluation(behavior)
-            self.assertEqual(len(requests), 9)
-            self.assertEqual(len(result["results"]), 8)
+            self.assertEqual(len(requests), 2)
+            self.assertEqual(set(result["results"]), {"time_offered"})
             cause = "ConnectError" if transport_failure else "HTTPStatusError"
             self.assertEqual(
                 result["errors"]["office_rules_grounded"]["errors"],
@@ -395,9 +397,8 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             {"type": "score", "score": 2},
         ]:
 
-            async def behavior(name, juror, attempt, request):
-                if name == "expressed_sentiment":
-                    return httpx.Response(200, json={"answers": {name: answer}})
+            async def behavior(juror, attempt, request, answers):
+                answers["expressed_sentiment"] = answer
 
             with (
                 self.subTest(answer=answer),
