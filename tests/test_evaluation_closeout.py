@@ -38,18 +38,11 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result["status"], "incomplete")
             self.assertNotIn("private API body", str(result) + str(logs.output))
 
-    async def test_missing_key_or_instructions_never_calls_provider(self):
-        for key, instructions, expected in [
-            ("", True, "openrouter_key_not_configured"),
-            ("offline", False, "agent_instructions_missing"),
-        ]:
-            report = self.report()
-            if not instructions:
-                report["chat_history"]["items"].pop(0)
-            with patch("abita_s2s.observability.evaluation.evaluate_judges") as judge:
-                result = await evaluate_call(report, key, 60)
-            judge.assert_not_called()
-            self.assertEqual(result["reason"], expected)
+    async def test_missing_key_never_calls_provider(self):
+        with patch("abita_s2s.observability.evaluation.evaluate_judges") as judge:
+            result = await evaluate_call(self.report(), "", 60)
+        judge.assert_not_called()
+        self.assertEqual(result["reason"], "openrouter_key_not_configured")
 
     async def test_calls_under_thirty_seconds_never_call_provider(self):
         for seconds, called in ((29.9, False), (30, True)):

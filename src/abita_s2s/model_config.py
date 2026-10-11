@@ -6,7 +6,7 @@ from abita_s2s.runtime.observability import ObservedGPTLiveModel as GPTLiveModel
 
 from abita_s2s.config import Config
 from abita_s2s.offices import EASTERN
-from abita_s2s.prompt import load_prompt
+from abita_s2s.prompt import thinker_instructions
 
 
 SPEAKER_MODEL = "gpt-live-1"
@@ -24,11 +24,6 @@ def create_model(config: Config, *, call_id: str = "") -> GPTLiveModel:
         responses_options={
             "model": THINKER_MODEL,
             "reasoning": {"effort": THINKER_REASONING_EFFORT},
-            "instructions": (
-                load_prompt("thinker")
-                + f"\n\nCall started: {now:%A, %Y-%m-%d %H:%M %Z} "
-                "(America/New_York). Use this clinic-local date "
-                "to interpret relative dates."
-            ),
+            "instructions": thinker_instructions(now),
         },
     )

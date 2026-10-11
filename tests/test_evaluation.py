@@ -8,7 +8,8 @@ import httpx
 from livekit.agents import ChatContext
 from livekit.agents.llm import AgentConfigUpdate, FunctionCall, FunctionCallOutput
 
-from abita_s2s.observability.evaluation import evaluate_call
+from abita_s2s.observability.evaluation import evaluate_call, judge_state
+from abita_s2s.prompt import load_prompt
 
 
 class JevTests(unittest.IsolatedAsyncioTestCase):
@@ -212,14 +213,20 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertFalse(result["results"]["clear_and_responsive"]["verdict"])
         self.assertTrue(result["results"]["right_help"]["verdict"])
+        state = requests[0]["state"]
         for request in requests:
-            self.assertEqual(
-                request["state"]["conversation"], requests[0]["state"]["conversation"]
-            )
-        items = requests[0]["state"]["conversation"]
-        self.assertTrue(items[3]["is_error"])
-        self.assertEqual(items[2]["call_id"], items[3]["call_id"])
-        self.assertIn("created_at", items[-1])
+            self.assertEqual(request["state"], state)
+        self.assertEqual(set(state), {"agent_instructions", "transcript"})
+        self.assertEqual(
+            state["transcript"],
+            [
+                "caller: Move Tuesday at 9 to Wednesday at 10.",
+                'tool reschedule_appointment({"time":"10:00"}) -> ERROR: Timed out',
+                "agent: It is rescheduled.",
+                "caller: This is frustrating. Please get a person.",
+                "caller: Thanks.",
+            ],
+        )
         self.assertEqual(
             result["results"]["expressed_sentiment"],
             {"score": 2.3, "votes": {jev: 2.3}, "errors": {}},
@@ -406,3 +413,47 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                     "errors": {"typesafe/jev-1.13": "ValueError"},
                 },
             )
+
+
+class JudgeStateTests(unittest.TestCase):
+    def test_call_reads_as_lines_with_the_agents_rules_once(self):
+        history = ChatContext()
+        history.items.append(
+            AgentConfigUpdate(instructions="Speaker prompt.", created_at=1_791_475_200)
+        )
+        history.add_message(role="user", content="Is Dr. Lee in Friday?")
+        history.items.append(
+            FunctionCall(
+                call_id="k-1", name="search_office_knowledge", arguments='{"q":"Lee"}'
+            )
+        )
+        history.add_message(role="assistant", content="One moment.", interrupted=True)
+        history.items.append(
+            FunctionCallOutput(
+                call_id="k-1",
+                name="search_office_knowledge",
+                output="Dr. Lee: Mon-Thu",
+                is_error=False,
+            )
+        )
+        history.add_message(role="assistant", content="  ")
+        history.items.append(
+            FunctionCall(call_id="t-1", name="transfer_call", arguments="{}")
+        )
+        state = judge_state(history)
+        self.assertEqual(
+            state["transcript"],
+            [
+                "caller: Is Dr. Lee in Friday?",
+                "agent: One moment. (interrupted)",
+                'tool search_office_knowledge({"q":"Lee"}) -> Dr. Lee: Mon-Thu',
+                "tool transfer_call({}) -> no result",
+            ],
+        )
+        instructions = state["agent_instructions"]
+        self.assertTrue(instructions.startswith(load_prompt("thinker")))
+        self.assertIn(
+            "Call started: Thursday, 2026-10-08 12:00 EDT (America/New_York)",
+            instructions,
+        )
+        self.assertTrue(instructions.endswith(load_prompt("speaker")))
