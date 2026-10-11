@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.15.0](https://github.com/chasef07/abita_s2s/compare/v0.14.1...v0.15.0) (2026-10-11)
+
+
+### Features
+
+* **observability:** scorecard v6 asks a three-model jury on OpenRouter (ACU-99) ([#148](https://github.com/chasef07/abita_s2s/issues/148)) ([a88f33c](https://github.com/chasef07/abita_s2s/commit/a88f33cda9c4f9aad8eddf247d8e71608e263ed5))
+
+
+### Performance Improvements
+
+* **observability:** ask each juror every question in one request ([#160](https://github.com/chasef07/abita_s2s/issues/160)) ([851d272](https://github.com/chasef07/abita_s2s/commit/851d2724099f1b7f75c20e54f716800c7aebaeac))
+
 ## [0.14.1](https://github.com/chasef07/abita_s2s/compare/v0.14.0...v0.14.1) (2026-10-10)
 
 
