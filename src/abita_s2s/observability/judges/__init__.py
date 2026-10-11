@@ -12,7 +12,11 @@ from abita_s2s.observability.judges import (
     time_offered,
 )
 
-JURORS = ("typesafe-ai/jev", "microsoft/microsoft-decision-1")
+JURORS = (
+    "typesafe/jev-1.13",
+    "perplexity/pplx-decider-v1.1-27b",
+    "microsoft/microsoft-decision-1",
+)
 
 QUESTIONS = {
     "booking_requested": booking_requested.QUESTION,

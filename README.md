@@ -118,9 +118,11 @@ Deploy middleware contracts before their agent consumer. Offline tests and
 
 ## Post-call evaluation
 
-After accepted writes drain, calls with caller messages are scored by `typesafe-ai/jev`
-through Vercel AI Gateway (`AI_GATEWAY_API_KEY`). Each judge owns its definition in
-[observability/judges](src/abita_s2s/observability/judges). Results go into Product's
+After accepted writes drain, calls with caller messages are scored by a jury of three
+decision models (`JURORS` in [observability/judges](src/abita_s2s/observability/judges))
+through OpenRouter with zero data retention (`OPENROUTER_API_KEY`). Each yes/no question
+needs a majority of jurors to answer; its verdict is the majority vote. Each judge owns
+its definition in [observability/judges](src/abita_s2s/observability/judges). Results go into Product's
 closeout as `closeoutPayload.evaluation`, marked `complete`, `incomplete`, or `skipped`.
 Evaluation failure never blocks closeout or changes the call outcome.
 

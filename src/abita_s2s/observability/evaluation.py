@@ -1,4 +1,4 @@
-"""Scorecard questions answered by a jury of decision models via Vercel AI Gateway."""
+"""Scorecard questions answered by a jury of decision models via OpenRouter."""
 
 import asyncio
 import logging
@@ -17,7 +17,7 @@ EVALUATION_GRACE_SECONDS = 1
 RETRY_SECONDS = 0.25
 MIN_CALL_SECONDS = 30
 EVALUATOR_VERSION = "typesafe-scorecard-v6"
-EVALUATE_URL = "https://ai-gateway.vercel.sh/v1/evaluate"
+EVALUATE_URL = "https://openrouter.ai/api/alpha/decisions"
 YES_ABOVE = 0.40
 
 
@@ -30,8 +30,8 @@ def validate_answer(name: str, result: dict) -> dict:
     answer = answers[name]
     if not isinstance(answer, dict) or answer.get("type") != question["type"]:
         raise ValueError("Invalid answer type")
-    if question["type"] == "boolean":
-        value, maximum = answer.get("probability"), 1
+    if question["type"] == "noul":
+        value, maximum = answer.get("noul"), 1
     else:
         probabilities = answer.get("probabilities")
         if not isinstance(probabilities, dict) or not probabilities:
@@ -68,7 +68,7 @@ async def evaluate_judges(
 ) -> dict:
     """Ask each juror each question within one deadline; keep every completed vote.
 
-    Boolean questions take the jury's majority. Score questions go to the first juror.
+    Yes/no questions take the jury's majority. Score questions go to the first juror.
     """
     if not agent_purpose.strip():
         raise ValueError("agent_purpose is required")
@@ -104,9 +104,7 @@ async def evaluate_judges(
                                     "model": juror,
                                     "state": state,
                                     "questions": {name: QUESTIONS[name]},
-                                    "providerOptions": {
-                                        "gateway": {"zeroDataRetention": True}
-                                    },
+                                    "provider": {"zdr": True},
                                 },
                             )
                             http_status = response.status_code
@@ -119,6 +117,7 @@ async def evaluate_judges(
                                 502,
                                 503,
                                 504,
+                                524,
                                 529,
                             ):
                                 raise
@@ -181,7 +180,7 @@ async def evaluate_judges(
             if isinstance(answer, Exception):
                 failures[juror] = type(answer).__name__
             else:
-                votes[juror] = answer["probability"]
+                votes[juror] = answer["noul"]
         if len(votes) < len(JURORS) // 2 + 1:
             errors[name] = {"cause": "no_quorum", "votes": votes, "errors": failures}
         else:
@@ -217,7 +216,7 @@ async def evaluate_call(
         elif seconds < MIN_CALL_SECONDS:
             evaluation.update(status="skipped", reason="call_too_short")
         elif not api_key:
-            evaluation.update(status="skipped", reason="gateway_key_not_configured")
+            evaluation.update(status="skipped", reason="openrouter_key_not_configured")
         elif window <= 0:
             evaluation.update(status="skipped", reason="shutdown_budget_exhausted")
         else:

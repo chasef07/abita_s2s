@@ -40,7 +40,7 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_key_or_instructions_never_calls_provider(self):
         for key, instructions, expected in [
-            ("", True, "gateway_key_not_configured"),
+            ("", True, "openrouter_key_not_configured"),
             ("offline", False, "agent_instructions_missing"),
         ]:
             report = self.report()
@@ -76,9 +76,9 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
             result = await evaluate_call({}, "offline", 60)
         self.assertEqual(result["status"], "incomplete")
 
-    def test_gateway_key_is_loaded_with_config(self):
-        env = {"OPENAI_API_KEY": "offline", "AI_GATEWAY_API_KEY": " offline-key "}
+    def test_openrouter_key_is_loaded_with_config(self):
+        env = {"OPENAI_API_KEY": "offline", "OPENROUTER_API_KEY": " offline-key "}
         with patch.dict("os.environ", env):
-            self.assertEqual(load_config().ai_gateway_key, "offline-key")
-        with patch.dict("os.environ", {**env, "AI_GATEWAY_API_KEY": ""}):
-            self.assertIsNone(load_config().ai_gateway_key)
+            self.assertEqual(load_config().openrouter_key, "offline-key")
+        with patch.dict("os.environ", {**env, "OPENROUTER_API_KEY": ""}):
+            self.assertIsNone(load_config().openrouter_key)

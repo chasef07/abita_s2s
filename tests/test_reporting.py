@@ -14,6 +14,7 @@ from livekit.agents.voice.report import SessionReport
 from test_patient_resolution import CONFIG, call_state
 
 from abita_s2s.config import load_config
+from abita_s2s.observability.judges import JURORS
 from abita_s2s.offices import get_office_profile
 from abita_s2s.runtime.reporting import CallReporter, ReportingError
 from abita_s2s.staff_tasks import Draft, StaffTasks
@@ -49,7 +50,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         drain=None,
         evaluate=None,
         call=None,
-        gateway_key=None,
+        openrouter_key=None,
     ):
         self.requests = []
         pause = patch("abita_s2s.runtime.reporting.RETRY_PAUSE_SECONDS", 0)
@@ -78,7 +79,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                 CONFIG,
                 interaction_url="https://product.test/v1/ai/interactions",
                 product_secret="offline-secret",
-                ai_gateway_key=gateway_key,
+                openrouter_key=openrouter_key,
             ),
             drain or AsyncMock(),
         )
@@ -207,7 +208,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         history.items.append(llm.AgentConfigUpdate(instructions="Manage appointments."))
         history.add_message(role="user", content="Please help with an appointment.")
         report = {**REPORT, "chat_history": history.to_dict()}
-        reporter = self.reporter(gateway_key="offline")
+        reporter = self.reporter(openrouter_key="offline")
         reporter.started = True
 
         def respond(request):
@@ -216,8 +217,8 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             if name == "office_rules_grounded":
                 return httpx.Response(400, json={"error": "private body"})
             answer = (
-                {"type": "boolean", "probability": 0.8}
-                if question["type"] == "boolean"
+                {"type": "noul", "noul": 0.5}
+                if question["type"] == "noul"
                 else {"type": "score", "score": 2, "probabilities": {"2": 1}}
             )
             return httpx.Response(200, json={"answers": {name: answer}})
@@ -252,14 +253,14 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             evaluation["results"]["clear_and_responsive"],
             {
                 "verdict": True,
-                "probability": 0.8,
-                "votes": {"typesafe-ai/jev": 0.8, "microsoft/microsoft-decision-1": 0.8},
+                "probability": 0.5,
+                "votes": dict.fromkeys(JURORS, 0.5),
                 "errors": {},
             },
         )
         self.assertEqual(
             evaluation["errors"]["office_rules_grounded"]["errors"],
-            {"typesafe-ai/jev": "HTTPStatusError", "microsoft/microsoft-decision-1": "HTTPStatusError"},
+            dict.fromkeys(JURORS, "HTTPStatusError"),
         )
         self.assertNotIn("private body", json.dumps(closeout))
 
@@ -276,7 +277,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             (hang, "TimeoutError"),
             (ValueError("private"), "ValueError"),
         ]:
-            reporter = self.reporter(gateway_key="offline")
+            reporter = self.reporter(openrouter_key="offline")
             reporter.started = True
             with (
                 patch(
@@ -318,14 +319,14 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.requests[-1]["appointmentOutcome"]["action"], "BOOKED")
         self.assertLess(budgets[0], 0.2)
 
-    async def test_closeout_evaluates_with_configured_gateway_key(self):
+    async def test_closeout_evaluates_with_configured_openrouter_key(self):
         keys = []
 
         async def evaluate(report, api_key, _, **__):
             keys.append(api_key)
             return {}
 
-        reporter = self.reporter(evaluate=evaluate, gateway_key="config-key")
+        reporter = self.reporter(evaluate=evaluate, openrouter_key="config-key")
         reporter.started = True
         await reporter.finish(lambda: REPORT)
         self.assertEqual(keys, ["config-key"])

@@ -20,7 +20,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         tool="reschedule_appointment",
         returned=True,
         extra_tool=None,
-        jurors=("typesafe-ai/jev",),
+        jurors=("typesafe/jev-1.13",),
     ):
         history = ChatContext()
         history.items.append(
@@ -69,7 +69,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
 
         async def respond(request):
             self.assertEqual(
-                str(request.url), "https://ai-gateway.vercel.sh/v1/evaluate"
+                str(request.url), "https://openrouter.ai/api/alpha/decisions"
             )
             self.assertEqual(
                 request.headers["Authorization"], "Bearer synthetic-secret"
@@ -85,11 +85,11 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 response = await behavior(name, juror, attempt, request)
                 if response is not None:
                     return response
-            if question["type"] == "boolean":
+            if question["type"] == "noul":
                 value = (values or {}).get(name, 0.9)
                 if isinstance(value, dict):
                     value = value[juror]
-                answer = {"type": "boolean", "probability": value}
+                answer = {"type": "noul", "noul": value}
             else:
                 answer = {
                     "type": "score",
@@ -159,16 +159,14 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                             },
                         )
 
-    async def test_v6_sends_one_boolean_question_per_request_with_zero_retention(self):
+    async def test_v6_sends_one_yes_no_question_per_request_with_zero_retention(self):
         requests, result = await self.run_evaluation(
             tool="list_available_appointments", extra_tool="book_appointment"
         )
         sent = {}
         for request in requests:
-            self.assertEqual(request["model"], "typesafe-ai/jev")
-            self.assertEqual(
-                request["providerOptions"], {"gateway": {"zeroDataRetention": True}}
-            )
+            self.assertEqual(request["model"], "typesafe/jev-1.13")
+            self.assertEqual(request["provider"], {"zdr": True})
             self.assertEqual(len(request["questions"]), 1)
             sent.update(request["questions"])
         self.assertEqual(
@@ -188,13 +186,13 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 9)
         self.assertEqual(result["evaluator"], "jury")
         self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v6")
-        self.assertEqual(result["jurors"], ["typesafe-ai/jev"])
+        self.assertEqual(result["jurors"], ["typesafe/jev-1.13"])
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["errors"], {})
         self.assertEqual(set(result["results"]), set(sent))
         for name, question in sent.items():
             if name != "expressed_sentiment":
-                self.assertEqual(question["type"], "boolean")
+                self.assertEqual(question["type"], "noul")
                 self.assertEqual(set(question["criteria"]), {"true", "false"})
 
     async def test_judges_receive_full_history_and_return_verdicts(self):
@@ -207,7 +205,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(len(requests), 8)
         self.assertEqual(result["status"], "complete")
-        jev = "typesafe-ai/jev"
+        jev = "typesafe/jev-1.13"
         self.assertEqual(
             result["results"]["appointment_datetime_correct"],
             {"verdict": False, "probability": 0.1, "votes": {jev: 0.1}, "errors": {}},
@@ -313,11 +311,11 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         for answer in [
             None,
             {},
-            {"type": "noul", "noul": 0.9},
-            {"type": "boolean", "probability": True},
-            {"type": "boolean", "probability": 1.5},
-            {"type": "boolean", "probability": float("nan")},
-            {"type": "boolean"},
+            {"type": "boolean", "probability": 0.9},
+            {"type": "noul", "noul": True},
+            {"type": "noul", "noul": 1.5},
+            {"type": "noul", "noul": float("nan")},
+            {"type": "noul"},
         ]:
 
             async def behavior(name, juror, attempt, request):
@@ -337,7 +335,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                     {
                         "cause": "no_quorum",
                         "votes": {},
-                        "errors": {"typesafe-ai/jev": "ValueError"},
+                        "errors": {"typesafe/jev-1.13": "ValueError"},
                     },
                 )
 
@@ -351,7 +349,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 8)
         self.assertEqual(
             result["errors"]["office_rules_grounded"]["errors"],
-            {"typesafe-ai/jev": "TimeoutError"},
+            {"typesafe/jev-1.13": "TimeoutError"},
         )
         self.assertIn("http_status=429", str(logs.output))
         self.assertEqual(len(result["results"]), 8)
@@ -377,7 +375,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             cause = "ConnectError" if transport_failure else "HTTPStatusError"
             self.assertEqual(
                 result["errors"]["office_rules_grounded"]["errors"],
-                {"typesafe-ai/jev": cause},
+                {"typesafe/jev-1.13": cause},
             )
             self.assertIn("attempts=2", str(logs.output))
             self.assertNotIn("synthetic-secret", str(result) + str(logs.output))
@@ -402,5 +400,5 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(result["results"]), 8)
             self.assertEqual(
                 result["errors"]["expressed_sentiment"],
-                {"cause": "ValueError", "model": "typesafe-ai/jev"},
+                {"cause": "ValueError", "model": "typesafe/jev-1.13"},
             )
