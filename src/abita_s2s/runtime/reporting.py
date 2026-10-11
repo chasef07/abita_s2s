@@ -38,7 +38,7 @@ class CallReporter:
         self._client = client
         self._url = config.interaction_url
         self._secret = config.product_secret
-        self._gateway_key = config.ai_gateway_key
+        self._openrouter_key = config.openrouter_key
         self._drain = drain
         self._started_at = call.session_started_at
         office = get_office_profile(call.called_office_key)
@@ -240,7 +240,7 @@ class CallReporter:
                 payload["closeoutPayload"]["evaluation"], _ = await asyncio.gather(
                     evaluate_call(
                         report,
-                        self._gateway_key,
+                        self._openrouter_key,
                         (ended_at - self._started_at).total_seconds(),
                         budget=remaining,
                     ),

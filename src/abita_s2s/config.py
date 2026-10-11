@@ -25,7 +25,7 @@ class Config:
     interaction_url: str | None = None
     handoff: HandoffConfig | None = None
     deployment: str | None = None
-    ai_gateway_key: str | None = field(default=None, repr=False)
+    openrouter_key: str | None = field(default=None, repr=False)
 
 
 def _is_service_url(url: SplitResult) -> bool:
@@ -156,5 +156,5 @@ def load_config() -> Config:
         interaction_url,
         handoff,
         deployment or None,
-        os.environ.get("AI_GATEWAY_API_KEY", "").strip() or None,
+        os.environ.get("OPENROUTER_API_KEY", "").strip() or None,
     )
