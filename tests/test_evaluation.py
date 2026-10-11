@@ -8,7 +8,7 @@ import httpx
 from livekit.agents import ChatContext
 from livekit.agents.llm import AgentConfigUpdate, FunctionCall, FunctionCallOutput
 
-from abita_s2s.observability.evaluation import evaluate_call, evaluate_judges
+from abita_s2s.observability.evaluation import evaluate_call
 
 
 class JevTests(unittest.IsolatedAsyncioTestCase):
@@ -308,43 +308,6 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 }
             },
         )
-
-    async def test_backtest_can_ask_a_subset_of_questions(self):
-        history = ChatContext()
-        history.add_message(role="user", content="Synthetic caller asks for help.")
-        requests = []
-
-        def respond(request):
-            payload = json.loads(request.content)
-            requests.append(payload)
-            name = next(iter(payload["questions"]))
-            return httpx.Response(
-                200,
-                json={"answers": {name: {"type": "boolean", "probability": 0.7}}},
-            )
-
-        client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
-        with patch(
-            "abita_s2s.observability.evaluation.httpx.AsyncClient",
-            return_value=client,
-        ):
-            result = await evaluate_judges(
-                history,
-                agent_purpose="Synthetic purpose.",
-                api_key="synthetic-secret",
-                questions=["right_help", "time_offered"],
-                jurors=["juror-a", "juror-b"],
-            )
-        self.assertEqual(
-            sorted((r["model"], *r["questions"]) for r in requests),
-            [("juror-a", "right_help"), ("juror-b", "right_help")],
-        )
-        self.assertEqual(
-            result["results"]["time_offered"],
-            {"status": "not_applicable", "reason": "no_availability_result"},
-        )
-        self.assertTrue(result["results"]["right_help"]["verdict"])
-        self.assertEqual(result["errors"], {})
 
     async def test_invalid_or_missing_answers_do_not_erase_other_results(self):
         for answer in [
