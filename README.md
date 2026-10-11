@@ -119,10 +119,10 @@ Deploy middleware contracts before their agent consumer. Offline tests and
 ## Post-call evaluation
 
 After accepted writes drain, calls with caller messages are scored by a jury of three
-decision models (`JURORS` in [observability/judges](src/abita_s2s/observability/judges))
-through OpenRouter with zero data retention (`OPENROUTER_API_KEY`). Each yes/no question
-needs a majority of jurors to answer; its verdict is the majority vote. Each judge owns
-its definition in [observability/judges](src/abita_s2s/observability/judges). Results go into Product's
+decision models through OpenRouter with zero data retention (`OPENROUTER_API_KEY`).
+[observability/judges](src/abita_s2s/observability/judges) holds the seated `JURORS`
+and each judge's definition. Each question needs a majority of jurors to answer; a
+yes/no verdict is the majority vote and sentiment is the mean. Results go into Product's
 closeout as `closeoutPayload.evaluation`, marked `complete`, `incomplete`, or `skipped`.
 Evaluation failure never blocks closeout or changes the call outcome.
 
