@@ -56,13 +56,10 @@ def judge_state(history: ChatContext) -> dict:
     }
 
 
-def validate_answer(name: str, result: dict) -> dict:
-    """Return the one answer for ``name``, or raise if it is malformed."""
+def validate_answer(name: str, answers: dict) -> float:
+    """Return the juror's value for ``name``, or raise if it is missing or malformed."""
     question = QUESTIONS[name]
-    answers = result.get("answers") if isinstance(result, dict) else None
-    if not isinstance(answers, dict) or set(answers) != {name}:
-        raise ValueError("Incomplete answers")
-    answer = answers[name]
+    answer = answers.get(name)
     if not isinstance(answer, dict) or answer.get("type") != question["type"]:
         raise ValueError("Invalid answer type")
     if question["type"] == "noul":
@@ -79,7 +76,7 @@ def validate_answer(name: str, result: dict) -> dict:
         value, maximum = answer.get("score"), len(question["criteria"]) - 1
     if type(value) not in (int, float) or not 0 <= value <= maximum:
         raise ValueError("Invalid value")
-    return answer
+    return value
 
 
 def majority(votes: dict) -> dict:
@@ -100,9 +97,10 @@ async def evaluate_judges(
     api_key: str,
     seconds: float = EVALUATION_SECONDS,
 ) -> dict:
-    """Ask each juror each question within one deadline; keep every completed vote.
+    """Ask each juror every question in one request within one deadline.
 
-    Yes/no questions take the jury's majority; score questions take the jury's mean.
+    A malformed answer fails only its own question. Yes/no questions take the jury's
+    majority; score questions take the jury's mean.
     """
     state = judge_state(history)
     results, errors = {}, {}
@@ -113,7 +111,7 @@ async def evaluate_judges(
     deadline = asyncio.get_running_loop().time() + seconds
     async with httpx.AsyncClient(timeout=seconds) as client:
 
-        async def ask(name, juror):
+        async def ask(juror):
             attempts = 0
             http_status = None
             try:
@@ -129,7 +127,9 @@ async def evaluate_judges(
                                 json={
                                     "model": juror,
                                     "state": state,
-                                    "questions": {name: QUESTIONS[name]},
+                                    "questions": {
+                                        name: QUESTIONS[name] for name in asked
+                                    },
                                     "provider": {"zdr": True},
                                 },
                             )
@@ -166,12 +166,17 @@ async def evaluate_judges(
                             if attempt:
                                 raise
                         else:
-                            return validate_answer(name, response.json())
+                            body = response.json()
+                            answers = (
+                                body.get("answers") if isinstance(body, dict) else None
+                            )
+                            if not isinstance(answers, dict):
+                                raise ValueError("Missing answers")
+                            return answers
                         await asyncio.sleep(delay)
             except Exception as error:
                 logger.error(
-                    "Call evaluation failed judge=%s juror=%s cause=%s http_status=%s attempts=%s",
-                    name,
+                    "Call evaluation failed juror=%s cause=%s http_status=%s attempts=%s",
                     juror,
                     type(error).__name__,
                     http_status,
@@ -179,23 +184,26 @@ async def evaluate_judges(
                 )
                 raise
 
-        requests = [(name, juror) for name in asked for juror in JURORS]
-        answers = await asyncio.gather(
-            *(ask(name, juror) for name, juror in requests), return_exceptions=True
+        replies = await asyncio.gather(
+            *(ask(juror) for juror in JURORS), return_exceptions=True
         )
-    outcomes = dict(zip(requests, answers, strict=True))
+    replies = dict(zip(JURORS, replies, strict=True))
     for name in asked:
-        kind = QUESTIONS[name]["type"]
         votes, failures = {}, {}
-        for juror in JURORS:
-            answer = outcomes[name, juror]
-            if isinstance(answer, Exception):
-                failures[juror] = type(answer).__name__
-            else:
-                votes[juror] = answer[kind]
+        for juror, reply in replies.items():
+            if isinstance(reply, Exception):
+                failures[juror] = type(reply).__name__
+                continue
+            try:
+                votes[juror] = validate_answer(name, reply)
+            except ValueError:
+                failures[juror] = "ValueError"
+                logger.error(
+                    "Call evaluation answer invalid judge=%s juror=%s", name, juror
+                )
         if len(votes) < len(JURORS) // 2 + 1:
             errors[name] = {"cause": "no_quorum", "votes": votes, "errors": failures}
-        elif kind == "noul":
+        elif QUESTIONS[name]["type"] == "noul":
             results[name] = {**majority(votes), "errors": failures}
         else:
             score = sum(votes.values()) / len(votes)
