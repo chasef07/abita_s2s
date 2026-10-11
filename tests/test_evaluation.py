@@ -85,15 +85,15 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 response = await behavior(name, juror, attempt, request)
                 if response is not None:
                     return response
+            value = (values or {}).get(name, 0.9 if question["type"] == "noul" else 2.3)
+            if isinstance(value, dict):
+                value = value[juror]
             if question["type"] == "noul":
-                value = (values or {}).get(name, 0.9)
-                if isinstance(value, dict):
-                    value = value[juror]
                 answer = {"type": "noul", "noul": value}
             else:
                 answer = {
                     "type": "score",
-                    "score": 2.3,
+                    "score": value,
                     "probabilities": {str(i): int(i == 2) for i in range(5)},
                 }
             return httpx.Response(
@@ -222,19 +222,16 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("created_at", items[-1])
         self.assertEqual(
             result["results"]["expressed_sentiment"],
-            {
-                "score": 2.3,
-                "probabilities": {str(i): int(i == 2) for i in range(5)},
-                "model": jev,
-            },
+            {"score": 2.3, "votes": {jev: 2.3}, "errors": {}},
         )
 
-    async def test_three_jurors_take_the_majority_and_sentiment_asks_the_first(self):
+    async def test_three_jurors_take_the_majority_and_average_sentiment(self):
         jurors = ("juror-a", "juror-b", "juror-c")
         requests, result = await self.run_evaluation(
             values={
                 "need_understood": {"juror-a": 0.9, "juror-b": 0.2, "juror-c": 0.6},
                 "right_help": {"juror-a": 0.95, "juror-b": 0.1, "juror-c": 0.3},
+                "expressed_sentiment": {"juror-a": 1.0, "juror-b": 2.0, "juror-c": 3.0},
             },
             jurors=jurors,
         )
@@ -249,12 +246,15 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         right = result["results"]["right_help"]
         self.assertFalse(right["verdict"])
         self.assertAlmostEqual(right["probability"], 1.35 / 3)
-        sentiment = [
-            r["model"] for r in requests if "expressed_sentiment" in r["questions"]
-        ]
-        self.assertEqual(sentiment, ["juror-a"])
-        self.assertEqual(result["results"]["expressed_sentiment"]["model"], "juror-a")
-        self.assertEqual(len(requests), 7 * 3 + 1)
+        self.assertEqual(
+            result["results"]["expressed_sentiment"],
+            {
+                "score": 2.0,
+                "votes": {"juror-a": 1.0, "juror-b": 2.0, "juror-c": 3.0},
+                "errors": {},
+            },
+        )
+        self.assertEqual(len(requests), 8 * 3)
 
     async def test_two_of_three_answering_break_a_tie_on_mean_probability(self):
         async def behavior(name, juror, attempt, request):
@@ -400,5 +400,9 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(result["results"]), 8)
             self.assertEqual(
                 result["errors"]["expressed_sentiment"],
-                {"cause": "ValueError", "model": "typesafe/jev-1.13"},
+                {
+                    "cause": "no_quorum",
+                    "votes": {},
+                    "errors": {"typesafe/jev-1.13": "ValueError"},
+                },
             )

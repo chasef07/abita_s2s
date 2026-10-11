@@ -68,7 +68,7 @@ async def evaluate_judges(
 ) -> dict:
     """Ask each juror each question within one deadline; keep every completed vote.
 
-    Yes/no questions take the jury's majority. Score questions go to the first juror.
+    Yes/no questions take the jury's majority; score questions take the jury's mean.
     """
     if not agent_purpose.strip():
         raise ValueError("agent_purpose is required")
@@ -153,38 +153,27 @@ async def evaluate_judges(
                 )
                 raise
 
-        requests = [
-            (name, juror)
-            for name in asked
-            for juror in (JURORS[:1] if QUESTIONS[name]["type"] == "score" else JURORS)
-        ]
+        requests = [(name, juror) for name in asked for juror in JURORS]
         answers = await asyncio.gather(
             *(ask(name, juror) for name, juror in requests), return_exceptions=True
         )
     outcomes = dict(zip(requests, answers, strict=True))
     for name in asked:
-        if QUESTIONS[name]["type"] == "score":
-            answer = outcomes[name, JURORS[0]]
-            if isinstance(answer, Exception):
-                errors[name] = {"cause": type(answer).__name__, "model": JURORS[0]}
-            else:
-                results[name] = {
-                    "score": answer["score"],
-                    "probabilities": answer["probabilities"],
-                    "model": JURORS[0],
-                }
-            continue
+        kind = QUESTIONS[name]["type"]
         votes, failures = {}, {}
         for juror in JURORS:
             answer = outcomes[name, juror]
             if isinstance(answer, Exception):
                 failures[juror] = type(answer).__name__
             else:
-                votes[juror] = answer["noul"]
+                votes[juror] = answer[kind]
         if len(votes) < len(JURORS) // 2 + 1:
             errors[name] = {"cause": "no_quorum", "votes": votes, "errors": failures}
-        else:
+        elif kind == "noul":
             results[name] = {**majority(votes), "errors": failures}
+        else:
+            score = sum(votes.values()) / len(votes)
+            results[name] = {"score": score, "votes": votes, "errors": failures}
     return {"results": results, "errors": errors}
 
 
