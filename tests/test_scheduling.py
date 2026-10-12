@@ -1528,6 +1528,42 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 [888] if status == "cancelled" else [77, 888],
             )
 
+    async def test_second_move_with_stale_slot_ref_does_not_replay_first_move(self):
+        owner, requests = self.owner(
+            [inventory(slots=[slot(), slot(start="2026-09-15T14:00")]), rescheduled()]
+        )
+        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        old_ref = owner.appointments()[0]["appointmentRef"]
+        listing = await self.tool(
+            owner, "list_available_appointments", visitType="medical"
+        )
+        first_slot, second_slot = soonest(listing)[:2]
+        args = {
+            "oldAppointmentRef": old_ref,
+            "appointmentSlotRef": first_slot,
+            "appointmentReason": "Annual follow up",
+            "referringDoctor": "none",
+            "readBack": True,
+        }
+        moved = await self.tool(owner, "reschedule_appointment", **args)
+        self.assertTrue(moved.startswith("success:"), moved)
+
+        stale = await self.tool(
+            owner,
+            "reschedule_appointment",
+            **{
+                **args,
+                "oldAppointmentRef": owner.appointments()[0]["appointmentRef"],
+                "appointmentSlotRef": second_slot,
+            },
+        )
+        self.assertTrue(stale.startswith("needs_input:"), stale)
+        self.assertIn("That slot reference was not returned", stale)
+        self.assertEqual(
+            await self.tool(owner, "reschedule_appointment", **args), moved
+        )
+        self.assertEqual(len(requests), 2)
+
     async def test_metadata_authority_and_missing_action_tokens(self):
         owner, requests = self.owner([])
         verified(

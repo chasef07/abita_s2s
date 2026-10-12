@@ -861,7 +861,7 @@ class Scheduling:
                 and old.id == saved.booked.id
                 and saved.cancelled_id is not None
             )
-            if not (different and replacement_move):
+            if not (replacement_move and (different or offered is None)):
                 if different and saved.cancelled_id is not None:
                     return reply(
                         "needs_input",
