@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/chasef07/abita_s2s/compare/v0.16.0...v0.16.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **observability:** trace GPT-Live like upstream livekit/agents[#7408](https://github.com/chasef07/abita_s2s/issues/7408) ([#166](https://github.com/chasef07/abita_s2s/issues/166)) ([aff30c9](https://github.com/chasef07/abita_s2s/commit/aff30c90941b2e0d980eb26599173d4de202d5f1))
+
 ## [0.16.0](https://github.com/chasef07/abita_s2s/compare/v0.15.0...v0.16.0) (2026-10-13)
 
 
