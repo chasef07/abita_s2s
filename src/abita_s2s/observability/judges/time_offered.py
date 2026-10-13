@@ -1,4 +1,7 @@
-"""Time offered."""
+"""Time offered.
+
+Not a failure: fact for booking conversion.
+"""
 
 from livekit.agents import ChatContext
 

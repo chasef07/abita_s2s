@@ -11,6 +11,8 @@ from livekit.agents.llm import AgentConfigUpdate, FunctionCall, FunctionCallOutp
 from abita_s2s.observability.evaluation import evaluate_call, judge_state
 from abita_s2s.prompt import load_prompt
 
+NOT_ASKED = ("time_offered", "insurance_plan_as_stated", "requested_time_honored")
+
 
 class JevTests(unittest.IsolatedAsyncioTestCase):
     async def run_evaluation(
@@ -20,7 +22,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         *,
         tool="reschedule_appointment",
         returned=True,
-        extra_tool=None,
+        extra_tools=(),
         jurors=("typesafe/jev-1.13",),
     ):
         history = ChatContext()
@@ -49,12 +51,12 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         )
         if not returned:
             history.items.pop()
-        if extra_tool:
+        for extra_tool in extra_tools:
             history.items.extend(
                 [
-                    FunctionCall(call_id="extra-1", name=extra_tool, arguments="{}"),
+                    FunctionCall(call_id=extra_tool, name=extra_tool, arguments="{}"),
                     FunctionCallOutput(
-                        call_id="extra-1",
+                        call_id=extra_tool,
                         name=extra_tool,
                         output="success: done",
                         is_error=False,
@@ -80,8 +82,8 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             juror = payload["model"]
             attempt = sum(p["model"] == juror for p in requests)
             answers = {}
-            for name, question in payload["questions"].items():
-                default = 0.9 if question["type"] == "noul" else 2.3
+            for index, (name, question) in enumerate(payload["questions"].items()):
+                default = 0.9 + index / 100 if question["type"] == "noul" else 2.3
                 value = (values or {}).get(name, default)
                 if isinstance(value, dict):
                     value = value.get(juror, default)
@@ -117,11 +119,24 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         return requests, result
 
     async def test_gated_judges_require_their_returned_tool_results(self):
+        gates = {
+            "appointment_datetime_correct": (
+                {"book_appointment", "reschedule_appointment", "cancel_appointment"},
+                "no_appointment_action_result",
+            ),
+            "time_offered": ({"list_available_appointments"}, "no_availability_result"),
+            "insurance_plan_as_stated": ({"check_insurance"}, "no_insurance_check"),
+            "requested_time_honored": (
+                {"list_available_appointments"},
+                "no_availability_result",
+            ),
+        }
         for tool in (
             "book_appointment",
             "reschedule_appointment",
             "cancel_appointment",
             "list_available_appointments",
+            "check_insurance",
             "resolve_patient",
             "confirm_appointment",
         ):
@@ -131,41 +146,24 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                         tool=tool, returned=returned
                     )
                     sent = {name for r in requests for name in r["questions"]}
-                    datetime_applies = returned and tool in {
-                        "book_appointment",
-                        "reschedule_appointment",
-                        "cancel_appointment",
-                    }
-                    time_applies = returned and tool == "list_available_appointments"
-                    self.assertEqual(
-                        "appointment_datetime_correct" in sent, datetime_applies
-                    )
-                    self.assertEqual("time_offered" in sent, time_applies)
                     self.assertEqual(len(requests), 1)
-                    self.assertEqual(len(sent), 7 + datetime_applies + time_applies)
                     self.assertEqual(result["status"], "complete")
-                    if not datetime_applies:
-                        self.assertEqual(
-                            result["results"]["appointment_datetime_correct"],
-                            {
-                                "status": "not_applicable",
-                                "reason": "no_appointment_action_result",
-                            },
-                        )
-                    if not time_applies:
-                        self.assertEqual(
-                            result["results"]["time_offered"],
-                            {
-                                "status": "not_applicable",
-                                "reason": "no_availability_result",
-                            },
-                        )
+                    for name, (tools, reason) in gates.items():
+                        applies = returned and tool in tools
+                        self.assertEqual(name in sent, applies, name)
+                        if not applies:
+                            self.assertEqual(
+                                result["results"][name],
+                                {"status": "not_applicable", "reason": reason},
+                            )
+                    self.assertEqual(len(sent - set(gates)), 6)
 
     async def test_each_juror_gets_every_question_in_one_request_with_zero_retention(
         self,
     ):
         requests, result = await self.run_evaluation(
-            tool="list_available_appointments", extra_tool="book_appointment"
+            tool="list_available_appointments",
+            extra_tools=("book_appointment", "check_insurance"),
         )
         sent = {}
         for request in requests:
@@ -175,20 +173,21 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             set(sent),
             {
-                "booking_requested",
+                "new_booking_requested",
                 "time_offered",
-                "need_understood",
-                "right_help",
-                "clear_and_responsive",
-                "person_request_honored",
+                "promises_backed",
+                "ended_while_caller_active",
                 "office_rules_grounded",
+                "office_question_answered",
                 "appointment_datetime_correct",
+                "insurance_plan_as_stated",
+                "requested_time_honored",
                 "expressed_sentiment",
             },
         )
         self.assertEqual(len(requests), 1)
         self.assertEqual(result["evaluator"], "jury")
-        self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v6")
+        self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v7")
         self.assertEqual(result["jurors"], ["typesafe/jev-1.13"])
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["errors"], {})
@@ -202,20 +201,20 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         requests, result = await self.run_evaluation(
             values={
                 "appointment_datetime_correct": 0.1,
-                "clear_and_responsive": 0.4,
-                "right_help": 0.41,
+                "promises_backed": 0.4,
+                "ended_while_caller_active": 0.41,
             }
         )
         self.assertEqual(len(requests), 1)
-        self.assertEqual(len(requests[0]["questions"]), 8)
+        self.assertEqual(len(requests[0]["questions"]), 7)
         self.assertEqual(result["status"], "complete")
         jev = "typesafe/jev-1.13"
         self.assertEqual(
             result["results"]["appointment_datetime_correct"],
             {"verdict": False, "probability": 0.1, "votes": {jev: 0.1}, "errors": {}},
         )
-        self.assertFalse(result["results"]["clear_and_responsive"]["verdict"])
-        self.assertTrue(result["results"]["right_help"]["verdict"])
+        self.assertFalse(result["results"]["promises_backed"]["verdict"])
+        self.assertTrue(result["results"]["ended_while_caller_active"]["verdict"])
         state = requests[0]["state"]
         for request in requests:
             self.assertEqual(request["state"], state)
@@ -239,21 +238,29 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         jurors = ("juror-a", "juror-b", "juror-c")
         requests, result = await self.run_evaluation(
             values={
-                "need_understood": {"juror-a": 0.9, "juror-b": 0.2, "juror-c": 0.6},
-                "right_help": {"juror-a": 0.95, "juror-b": 0.1, "juror-c": 0.3},
+                "office_question_answered": {
+                    "juror-a": 0.9,
+                    "juror-b": 0.2,
+                    "juror-c": 0.6,
+                },
+                "ended_while_caller_active": {
+                    "juror-a": 0.95,
+                    "juror-b": 0.1,
+                    "juror-c": 0.3,
+                },
                 "expressed_sentiment": {"juror-a": 1.0, "juror-b": 2.0, "juror-c": 3.0},
             },
             jurors=jurors,
         )
         self.assertEqual(result["jurors"], list(jurors))
         self.assertEqual(result["status"], "complete")
-        need = result["results"]["need_understood"]
+        need = result["results"]["office_question_answered"]
         self.assertTrue(need["verdict"])
         self.assertAlmostEqual(need["probability"], 1.7 / 3)
         self.assertEqual(
             need["votes"], {"juror-a": 0.9, "juror-b": 0.2, "juror-c": 0.6}
         )
-        right = result["results"]["right_help"]
+        right = result["results"]["ended_while_caller_active"]
         self.assertFalse(right["verdict"])
         self.assertAlmostEqual(right["probability"], 1.35 / 3)
         self.assertEqual(
@@ -275,38 +282,72 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             _, result = await self.run_evaluation(
                 behavior,
                 values={
-                    "need_understood": {"juror-a": 0.9, "juror-b": 0.3},
-                    "right_help": {"juror-a": 0.45, "juror-b": 0.1},
+                    "office_question_answered": {"juror-a": 0.9, "juror-b": 0.3},
+                    "ended_while_caller_active": {"juror-a": 0.45, "juror-b": 0.1},
                 },
                 jurors=("juror-a", "juror-b", "juror-c"),
             )
         self.assertEqual(result["status"], "complete")
-        need = result["results"]["need_understood"]
+        need = result["results"]["office_question_answered"]
         self.assertTrue(need["verdict"])
         self.assertAlmostEqual(need["probability"], 0.6)
         self.assertEqual(need["errors"], {"juror-c": "HTTPStatusError"})
-        right = result["results"]["right_help"]
+        right = result["results"]["ended_while_caller_active"]
         self.assertFalse(right["verdict"])
         self.assertAlmostEqual(right["probability"], 0.275)
         self.assertNotIn("Thanks", str(logs.output))
 
+    async def test_one_value_for_every_yes_no_question_is_an_error_not_a_vote(self):
+        jurors = ("juror-a", "juror-b", "juror-c")
+        asked = (
+            "new_booking_requested",
+            "promises_backed",
+            "ended_while_caller_active",
+            "office_rules_grounded",
+            "office_question_answered",
+            "appointment_datetime_correct",
+        )
+
+        async def behavior(juror, attempt, request, answers):
+            for name, answer in answers.items():
+                if answer["type"] == "noul" and juror == "juror-b":
+                    answer["noul"] = 0.0
+                if name in asked[:3] and juror == "juror-c":
+                    answer["noul"] = 1.0
+
+        with self.assertLogs("abita_s2s.observability.evaluation", "ERROR") as logs:
+            _, result = await self.run_evaluation(behavior, jurors=jurors)
+        self.assertEqual(result["status"], "complete")
+        for name in asked:
+            with self.subTest(name=name):
+                answer = result["results"][name]
+                self.assertTrue(answer["verdict"])
+                self.assertEqual(set(answer["votes"]), {"juror-a", "juror-c"})
+                self.assertEqual(answer["errors"], {"juror-b": "DegenerateAnswer"})
+        self.assertEqual(
+            result["results"]["expressed_sentiment"]["votes"],
+            dict.fromkeys(jurors, 2.3),
+        )
+        self.assertIn("juror=juror-b", str(logs.output))
+        self.assertNotIn("juror=juror-c", str(logs.output))
+
     async def test_without_quorum_a_question_has_no_verdict(self):
         async def behavior(juror, attempt, request, answers):
             if juror != "juror-a":
-                del answers["need_understood"]
+                del answers["office_question_answered"]
 
         with self.assertLogs("abita_s2s.observability.evaluation", "ERROR"):
             _, result = await self.run_evaluation(
                 behavior,
-                values={"need_understood": {"juror-a": 0.8}},
+                values={"office_question_answered": {"juror-a": 0.8}},
                 jurors=("juror-a", "juror-b", "juror-c"),
             )
         self.assertEqual(result["status"], "incomplete")
-        self.assertNotIn("need_understood", result["results"])
+        self.assertNotIn("office_question_answered", result["results"])
         self.assertEqual(
             result["errors"],
             {
-                "need_understood": {
+                "office_question_answered": {
                     "cause": "no_quorum",
                     "votes": {"juror-a": 0.8},
                     "errors": {"juror-b": "ValueError", "juror-c": "ValueError"},
@@ -338,7 +379,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLogs("abita_s2s.observability.evaluation", "ERROR"),
             ):
                 _, result = await self.run_evaluation(behavior)
-                self.assertEqual(len(result["results"]), 8)
+                self.assertEqual(len(result["results"]), 9)
                 self.assertNotIn("office_rules_grounded", result["results"])
                 self.assertEqual(
                     result["errors"]["office_rules_grounded"],
@@ -361,8 +402,8 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             {"typesafe/jev-1.13": "TimeoutError"},
         )
         self.assertIn("http_status=429", str(logs.output))
-        self.assertEqual(len(result["errors"]), 8)
-        self.assertEqual(set(result["results"]), {"time_offered"})
+        self.assertEqual(len(result["errors"]), 7)
+        self.assertEqual(set(result["results"]), set(NOT_ASKED))
 
     async def test_exhausted_http_and_transport_retries_remain_visible(self):
         for transport_failure in (False, True):
@@ -380,7 +421,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             ):
                 requests, result = await self.run_evaluation(behavior)
             self.assertEqual(len(requests), 2)
-            self.assertEqual(set(result["results"]), {"time_offered"})
+            self.assertEqual(set(result["results"]), set(NOT_ASKED))
             cause = "ConnectError" if transport_failure else "HTTPStatusError"
             self.assertEqual(
                 result["errors"]["office_rules_grounded"]["errors"],
@@ -405,7 +446,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLogs("abita_s2s.observability.evaluation", "ERROR"),
             ):
                 _, result = await self.run_evaluation(behavior)
-            self.assertEqual(len(result["results"]), 8)
+            self.assertEqual(len(result["results"]), 9)
             self.assertEqual(
                 result["errors"]["expressed_sentiment"],
                 {

@@ -216,10 +216,10 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             if payload["model"] == JURORS[-1]:
                 return httpx.Response(400, json={"error": "private body"})
             answers = {
-                name: {"type": "noul", "noul": 0.5}
+                name: {"type": "noul", "noul": 0.5 + index / 100}
                 if question["type"] == "noul"
                 else {"type": "score", "score": 2, "probabilities": {"2": 1}}
-                for name, question in payload["questions"].items()
+                for index, (name, question) in enumerate(payload["questions"].items())
                 if name != "office_rules_grounded"
             }
             return httpx.Response(200, json={"answers": answers})
@@ -242,16 +242,17 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             {
                 "appointment_datetime_correct",
                 "time_offered",
-                "booking_requested",
-                "need_understood",
-                "right_help",
-                "clear_and_responsive",
-                "person_request_honored",
+                "insurance_plan_as_stated",
+                "requested_time_honored",
+                "new_booking_requested",
+                "promises_backed",
+                "ended_while_caller_active",
+                "office_question_answered",
                 "expressed_sentiment",
             },
         )
         self.assertEqual(
-            evaluation["results"]["clear_and_responsive"],
+            evaluation["results"]["new_booking_requested"],
             {
                 "verdict": True,
                 "probability": 0.5,
