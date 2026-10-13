@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.16.0](https://github.com/chasef07/abita_s2s/compare/v0.15.0...v0.16.0) (2026-10-13)
+
+
+### Features
+
+* **observability:** judge set v7 and degenerate juror answers as errors ([#165](https://github.com/chasef07/abita_s2s/issues/165)) ([8d55a1c](https://github.com/chasef07/abita_s2s/commit/8d55a1c380b64a5412272d45391c65d612140c18))
+
+
+### Bug Fixes
+
+* **scheduling:** stop a stale-slot second move from replaying the first move ([#163](https://github.com/chasef07/abita_s2s/issues/163)) ([2b409fb](https://github.com/chasef07/abita_s2s/commit/2b409fb64a5e14a92c5445ff7c2ef3385b1148cf))
+
 ## [0.15.0](https://github.com/chasef07/abita_s2s/compare/v0.14.1...v0.15.0) (2026-10-11)
 
 
