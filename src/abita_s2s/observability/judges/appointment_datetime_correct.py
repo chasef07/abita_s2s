@@ -1,4 +1,7 @@
-"""Appointment datetime correct."""
+"""Appointment datetime correct.
+
+Fix for a no: Booking/reschedule/cancel flow and tool results.
+"""
 
 from livekit.agents import ChatContext
 

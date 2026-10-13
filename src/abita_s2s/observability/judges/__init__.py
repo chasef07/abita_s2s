@@ -2,13 +2,14 @@
 
 from abita_s2s.observability.judges import (
     appointment_datetime_correct,
-    booking_requested,
-    clear_and_responsive,
+    ended_while_caller_active,
     expressed_sentiment,
-    need_understood,
+    insurance_plan_as_stated,
+    new_booking_requested,
+    office_question_answered,
     office_rules_grounded,
-    person_request_honored,
-    right_help,
+    promises_backed,
+    requested_time_honored,
     time_offered,
 )
 
@@ -19,14 +20,15 @@ JURORS = (
 )
 
 QUESTIONS = {
-    "booking_requested": booking_requested.QUESTION,
+    "new_booking_requested": new_booking_requested.QUESTION,
     "time_offered": time_offered.QUESTION,
-    "need_understood": need_understood.QUESTION,
-    "right_help": right_help.QUESTION,
-    "clear_and_responsive": clear_and_responsive.QUESTION,
-    "person_request_honored": person_request_honored.QUESTION,
+    "promises_backed": promises_backed.QUESTION,
+    "ended_while_caller_active": ended_while_caller_active.QUESTION,
     "office_rules_grounded": office_rules_grounded.QUESTION,
+    "office_question_answered": office_question_answered.QUESTION,
     "appointment_datetime_correct": appointment_datetime_correct.QUESTION,
+    "insurance_plan_as_stated": insurance_plan_as_stated.QUESTION,
+    "requested_time_honored": requested_time_honored.QUESTION,
     "expressed_sentiment": expressed_sentiment.QUESTION,
 }
 
@@ -36,4 +38,9 @@ GATES = {
         "no_appointment_action_result",
     ),
     "time_offered": (time_offered.is_applicable, "no_availability_result"),
+    "insurance_plan_as_stated": (
+        insurance_plan_as_stated.is_applicable,
+        "no_insurance_check",
+    ),
+    "requested_time_honored": (time_offered.is_applicable, "no_availability_result"),
 }

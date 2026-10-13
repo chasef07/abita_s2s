@@ -1,4 +1,7 @@
-"""Expressed sentiment."""
+"""Expressed sentiment.
+
+Fix for a no: Score, not a failure.
+"""
 
 QUESTION = {
     "type": "score",

@@ -1,6 +1,7 @@
 """Scorecard questions answered by a jury of decision models via OpenRouter."""
 
 import asyncio
+import contextlib
 import logging
 import math
 from datetime import UTC, datetime
@@ -18,9 +19,10 @@ EVALUATION_SECONDS = 20
 EVALUATION_GRACE_SECONDS = 1
 RETRY_SECONDS = 0.25
 MIN_CALL_SECONDS = 30
-EVALUATOR_VERSION = "typesafe-scorecard-v6"
+EVALUATOR_VERSION = "typesafe-scorecard-v7"
 EVALUATE_URL = "https://openrouter.ai/api/alpha/decisions"
 YES_ABOVE = 0.40
+DEGENERATE_AT = 4
 SPEAKERS = {"user": "caller", "assistant": "agent"}
 
 
@@ -79,6 +81,16 @@ def validate_answer(name: str, answers: dict) -> float:
     return value
 
 
+def is_degenerate(asked: list, answers: dict) -> bool:
+    """True when a juror gave one value to every yes/no question it answered."""
+    values = []
+    for name in asked:
+        if QUESTIONS[name]["type"] == "noul":
+            with contextlib.suppress(ValueError):
+                values.append(validate_answer(name, answers))
+    return len(values) >= DEGENERATE_AT and len(set(values)) == 1
+
+
 def majority(votes: dict) -> dict:
     """Yes when more jurors vote yes than no; a tie goes to the mean probability."""
     yes = sum(p > YES_ABOVE for p in votes.values())
@@ -99,8 +111,9 @@ async def evaluate_judges(
 ) -> dict:
     """Ask each juror every question in one request within one deadline.
 
-    A malformed answer fails only its own question. Yes/no questions take the jury's
-    majority; score questions take the jury's mean.
+    A malformed answer fails only its own question. A juror that gives one value to
+    every yes/no question is not voting, so those answers are errors too. Yes/no
+    questions take the jury's majority; score questions take the jury's mean.
     """
     state = judge_state(history)
     results, errors = {}, {}
@@ -188,11 +201,21 @@ async def evaluate_judges(
             *(ask(juror) for juror in JURORS), return_exceptions=True
         )
     replies = dict(zip(JURORS, replies, strict=True))
+    degenerate = {
+        juror
+        for juror, reply in replies.items()
+        if not isinstance(reply, Exception) and is_degenerate(asked, reply)
+    }
+    for juror in degenerate:
+        logger.error("Call evaluation answers degenerate juror=%s", juror)
     for name in asked:
         votes, failures = {}, {}
         for juror, reply in replies.items():
             if isinstance(reply, Exception):
                 failures[juror] = type(reply).__name__
+                continue
+            if juror in degenerate and QUESTIONS[name]["type"] == "noul":
+                failures[juror] = "DegenerateAnswer"
                 continue
             try:
                 votes[juror] = validate_answer(name, reply)
