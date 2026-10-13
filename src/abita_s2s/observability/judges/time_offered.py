@@ -1,6 +1,6 @@
 """Time offered.
 
-Fix for a no: Fact for booking conversion (not a failure).
+Not a failure: fact for booking conversion.
 """
 
 from livekit.agents import ChatContext

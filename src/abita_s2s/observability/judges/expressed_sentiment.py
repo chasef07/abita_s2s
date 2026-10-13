@@ -1,6 +1,6 @@
 """Expressed sentiment.
 
-Fix for a no: Score, not a failure.
+Not a failure: sentiment score.
 """
 
 QUESTION = {
