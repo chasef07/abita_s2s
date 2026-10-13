@@ -14,10 +14,9 @@ THINKER_MODEL = "gpt-6-luna"
 THINKER_REASONING_EFFORT = "high"
 
 
-def create_model(config: Config, *, call_id: str = "") -> GPTLiveModel:
+def create_model(config: Config) -> GPTLiveModel:
     now = datetime.now(EASTERN)
     return GPTLiveModel(
-        call_id=call_id,
         api_key=config.openai_api_key,
         model=SPEAKER_MODEL,
         voice=config.voice,

@@ -110,8 +110,8 @@ class GoogleCloudTracingTests(unittest.TestCase):
             processor = setup_google_cloud_tracing(ENV)
             provider = install.call_args.args[0]
             try:
-                with tracer.start_as_current_span("openai.backend_response") as span:
-                    span.set_attribute("openai_session_id", "live_test")
+                with tracer.start_as_current_span("llm_request") as span:
+                    span.set_attribute("lk.session_id", "live_test")
                 self.assertTrue(processor.force_flush())
                 http_session = post.call_args.args[0]
                 self.assertEqual(
@@ -124,9 +124,9 @@ class GoogleCloudTracingTests(unittest.TestCase):
                     post.call_args.kwargs["data"]
                 )
                 exported = payload.resource_spans[0].scope_spans[0].spans[0]
-                self.assertEqual(exported.name, "openai.backend_response")
+                self.assertEqual(exported.name, "llm_request")
                 attrs = {a.key: a.value.string_value for a in exported.attributes}
-                self.assertEqual(attrs["openai_session_id"], "live_test")
+                self.assertEqual(attrs["lk.session_id"], "live_test")
                 self.assertNotIn(b"private-token", post.call_args.kwargs["data"])
             finally:
                 set_tracer_provider(original)

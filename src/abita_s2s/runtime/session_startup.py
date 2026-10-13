@@ -249,7 +249,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         else:
             logger.error("Product call reporting unavailable: caller phone missing")
     try:
-        model = create_model(config, call_id=call.call_id)
+        model = create_model(config)
         session = AgentSession[CallState](
             userdata=state,
             llm=model,
