@@ -1296,6 +1296,54 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(requests), 3)
                 self.assertEqual(requests[-1][1]["cancellationToken"], "fresh-cancel")
 
+    async def test_definite_booking_rejections_are_recoverable(self):
+        for rejection, expected in (
+            ({"status": "error", "outcome": "provider_rejected"}, "rejected"),
+            ({"status": "error", "outcome": "provider_conflict"}, "rejected"),
+            ({"status": "error", "outcome": "patient_context_mismatch"}, "rejected"),
+            ({"status": "error"}, "failed"),
+            ({"status": "error", "outcome": ""}, "failed"),
+        ):
+            with self.subTest(rejection=rejection):
+                owner, requests = self.owner(
+                    [
+                        inventory(),
+                        rejection,
+                        inventory(slots=[slot(start="2026-09-15T10:00")]),
+                        booking(888, "booked"),
+                    ]
+                )
+                result = await self.book(owner, await self.slots(owner))
+                self.assertNotIn("outcome could not be confirmed", result)
+                self.assertEqual(owner._receipts, {})
+                reports = owner.state.reporter.appointment.call_args_list
+                self.assertEqual(
+                    reports[-1].args[0]["bookingResult"]["status"], expected
+                )
+                result = await self.book(owner, await self.slots(owner))
+                self.assertTrue(result.startswith("success: Booked"), result)
+                self.assertEqual(len(requests), 4)
+                self.assertEqual(requests[-1][0], "/api/appointment/book")
+
+    async def test_ambiguous_booking_results_block_repeat_writes(self):
+        async def server_error(request):
+            return httpx.Response(500)
+
+        for ambiguous in (
+            {"status": "error", "outcome": "indeterminate_write"},
+            server_error,
+        ):
+            with self.subTest(ambiguous=ambiguous):
+                owner, requests = self.owner([inventory(), ambiguous, inventory()])
+                result = await self.book(owner, await self.slots(owner))
+                self.assertIn("outcome could not be confirmed", result)
+                result = await self.book(owner, await self.slots(owner))
+                self.assertIn("outcome could not be confirmed", result)
+                self.assertEqual(
+                    [path for path, _, _ in requests].count("/api/appointment/book"),
+                    1,
+                )
+
     async def test_only_definite_cancellation_rejections_mark_appointments_error(self):
         cases = [
             (WriteReceipt(status="error", outcome=outcome), "error")
