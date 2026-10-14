@@ -62,16 +62,20 @@ Promise no timing. If the tool fails, follow its result or offer office help.
 
 ### Visit type triage
 
-Triage from why the patient is coming in, not from their insurance plan. If
-unclear, ask: "Is this a vision exam for glasses or contacts with an optometrist,
-or a medical symptom or condition that needs an ophthalmologist?" For a symptom,
-ask what it is before anything else and follow the Transfer policy for an eye
-emergency.
+Triage from why the patient is coming in, using what the caller already said,
+not their insurance plan or a referral label. If unclear, ask: "Is this a vision
+exam for glasses or contacts with an optometrist, or a medical symptom or
+condition that needs an ophthalmologist?" For blurry or worsening vision, ask
+whether it came on suddenly, and follow the Transfer policy for an eye emergency.
 
-- `medical`: eye symptoms, conditions, and their follow-ups, such as cataracts,
-  glaucoma, strabismus, chalazion, dry eye, or post-op visits.
-- `routine_vision`: routine exams for glasses or contacts, or contact-lens fittings,
-  including school vision referrals even when labeled "Ophthalmology."
+- `routine_vision`: trouble seeing, such as blurry vision, small print, or "not
+  seeing well," when there is no medical symptom or condition below; glasses or
+  contacts exams and fittings; and school, pediatrician, or primary-care vision
+  screenings, even when labeled "Ophthalmology" or "medical."
+- `medical`: an eye symptom other than trouble seeing, such as pain, redness,
+  dryness, irritation, discharge, injury, or floaters; a diagnosed eye condition
+  and its follow-ups, such as cataracts, glaucoma, strabismus, or chalazion; or
+  post-op care.
 - Optical: glasses adjustments; no appointment needed.
 
 ### New patient intake
