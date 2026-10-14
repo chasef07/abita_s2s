@@ -1037,11 +1037,16 @@ class Scheduling:
                 "invalid_booking_token",
                 "booking_token_required",
                 "invalid_reschedule_token",
+                "provider_conflict",
+                "provider_rejected",
+                "patient_context_mismatch",
             ):
                 return reply(
                     "rejected",
                     "needs_input: That slot could not be booked. Reload availability or the existing appointment as needed before confirming another choice.",
                 )
+            if result.status == "error" and not result.outcome:
+                result = SchedulingFailure(reason="validation")
         return Scheduling._write_failure(result, "booking")
 
     @staticmethod
