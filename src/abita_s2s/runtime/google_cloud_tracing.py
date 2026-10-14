@@ -18,9 +18,11 @@ logger = logging.getLogger(__name__)
 class _CollectorSession(requests.Session):
     """Keep exporter diagnostics free of credentials and returned patient content."""
 
-    def post(self, url, **kwargs):
+    def request(self, method, url, **kwargs):
         try:
-            response = super().post(url, **kwargs, allow_redirects=False)
+            response = super().request(
+                method, url, **{**kwargs, "allow_redirects": False}
+            )
         except requests.ConnectionError:
             raise requests.ConnectionError(
                 "Trace collector connection failed"
