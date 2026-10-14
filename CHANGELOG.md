@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.3](https://github.com/chasef07/abita_s2s/compare/v0.16.2...v0.16.3) (2026-10-14)
+
+
+### Bug Fixes
+
+* **patients:** ask 'registered with us' and route no-match lookups to new patient intake ([#171](https://github.com/chasef07/abita_s2s/issues/171)) ([de28c61](https://github.com/chasef07/abita_s2s/commit/de28c61ad4d334577d07eb8de5f9524434771587))
+* **prompts:** default ordinary trouble seeing to routine vision unless medical ([#173](https://github.com/chasef07/abita_s2s/issues/173)) ([adc0d89](https://github.com/chasef07/abita_s2s/commit/adc0d89cc5cefb1b7915190d35699c16456384c9))
+
 ## [0.16.2](https://github.com/chasef07/abita_s2s/compare/v0.16.1...v0.16.2) (2026-10-14)
 
 
