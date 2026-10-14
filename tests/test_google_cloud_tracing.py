@@ -100,7 +100,7 @@ class GoogleCloudTracingTests(unittest.TestCase):
         original = tracer._tracer_provider
         with (
             patch.object(
-                requests.Session, "post", autospec=True, return_value=response
+                requests.Session, "request", autospec=True, return_value=response
             ) as post,
             patch(
                 "abita_s2s.runtime.google_cloud_tracing.set_tracer_provider",
@@ -113,12 +113,13 @@ class GoogleCloudTracingTests(unittest.TestCase):
                 with tracer.start_as_current_span("llm_request") as span:
                     span.set_attribute("lk.session_id", "live_test")
                 self.assertTrue(processor.force_flush())
-                http_session = post.call_args.args[0]
                 self.assertEqual(
-                    http_session.headers["Authorization"], "Bearer private-token"
+                    post.call_args.kwargs["headers"]["authorization"],
+                    "Bearer private-token",
                 )
                 self.assertEqual(
-                    post.call_args.args[1], ENV["GOOGLE_CLOUD_TRACE_ENDPOINT"]
+                    post.call_args.args[1:],
+                    ("POST", ENV["GOOGLE_CLOUD_TRACE_ENDPOINT"]),
                 )
                 payload = ExportTraceServiceRequest.FromString(
                     post.call_args.kwargs["data"]
@@ -140,18 +141,22 @@ class GoogleCloudTracingTests(unittest.TestCase):
                 requests.RequestException,
             ):
                 with patch.object(
-                    requests.Session, "post", side_effect=error("private-token PATIENT")
+                    requests.Session,
+                    "request",
+                    side_effect=error("private-token PATIENT"),
                 ):
                     with self.assertRaises(error) as caught:
-                        session.post(ENV["GOOGLE_CLOUD_TRACE_ENDPOINT"])
+                        session.request("POST", ENV["GOOGLE_CLOUD_TRACE_ENDPOINT"])
                     self.assertNotIn("private-token", str(caught.exception))
                     self.assertNotIn("PATIENT", str(caught.exception))
             response = requests.Response()
             response.status_code = 302
             response.reason = "PATIENT"
             response._content = b"private-token"
-            with patch.object(requests.Session, "post", return_value=response) as post:
-                result = session.post(ENV["GOOGLE_CLOUD_TRACE_ENDPOINT"])
+            with patch.object(
+                requests.Session, "request", return_value=response
+            ) as post:
+                result = session.request("POST", ENV["GOOGLE_CLOUD_TRACE_ENDPOINT"])
                 self.assertFalse(post.call_args.kwargs["allow_redirects"])
                 self.assertEqual(result.status_code, 400)
                 self.assertEqual(result.content, b"")
