@@ -268,7 +268,7 @@ class PatientResolver:
             )
             return reply(
                 "not_found",
-                "no_results: A complete search found no matching patient. Clarify the first-name spelling and DOB; if still unresolved, ask office staff for help.",
+                "no_results: A complete search found no matching patient. Confirm the first-name spelling and DOB once and retry any correction; if still no match, tell the caller you'll set them up as a new patient and start New patient intake.",
             )
         if isinstance(result, Multiple):
             return ambiguous(dob)

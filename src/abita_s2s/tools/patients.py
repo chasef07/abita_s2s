@@ -33,8 +33,8 @@ class PatientTools:
         phone profiles first, and asks for DOB if needed.
 
         Include a supplied DOB without separate confirmation and follow the returned next step.
-        Same-name patient switches require DOB. If unresolved, clarify first-name spelling
-        and DOB before offering staff help. Use only caller-provided identity.
+        Same-name patient switches require DOB. If no patient matches, clarify first-name
+        spelling and DOB, then start new patient intake. Use only caller-provided identity.
 
         Args:
             firstName: First name of the patient receiving care; null if unknown.

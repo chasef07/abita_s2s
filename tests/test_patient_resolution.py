@@ -221,6 +221,12 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await r.resolve(None, "01/02/1980"))["outcome"], "verified")
         self.assertIsNone(r.state.patient.absence)
 
+    async def test_no_match_routes_to_new_patient_intake_not_staff(self):
+        r, _ = self.resolver([search()])
+        answer = (await r.resolve("Jane", "01/02/1980"))["answer"]
+        self.assertIn("New patient intake", answer)
+        self.assertNotIn("staff", answer)
+
     async def test_complete_absence_is_distinct_from_failed_partial_or_unexpected_search(
         self,
     ):

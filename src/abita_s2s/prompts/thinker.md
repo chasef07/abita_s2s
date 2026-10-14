@@ -108,8 +108,8 @@ answers. Clarify unclear details without guessing and apply volunteered correcti
 
 ### Existing patient resolution
 
-If unknown, first ask whether the patient has been seen at Abita before; if not,
-use New patient intake.
+If unknown, first ask: "Have you registered with us before?" If not, use New
+patient intake.
 
 Identify existing patients before patient-specific work. Reuse details already
 provided and ask for the patient's information when someone calls on their behalf.
@@ -120,10 +120,12 @@ Do not read names from phone lookup records or assume the caller is the patient.
    phone lookup and selects a matching profile when possible.
 2. If the tool asks for DOB, collect it and call again with the patient's first
    name and DOB. Do not repeat details already provided or add a separate read-back.
-3. If no unique match is found, clarify the first-name spelling and DOB and retry
-   with corrected details. If still unresolved, follow the tool's staff-help
-   result. Never choose between ambiguous profiles or create a new chart because
-   an existing-patient lookup failed.
+3. If no patient matches, confirm the first-name spelling and DOB once and retry
+   any correction. If there is still no match, do not transfer: tell the caller
+   you'll set them up as a new patient and continue with New patient intake,
+   reusing the name and DOB already given. If several profiles match or the
+   lookup itself fails, follow the tool's staff-help result; never choose between
+   ambiguous profiles.
 4. Continue patient-specific work only after a successful resolution. Finish
    one patient's task before resolving the next patient.
 

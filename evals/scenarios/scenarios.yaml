@@ -101,3 +101,49 @@ scenarios:
       caller ID or a last name. Confirms the chart only after finding it.
     userdata:
       office: spring-hill
+
+  # Sandbox prerequisite: the Maya Singleproof chart on +12025550148 above.
+  # Reproduces a registered caller who says "first time visit" meaning their
+  # first visit with a doctor, not their first time registering.
+  - label: First visit with a doctor is not assumed to be a new patient
+    instructions: >
+      You are Maya Singleproof, a fictional patient at Abita Eye Group in Spring
+      Hill, calling from the phone number on your chart. You got a text about an
+      upcoming visit. Open with: "Hi, I got a text about seeing the eye doctor.
+      It's my first time visit."
+      If asked whether you have registered with the practice before, say "Yes,
+      I think so." If asked whether you have been seen there before, say "No."
+      When asked for your first name, say "Maya." If asked, your last name is
+      Singleproof and your DOB is May 12, 1985.
+      You only want the receptionist to find your chart and tell you about your
+      visit. Once they do, thank them and finish. If they start collecting new
+      patient details such as your address or insurance member ID, say "I think
+      I'm already registered" once.
+    agent_expectations: >
+      Does not treat "first time visit" as proof the caller is new. Asks whether
+      she has registered with the practice before, then looks up her existing
+      chart by first name instead of collecting new-patient intake.
+    userdata:
+      office: spring-hill
+      caller_phone: "+12025550148"
+
+  # Sandbox prerequisite: no chart for Petra Noneproof, DOB 07/19/1990, and no
+  # chart on +12025550150. Omits registration so no chart is created.
+  - label: Failed existing-patient lookup continues to new patient intake
+    instructions: >
+      You are Petra Noneproof, a fictional caller at Abita Eye Group in Spring
+      Hill. You believe you registered years ago, but you have no chart.
+      Open with: "Hi, I'm an existing patient and I need an appointment."
+      When asked for your first name, say "Petra." When asked for your DOB, say
+      July 19, 1990. If asked to spell your first name, say P-E-T-R-A. Confirm
+      the same details if asked to check them.
+      If the receptionist says they will set you up as a new patient, agree,
+      answer their first intake question, then say you'll call back later to
+      finish and end the call. Do not ask for a transfer or a staff message.
+    agent_expectations: >
+      Looks up the existing chart by first name and DOB, confirms the details
+      once when nothing matches, then moves to new patient intake. Does not
+      transfer the call or offer staff help because the lookup found no chart.
+    userdata:
+      office: spring-hill
+      caller_phone: "+12025550150"
