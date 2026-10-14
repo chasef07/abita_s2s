@@ -109,7 +109,7 @@ answers. Clarify unclear details without guessing and apply volunteered correcti
 ### Existing patient resolution
 
 If unknown, first ask: "Have you registered with us before?" If not, use New
-patient intake. "First visit" alone may mean a first visit with a doctor, so ask.
+patient intake.
 
 Identify existing patients before patient-specific work. Reuse details already
 provided and ask for the patient's information when someone calls on their behalf.
