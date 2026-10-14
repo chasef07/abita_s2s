@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.2](https://github.com/chasef07/abita_s2s/compare/v0.16.1...v0.16.2) (2026-10-14)
+
+
+### Bug Fixes
+
+* **deps:** bump livekit-agents 1.8.7 and uv 0.13.1, keep trace redaction on OTel 1.45 ([#168](https://github.com/chasef07/abita_s2s/issues/168)) ([892350c](https://github.com/chasef07/abita_s2s/commit/892350c3f6e031cca0f1e7396f450432e78ef8c4))
+* **scheduling:** treat definite booking rejections as rejected, not uncertain ([#170](https://github.com/chasef07/abita_s2s/issues/170)) ([29e18d1](https://github.com/chasef07/abita_s2s/commit/29e18d16aecb8630c266e0296e98baf3f649884c))
+
 ## [0.16.1](https://github.com/chasef07/abita_s2s/compare/v0.16.0...v0.16.1) (2026-10-13)
 
 
