@@ -293,7 +293,13 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             room_options,
             AbitaAgent(
                 office,
-                OfficeKnowledge(client, config),
+                OfficeKnowledge(
+                    client,
+                    config,
+                    state.reporter.observe_knowledge_revision
+                    if state.reporter
+                    else None,
+                ),
                 resolver,
                 insurance=insurance,
                 scheduling=scheduling,

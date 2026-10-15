@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import re
+from collections.abc import Callable
 from typing import Annotated, Literal, Self
 
 import httpx
@@ -49,10 +50,16 @@ class _SearchResponse(BaseModel):
 
 
 class OfficeKnowledge:
-    def __init__(self, client: httpx.AsyncClient, config: Config) -> None:
+    def __init__(
+        self,
+        client: httpx.AsyncClient,
+        config: Config,
+        on_revision: Callable[[str], None] | None = None,
+    ) -> None:
         self._client = client
         self._url = config.knowledge_url
         self._secret = config.product_secret
+        self._on_revision = on_revision
 
     async def search(self, office_key: str, query: str) -> dict[str, str]:
         query = query.strip()
@@ -92,6 +99,8 @@ class OfficeKnowledge:
             ).strip()
             if not answer:
                 raise ValueError("Empty office answer")
+            if self._on_revision and data.revisionId:
+                self._on_revision(data.revisionId)
             return reply("found", f"success: {answer}", **result)
         except (httpx.HTTPError, ValueError, TimeoutError) as exc:
             cause = (
