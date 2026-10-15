@@ -9,6 +9,9 @@ EASTERN = ZoneInfo("America/New_York")
 
 SharedSchedulingOffice = Literal["hollywood", "sweetwater"]
 SHARED_SCHEDULING_OFFICES: tuple[str, ...] = get_args(SharedSchedulingOffice)
+HollywoodPromotedOffice = Literal["north-miami-beach-optical"]
+HOLLYWOOD_PROMOTED_OFFICE: str = get_args(HollywoodPromotedOffice)[0]
+SchedulingOfficeChoice = Literal[SharedSchedulingOffice, HollywoodPromotedOffice]
 
 
 @dataclass(frozen=True)
