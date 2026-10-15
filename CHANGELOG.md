@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/chasef07/abita_s2s/compare/v0.16.3...v0.17.0) (2026-10-15)
+
+
+### Features
+
+* **scheduling:** announce North Miami Beach to Hollywood routine-vision callers ([#174](https://github.com/chasef07/abita_s2s/issues/174)) ([35aecb8](https://github.com/chasef07/abita_s2s/commit/35aecb8cf968d59003ea67fbe1efabac0cb0a1c8))
+
 ## [0.16.3](https://github.com/chasef07/abita_s2s/compare/v0.16.2...v0.16.3) (2026-10-14)
 
 
