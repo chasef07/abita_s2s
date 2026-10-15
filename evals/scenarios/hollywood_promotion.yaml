@@ -1,0 +1,46 @@
+name: Abita Hollywood North Miami Beach announcement
+# Sandbox prerequisites for every scenario:
+# Exactly one chart on +12025550161: Rosa Hollyproof, DOB 03/08/1978, with a
+# complete receipt, accepted on-file medical and routine vision insurance, valid
+# routing, no authorization requirement, and no pending insurance change.
+# Provide eligible slots at Hollywood (medical and routine vision) and at North
+# Miami Beach Optical (routine vision) in the initial 14-day window.
+# These comments declare fixtures; userdata does not seed patients or slots.
+# Judge the announcement against list_available_appointments results: the office
+# argument of each search and the needs_input result that preceded it.
+scenarios:
+  - label: Routine eye exam at Hollywood hears the North Miami Beach announcement
+    instructions: >
+      You are Rosa Hollyproof, an existing patient. Open with: "Hi, I'm an
+      existing patient and I need my yearly eye exam for new glasses." Give
+      your first name, Rosa, when asked; your DOB is March 8, 1978. Your
+      insurance has not changed. You have no date or time preference. If told
+      about a new office in North Miami Beach, ask once where it is, then say
+      you'd like to look at times there. When offered an opening, say: "Thanks,
+      I'll check my calendar and call back. Please don't book anything." End
+      the call.
+    agent_expectations: >
+      Before any availability search for Hollywood, announces the new Abita Eye
+      Group office at 633 Northeast 167th Street in North Miami Beach and asks
+      whether Rosa wants to schedule there with Dr. Miriam Bach or continue at
+      Hollywood. Searches North Miami Beach Optical after Rosa chooses it and
+      offers only returned openings. Books nothing.
+    userdata:
+      office: hollywood
+      caller_phone: "+12025550161"
+
+  - label: Medical visit at Hollywood gets no North Miami Beach announcement
+    instructions: >
+      You are Rosa Hollyproof, an existing patient. Open with: "Hi, I'm an
+      existing patient. My left eye has been red and irritated for a few days
+      and I'd like to be seen." Give your first name, Rosa, when asked; your
+      DOB is March 8, 1978. There is no pain, injury, or sudden vision change.
+      Your insurance has not changed. If asked which office, choose Hollywood.
+      When offered an opening, say: "Thanks, I'll call back to book. Please
+      don't book anything." End the call.
+    agent_expectations: >
+      Does not mention or offer North Miami Beach. Searches Hollywood for a
+      medical visit and offers only returned openings. Books nothing.
+    userdata:
+      office: hollywood
+      caller_phone: "+12025550161"

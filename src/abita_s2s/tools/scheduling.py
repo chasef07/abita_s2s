@@ -5,7 +5,7 @@ from typing import Literal
 from livekit.agents import RunContext, function_tool
 
 from abita_s2s.insurance_contract import CoverageType
-from abita_s2s.offices import EASTERN, SharedSchedulingOffice
+from abita_s2s.offices import EASTERN, SchedulingOfficeChoice
 from abita_s2s.scheduling import (
     UNAVAILABLE,
     Scheduling,
@@ -35,7 +35,7 @@ class SchedulingTools:
         context: RunContext[CallState],
         visitType: CoverageType,
         startDate: str | None = None,
-        office: SharedSchedulingOffice | None = None,
+        office: SchedulingOfficeChoice | None = None,
     ) -> str:
         """Find eligible slots for the active patient in a 14-day Eastern-time window.
 
@@ -46,7 +46,8 @@ class SchedulingTools:
             startDate: YYYY-MM-DD, tomorrow or later; null defaults to tomorrow.
                 To search the next window, use the day after the returned searched-through date.
             office: Required caller-selected office for Hollywood/Sweetwater calls;
-                omit for other offices.
+                omit for other offices. Hollywood routine_vision callers may also
+                choose north-miami-beach-optical; the result says what to ask first.
         """
         if not bound(self._scheduling, context) or self._scheduling.closed:
             return UNAVAILABLE

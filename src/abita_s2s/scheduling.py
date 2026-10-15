@@ -15,6 +15,7 @@ from abita_s2s.insurance_state import (
 from abita_s2s.integrations.patient_middleware import Appointment, Receipt
 from abita_s2s.offices import (
     EASTERN,
+    HOLLYWOOD_PROMOTED_OFFICE,
     SHARED_SCHEDULING_OFFICES,
     get_office_profile,
 )
@@ -34,6 +35,15 @@ STALE_BEFORE_WRITE = (
     "blocked: The call or patient changed before the appointment operation started."
 )
 CHOOSE_LOADED_APPOINTMENT = "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed."
+SHARED_OFFICE_CHOICE = "needs_input: Ask for Hollywood or Sweetwater on those office calls; omit office for other calls."
+HOLLYWOOD_ROUTINE_OFFICE_CHOICE = (
+    "needs_input: Before searching, tell the caller: Before we schedule your appointment "
+    "at Hollywood, Abita Eye Group is excited to announce our newest office, at 633 "
+    "Northeast 167th Street in North Miami Beach. Would you like to schedule your "
+    "appointment there with Dr. Miriam Bach, or continue booking at our Hollywood "
+    "location? Then search with the office the caller chooses."
+)
+HOLLYWOOD_ROUTINE_OFFICE_FOLLOW_UP = "needs_input: Ask whether the caller wants North Miami Beach or Hollywood, then search with that office."
 
 
 def provider_name(name):
@@ -163,6 +173,7 @@ class Scheduling:
         self._write_task = None
         self._closed = False
         self._receipts: dict[tuple, MutationReceipt] = {}
+        self._announced_promoted_office = False
 
     def close_admission(self) -> None:
         self._closed = True
@@ -243,19 +254,27 @@ class Scheduling:
         self._search_key = None
         self._search = None
 
-    def _office(self, requested):
+    def _office(self, requested, visit):
+        """The office to search, or the question to put to the caller first."""
         called = self.state.call.called_office_key
-        if called in SHARED_SCHEDULING_OFFICES:
-            if requested not in SHARED_SCHEDULING_OFFICES:
-                return None
-            return requested
-        return called if requested is None else None
+        if called == "hollywood" and visit == "routine_vision":
+            if not self._announced_promoted_office and requested in (None, "hollywood"):
+                self._announced_promoted_office = True
+                return None, HOLLYWOOD_ROUTINE_OFFICE_CHOICE
+            if requested in (*SHARED_SCHEDULING_OFFICES, HOLLYWOOD_PROMOTED_OFFICE):
+                return requested, None
+            return None, HOLLYWOOD_ROUTINE_OFFICE_FOLLOW_UP
+        elif called in SHARED_SCHEDULING_OFFICES:
+            if requested in SHARED_SCHEDULING_OFFICES:
+                return requested, None
+        elif requested is None:
+            return called, None
+        return None, SHARED_OFFICE_CHOICE
 
     async def availability(self, visit, start=None, office=None):
         if self._closed:
             return reply("unavailable", "blocked: Scheduling has closed for this call.")
         context = self._context()
-        selected = self._office(office)
         today = self.now().astimezone(EASTERN).date()
         try:
             first = date.fromisoformat(start) if start else today + timedelta(days=1)
@@ -272,12 +291,10 @@ class Scheduling:
                 "needs_input",
                 "needs_input: Same-day and past dates cannot be scheduled here. Ask whether tomorrow or later works; do not silently change the date.",
             )
+        selected, office_choice = self._office(office, visit)
         if selected is None:
             self._invalidate()
-            return reply(
-                "needs_input",
-                "needs_input: Ask for Hollywood or Sweetwater on those office calls; omit office for other calls.",
-            )
+            return reply("needs_input", office_choice)
         if visit not in ("medical", "routine_vision") or not insurance_ready(
             self.state
         ):

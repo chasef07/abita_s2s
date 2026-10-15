@@ -27,7 +27,13 @@ from insurance_fixtures import decision
 from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.offices import SPRING_HILL, get_office_profile
 from abita_s2s.tools.scheduling import SchedulingTools
-from abita_s2s.scheduling import MutationReceipt, Scheduling
+from abita_s2s.scheduling import (
+    HOLLYWOOD_ROUTINE_OFFICE_CHOICE,
+    HOLLYWOOD_ROUTINE_OFFICE_FOLLOW_UP,
+    SHARED_OFFICE_CHOICE,
+    MutationReceipt,
+    Scheduling,
+)
 from abita_s2s.integrations.scheduling_http import (
     SchedulingFailure,
     SchedulingHTTP,
@@ -267,6 +273,60 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(requests[0][2]["authorization"], "test-auth")
         self.assertNotIn("private-signed-slot", json.dumps(owner._cache[1]))
+
+    async def test_hollywood_routine_vision_announces_north_miami_beach_once(self):
+        state = call_state(None, get_office_profile("hollywood"))
+        owner, requests = self.owner([inventory(), inventory()], state=state)
+
+        async def routine(**args):
+            return await self.tool(
+                owner,
+                "list_available_appointments",
+                visitType="routine_vision",
+                **args,
+            )
+
+        self.assertEqual(
+            await routine(office="hollywood"), HOLLYWOOD_ROUTINE_OFFICE_CHOICE
+        )
+        self.assertEqual(await routine(), HOLLYWOOD_ROUTINE_OFFICE_FOLLOW_UP)
+        self.assertTrue((await routine(office="hollywood")).startswith("success: "))
+        self.assertTrue(
+            (await routine(office="north-miami-beach-optical")).startswith("success: ")
+        )
+        self.assertEqual(
+            [request[1]["office"] for request in requests],
+            ["hollywood", "north-miami-beach-optical"],
+        )
+
+    async def test_hollywood_caller_choosing_sweetwater_skips_announcement(self):
+        state = call_state(None, get_office_profile("hollywood"))
+        owner, requests = self.owner([inventory()], state=state)
+        result = await self.tool(
+            owner,
+            "list_available_appointments",
+            visitType="routine_vision",
+            office="sweetwater",
+        )
+        self.assertTrue(result.startswith("success: "), result)
+        self.assertEqual(requests[0][1]["office"], "sweetwater")
+
+    async def test_north_miami_beach_is_only_offered_for_hollywood_routine_vision(self):
+        for called, visit in (
+            ("hollywood", "medical"),
+            ("sweetwater", "routine_vision"),
+        ):
+            with self.subTest(called=called, visit=visit):
+                state = call_state(None, get_office_profile(called))
+                owner, requests = self.owner([], state=state)
+                result = await self.tool(
+                    owner,
+                    "list_available_appointments",
+                    visitType=visit,
+                    office="north-miami-beach-optical",
+                )
+                self.assertEqual(result, SHARED_OFFICE_CHOICE)
+                self.assertEqual(requests, [])
 
     async def test_plain_text_preserves_empty_search_and_retry_boundaries(self):
         owner, requests = self.owner(
