@@ -113,10 +113,10 @@ def booking(appointment_id=888, status="booked"):
     }
 
 
-def rescheduled(status="cancelled", appointment_id=888, old_id=77, note=False):
+def rescheduled(status="cancelled", appointment_id=888, old_id=77):
     return {
         "status": "completed" if status == "cancelled" else "partial",
-        "booking": booking(appointment_id, "partial" if note else "booked"),
+        "booking": booking(appointment_id),
         "cancellation": {"status": "cancelled", "appointmentId": old_id}
         if status == "cancelled"
         else None,
@@ -198,6 +198,51 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             **extra,
         )
 
+    async def test_scheduling_requests_omit_retired_fields(self):
+        for move in (False, True):
+            with self.subTest(move=move):
+                owner, requests = self.owner(
+                    [inventory(), rescheduled() if move else booking()]
+                )
+                verified(
+                    owner.state,
+                    appointmentsStatus="found",
+                    appointments=[appointment()],
+                )
+                owner.state.insurance.registrations["chart-jane"] = "created"
+                old_ref = owner.appointments()[0]["appointmentRef"]
+                ref = await self.slots(owner)
+                if move:
+                    result = await self.tool(
+                        owner,
+                        "reschedule_appointment",
+                        oldAppointmentRef=old_ref,
+                        appointmentSlotRef=ref,
+                        appointmentReason="Follow up",
+                        referringDoctor="none",
+                        readBack=True,
+                    )
+                else:
+                    result = await self.book(owner, ref)
+                self.assertTrue(result.startswith("success:"), result)
+                self.assertEqual(len(requests), 2)
+                for _, body, _ in requests:
+                    self.assertTrue(
+                        {"insurancePlan", "coverageType", "rangeDays"}.isdisjoint(body),
+                        body,
+                    )
+
+    async def test_retired_booking_statuses_remain_uncertain(self):
+        for status in ("partial", "success"):
+            with self.subTest(status=status):
+                owner, requests = self.owner([inventory(), booking(status=status)])
+                ref = await self.slots(owner)
+                result = await self.book(owner, ref)
+                self.assertIn("could not be confirmed", result)
+                self.assertEqual(await self.book(owner, ref), result)
+                self.assertEqual(owner.state.patient.active.appointments, [])
+                self.assertEqual(len(requests), 2)
+
     async def test_existing_vision_patient_schedules_without_acceptance_check(self):
         state = call_state(None, get_office_profile("north-miami-beach-optical"))
         state.patient.active = Receipt.model_validate(
@@ -228,7 +273,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(payload["patientId"], "chart-jane")
             self.assertNotIn("insurancePlan", payload)
             self.assertNotIn("routing", payload)
-        self.assertEqual(requests[0][1]["coverageType"], "routine_vision")
+        self.assertEqual(requests[0][1]["visitType"], "routine_vision")
         self.assertEqual(requests[1][1]["visitCategory"], "routine_vision")
 
     async def test_insurance_write_guards_invalidate_offered_slots(self):
@@ -264,9 +309,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             {
                 "office": "hollywood",
                 "patientId": "chart-jane",
-                "coverageType": "medical",
                 "startDate": "2026-09-15",
-                "rangeDays": 14,
                 "visitType": "medical",
                 "dob": "01/02/1980",
             },
@@ -853,7 +896,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         owner, requests = self.owner(
             [
                 inventory(),
-                booking(888, "partial"),
+                booking(888),
                 {"status": "cancelled", "appointmentId": 888},
             ]
         )
@@ -873,13 +916,11 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(result.split(":", 1)[0], "needs_input")
         result = await self.book(owner, ref)
-        self.assertEqual(result.split(":", 1)[0], "blocked")
-        self.assertIn("note did not save", result)
-        self.assertIn("Do not book again", result)
-        self.assertEqual((await self.book(owner, ref)).split(":", 1)[0], "blocked")
+        self.assertEqual(result.split(":", 1)[0], "success")
+        self.assertEqual(await self.book(owner, ref), result)
         owner.state.reporter.appointment.assert_called_once()
         evidence = owner.state.reporter.appointment.call_args.args[0]
-        self.assertEqual(evidence["bookingResult"]["status"], "partial")
+        self.assertEqual(evidence["bookingResult"]["status"], "booked")
         self.assertEqual(evidence["newAppointmentId"], "888")
         self.assertEqual(evidence["bookingResult"]["appointmentDate"], "2026-09-15")
         self.assertEqual(
@@ -1183,7 +1224,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(len(requests), 2 if action == "book" else 1)
 
-    async def test_partial_note_reschedule_reconciles_during_write_and_after_reload(
+    async def test_reschedule_reconciles_during_write_and_after_reload(
         self,
     ):
         for cancellation_status in ("cancelled", "error"):
@@ -1191,7 +1232,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 owner, requests = self.owner(
                     [
                         inventory(),
-                        rescheduled(cancellation_status, note=True),
+                        rescheduled(cancellation_status),
                     ]
                 )
                 verified(
@@ -1209,8 +1250,10 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     readBack=True,
                 )
                 result = await self.tool(owner, "reschedule_appointment", **args)
-                self.assertTrue(result.startswith("blocked:"))
-                self.assertIn("note did not save", result)
+                expected_prefix = (
+                    "success:" if cancellation_status == "cancelled" else "blocked:"
+                )
+                self.assertTrue(result.startswith(expected_prefix), result)
                 expected_ids = (
                     [888] if cancellation_status == "cancelled" else [77, 888]
                 )
@@ -1222,7 +1265,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     c.args[0] for c in owner.state.reporter.appointment.call_args_list
                 ]
                 self.assertEqual(
-                    [c["bookingResult"]["status"] for c in checkpoints], ["partial"]
+                    [c["bookingResult"]["status"] for c in checkpoints], ["booked"]
                 )
                 self.assertEqual(
                     [c["cancellationResult"]["status"] for c in checkpoints],
@@ -1247,50 +1290,47 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(replay, result)
                 self.assertEqual(len(requests), 2)
 
-    async def test_availability_policy_and_input_errors_do_not_retry_same_search(self):
-        for outcome in ("invalid_input", "policy_blocked"):
-            for status_code in (200, 400):
-                with self.subTest(outcome=outcome, status_code=status_code):
+    async def test_availability_input_errors_do_not_retry_same_search(self):
+        for status_code in (200, 400):
+            with self.subTest(status_code=status_code):
 
-                    async def rejected(request):
-                        return httpx.Response(
-                            status_code,
-                            json={
-                                "status": "error",
-                                "outcome": outcome,
-                                "slots": [],
-                                "message": "Confirm the requested coverage type.",
-                                "shouldRetrySameSearch": False,
-                            },
-                        )
+                async def rejected(request):
+                    return httpx.Response(
+                        status_code,
+                        json={
+                            "status": "error",
+                            "outcome": "invalid_input",
+                            "slots": [],
+                            "message": "Confirm the requested coverage type.",
+                            "shouldRetrySameSearch": False,
+                        },
+                    )
 
-                    owner, requests = self.owner([rejected, rejected, inventory()])
-                    result = await owner.availability("medical")
-                    self.assertEqual(
-                        result["outcome"],
-                        "needs_input" if outcome == "invalid_input" else "unsupported",
-                    )
-                    self.assertIn(
-                        "Confirm the requested coverage type", result["answer"]
-                    )
-                    self.assertFalse(result["retry_same_search"])
-                    self.assertEqual(await owner.availability("medical"), result)
-                    owner.now = lambda: NOW + timedelta(seconds=61)
-                    self.assertEqual(await owner.availability("medical"), result)
-                    self.assertEqual(len(requests), 2)
-                    self.assertEqual(
-                        (await owner.availability("routine_vision"))["outcome"], "found"
-                    )
-                    self.assertEqual(len(requests), 3)
+                owner, requests = self.owner([rejected, rejected, inventory()])
+                result = await owner.availability("medical")
+                self.assertEqual(
+                    result["outcome"],
+                    "needs_input",
+                )
+                self.assertIn("Confirm the requested coverage type", result["answer"])
+                self.assertFalse(result["retry_same_search"])
+                self.assertEqual(await owner.availability("medical"), result)
+                owner.now = lambda: NOW + timedelta(seconds=61)
+                self.assertEqual(await owner.availability("medical"), result)
+                self.assertEqual(len(requests), 2)
+                self.assertEqual(
+                    (await owner.availability("routine_vision"))["outcome"], "found"
+                )
+                self.assertEqual(len(requests), 3)
 
-    async def test_external_chart_correction_can_recover_after_policy_cache_expires(
+    async def test_input_correction_can_recover_after_cache_expires(
         self,
     ):
         owner, requests = self.owner(
             [
                 inventory(
                     status="error",
-                    outcome="policy_blocked",
+                    outcome="invalid_input",
                     slots=[],
                     message="Staff must verify chart insurance.",
                 ),
@@ -1298,7 +1338,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         self.assertEqual(
-            (await owner.availability("medical"))["outcome"], "unsupported"
+            (await owner.availability("medical"))["outcome"], "needs_input"
         )
         owner.now = lambda: NOW + timedelta(seconds=61)
         self.assertEqual((await owner.availability("medical"))["outcome"], "found")

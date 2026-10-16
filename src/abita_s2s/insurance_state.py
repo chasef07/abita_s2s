@@ -8,7 +8,6 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Literal
 
 from abita_s2s.insurance_contract import CoverageType, InsuranceDecision
-from abita_s2s.offices import same_office
 
 if TYPE_CHECKING:
     from abita_s2s.state import CallState, PatientAbsence
@@ -105,20 +104,6 @@ def rebind_acceptance(
     state.insurance.accepted = replace(
         checked, patient_revision=state.patient.revision, decision=decision, **changes
     )
-
-
-def registration_insurance(
-    state: "CallState", coverage_type: CoverageType
-) -> InsuranceDecision | None:
-    """Current acceptance for a patient registered during this call."""
-    active = state.patient.active
-    if not active or active.patientId not in state.insurance.registrations:
-        return None
-    checked = accepted_insurance(state, coverage_type)
-    decision = checked.decision if checked else None
-    if decision and same_office(decision.officeId, state.call.called_office_key):
-        return decision
-    return None
 
 
 def insurance_ready(state: "CallState") -> bool:
