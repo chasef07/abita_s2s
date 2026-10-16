@@ -12,7 +12,7 @@ from abita_s2s.observability.evaluation import evaluate_call, judge_state
 from abita_s2s.observability.judges import JURORS
 from abita_s2s.prompt import load_prompt
 
-NOT_ASKED = ("time_offered", "insurance_plan_as_stated", "requested_time_honored")
+NOT_ASKED = ("knowledge_available",)
 
 
 class JevTests(unittest.IsolatedAsyncioTestCase):
@@ -24,6 +24,9 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         tool="reschedule_appointment",
         returned=True,
         extra_tools=(),
+        action_output="success: The appointment was moved to Wednesday at 10:00.",
+        action_error=False,
+        knowledge_output="success: Office hours are Monday to Friday, 9 to 5.",
         jurors=("typesafe/jev-1.14",),
     ):
         history = ChatContext()
@@ -45,8 +48,8 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 FunctionCallOutput(
                     call_id="move-1",
                     name=tool,
-                    output="Timed out",
-                    is_error=True,
+                    output=action_output,
+                    is_error=action_error,
                 ),
             ]
         )
@@ -59,7 +62,9 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                     FunctionCallOutput(
                         call_id=extra_tool,
                         name=extra_tool,
-                        output="success: done",
+                        output=knowledge_output
+                        if extra_tool == "search_office_knowledge"
+                        else action_output,
                         is_error=False,
                     ),
                 ]
@@ -84,18 +89,11 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             attempt = sum(p["model"] == juror for p in requests)
             answers = {}
             for index, (name, question) in enumerate(payload["questions"].items()):
-                default = 0.9 + index / 100 if question["type"] == "noul" else 2.3
+                default = 0.9 + index / 100
                 value = (values or {}).get(name, default)
                 if isinstance(value, dict):
                     value = value.get(juror, default)
-                if question["type"] == "noul":
-                    answers[name] = {"type": "noul", "noul": value}
-                else:
-                    answers[name] = {
-                        "type": "score",
-                        "score": value,
-                        "probabilities": {str(i): int(i == 2) for i in range(5)},
-                    }
+                answers[name] = {"type": "noul", "noul": value}
             if behavior:
                 response = await behavior(juror, attempt, request, answers)
                 if response is not None:
@@ -130,55 +128,100 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["jurors"], expected)
         self.assertEqual(result["status"], "complete")
         self.assertEqual(
-            set(result["results"]["promises_backed"]["votes"]), set(expected)
+            set(result["results"]["transfer_policy_followed"]["votes"]), set(expected)
         )
 
-    async def test_gated_judges_require_their_returned_tool_results(self):
-        gates = {
-            "appointment_datetime_correct": (
-                {"book_appointment", "reschedule_appointment", "cancel_appointment"},
-                "no_appointment_action_result",
-            ),
-            "time_offered": ({"list_available_appointments"}, "no_availability_result"),
-            "insurance_plan_as_stated": ({"check_insurance"}, "no_insurance_check"),
-            "requested_time_honored": (
-                {"list_available_appointments"},
-                "no_availability_result",
-            ),
-        }
-        for tool in (
-            "book_appointment",
-            "reschedule_appointment",
-            "cancel_appointment",
-            "list_available_appointments",
-            "check_insurance",
-            "resolve_patient",
-            "confirm_appointment",
-        ):
+    async def test_appointment_check_requires_a_returned_action_result(self):
+        actions = {"book_appointment", "reschedule_appointment", "cancel_appointment"}
+        for tool in (*actions, "list_available_appointments", "resolve_patient"):
             for returned in (False, True):
                 with self.subTest(tool=tool, returned=returned):
                     requests, result = await self.run_evaluation(
                         tool=tool, returned=returned
                     )
-                    sent = {name for r in requests for name in r["questions"]}
-                    self.assertEqual(len(requests), 1)
-                    self.assertEqual(result["status"], "complete")
-                    for name, (tools, reason) in gates.items():
-                        applies = returned and tool in tools
-                        self.assertEqual(name in sent, applies, name)
-                        if not applies:
-                            self.assertEqual(
-                                result["results"][name],
-                                {"status": "not_applicable", "reason": reason},
-                            )
-                    self.assertEqual(len(sent - set(gates)), 6)
+                    asked = requests[0]["questions"]
+                    self.assertEqual(
+                        "appointment_datetime_correct" in asked,
+                        returned and tool in actions,
+                    )
+                    if not (returned and tool in actions):
+                        self.assertEqual(
+                            result["results"]["appointment_datetime_correct"],
+                            {
+                                "status": "unknown"
+                                if tool in actions
+                                else "not_applicable",
+                                "reason": "no_confirmed_appointment_action"
+                                if tool in actions
+                                else "no_appointment_action",
+                            },
+                        )
+                    self.assertEqual(
+                        result["results"]["knowledge_available"],
+                        {"status": "unknown", "reason": "no_office_knowledge_result"},
+                    )
+
+    async def test_appointment_dates_need_a_confirmed_action(self):
+        for output, is_error, asked in (
+            ("Timed out", True, False),
+            ("blocked: The booking outcome could not be confirmed.", False, False),
+            ("needs_input: That slot could not be booked.", False, False),
+            ("success: Booked Wednesday at 10:00.", False, True),
+            (
+                "blocked: The new appointment is booked for Wednesday at 10:00, but cancellation of the old appointment requires staff reconciliation.",
+                False,
+                True,
+            ),
+        ):
+            with self.subTest(output=output):
+                requests, result = await self.run_evaluation(
+                    action_output=output, action_error=is_error
+                )
+                self.assertEqual(
+                    "appointment_datetime_correct" in requests[0]["questions"], asked
+                )
+                if not asked:
+                    self.assertEqual(
+                        result["results"]["appointment_datetime_correct"],
+                        {
+                            "status": "unknown",
+                            "reason": "no_confirmed_appointment_action",
+                        },
+                    )
+
+    async def test_knowledge_gap_requires_a_completed_search_not_an_outage(self):
+        for output, asked in (
+            ("success: Office hours are Monday to Friday, 9 to 5.", True),
+            ("no_results: No information was found for this question.", True),
+            ("blocked: Office information could not be checked.", False),
+            ("needs_input: Provide a focused office question.", False),
+        ):
+            with self.subTest(output=output):
+                requests, result = await self.run_evaluation(
+                    extra_tools=("search_office_knowledge",),
+                    knowledge_output=output,
+                    values={"knowledge_available": 0.1},
+                )
+                self.assertEqual(
+                    "knowledge_available" in requests[0]["questions"], asked
+                )
+                if asked:
+                    self.assertFalse(
+                        result["results"]["knowledge_available"]["verdict"]
+                    )
+                else:
+                    self.assertEqual(
+                        result["results"]["knowledge_available"],
+                        {"status": "unknown", "reason": "no_office_knowledge_result"},
+                    )
+                self.assertIn("office_question_answered", requests[0]["questions"])
 
     async def test_each_juror_gets_every_question_in_one_request_with_zero_retention(
         self,
     ):
         requests, result = await self.run_evaluation(
             tool="list_available_appointments",
-            extra_tools=("book_appointment", "check_insurance"),
+            extra_tools=("book_appointment", "search_office_knowledge"),
         )
         sent = {}
         for request in requests:
@@ -188,48 +231,43 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             set(sent),
             {
-                "new_booking_requested",
-                "time_offered",
-                "promises_backed",
-                "ended_while_caller_active",
-                "office_rules_grounded",
+                "knowledge_available",
                 "office_question_answered",
                 "appointment_datetime_correct",
-                "insurance_plan_as_stated",
-                "requested_time_honored",
-                "expressed_sentiment",
+                "call_ended_correctly",
+                "transfer_policy_followed",
+                "emergency_policy_followed",
             },
         )
         self.assertEqual(len(requests), 1)
         self.assertEqual(result["evaluator"], "jury")
-        self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v7")
+        self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v8")
         self.assertEqual(result["jurors"], ["typesafe/jev-1.14"])
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["errors"], {})
         self.assertEqual(set(result["results"]), set(sent))
         for name, question in sent.items():
-            if name != "expressed_sentiment":
-                self.assertEqual(question["type"], "noul")
-                self.assertEqual(set(question["criteria"]), {"true", "false"})
+            self.assertEqual(question["type"], "noul")
+            self.assertEqual(set(question["criteria"]), {"true", "false"})
 
     async def test_judges_receive_full_history_and_return_verdicts(self):
         requests, result = await self.run_evaluation(
             values={
                 "appointment_datetime_correct": 0.1,
-                "promises_backed": 0.4,
-                "ended_while_caller_active": 0.41,
+                "transfer_policy_followed": 0.4,
+                "call_ended_correctly": 0.41,
             }
         )
         self.assertEqual(len(requests), 1)
-        self.assertEqual(len(requests[0]["questions"]), 7)
+        self.assertEqual(len(requests[0]["questions"]), 5)
         self.assertEqual(result["status"], "complete")
         jev = "typesafe/jev-1.14"
         self.assertEqual(
             result["results"]["appointment_datetime_correct"],
             {"verdict": False, "probability": 0.1, "votes": {jev: 0.1}, "errors": {}},
         )
-        self.assertFalse(result["results"]["promises_backed"]["verdict"])
-        self.assertTrue(result["results"]["ended_while_caller_active"]["verdict"])
+        self.assertFalse(result["results"]["transfer_policy_followed"]["verdict"])
+        self.assertTrue(result["results"]["call_ended_correctly"]["verdict"])
         state = requests[0]["state"]
         for request in requests:
             self.assertEqual(request["state"], state)
@@ -238,18 +276,14 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             state["transcript"],
             [
                 "caller: Move Tuesday at 9 to Wednesday at 10.",
-                'tool reschedule_appointment({"time":"10:00"}) -> ERROR: Timed out',
+                'tool reschedule_appointment({"time":"10:00"}) -> success: The appointment was moved to Wednesday at 10:00.',
                 "agent: It is rescheduled.",
                 "caller: This is frustrating. Please get a person.",
                 "caller: Thanks.",
             ],
         )
-        self.assertEqual(
-            result["results"]["expressed_sentiment"],
-            {"score": 2.3, "votes": {jev: 2.3}, "errors": {}},
-        )
 
-    async def test_three_jurors_take_the_majority_and_average_sentiment(self):
+    async def test_three_jurors_take_the_majority(self):
         jurors = ("juror-a", "juror-b", "juror-c")
         requests, result = await self.run_evaluation(
             values={
@@ -258,12 +292,11 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                     "juror-b": 0.2,
                     "juror-c": 0.6,
                 },
-                "ended_while_caller_active": {
+                "call_ended_correctly": {
                     "juror-a": 0.95,
                     "juror-b": 0.1,
                     "juror-c": 0.3,
                 },
-                "expressed_sentiment": {"juror-a": 1.0, "juror-b": 2.0, "juror-c": 3.0},
             },
             jurors=jurors,
         )
@@ -275,17 +308,9 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             need["votes"], {"juror-a": 0.9, "juror-b": 0.2, "juror-c": 0.6}
         )
-        right = result["results"]["ended_while_caller_active"]
+        right = result["results"]["call_ended_correctly"]
         self.assertFalse(right["verdict"])
         self.assertAlmostEqual(right["probability"], 1.35 / 3)
-        self.assertEqual(
-            result["results"]["expressed_sentiment"],
-            {
-                "score": 2.0,
-                "votes": {"juror-a": 1.0, "juror-b": 2.0, "juror-c": 3.0},
-                "errors": {},
-            },
-        )
         self.assertEqual(sorted(r["model"] for r in requests), list(jurors))
 
     async def test_two_of_three_answering_break_a_tie_on_mean_probability(self):
@@ -298,7 +323,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 behavior,
                 values={
                     "office_question_answered": {"juror-a": 0.9, "juror-b": 0.3},
-                    "ended_while_caller_active": {"juror-a": 0.45, "juror-b": 0.1},
+                    "call_ended_correctly": {"juror-a": 0.45, "juror-b": 0.1},
                 },
                 jurors=("juror-a", "juror-b", "juror-c"),
             )
@@ -307,7 +332,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(need["verdict"])
         self.assertAlmostEqual(need["probability"], 0.6)
         self.assertEqual(need["errors"], {"juror-c": "HTTPStatusError"})
-        right = result["results"]["ended_while_caller_active"]
+        right = result["results"]["call_ended_correctly"]
         self.assertFalse(right["verdict"])
         self.assertAlmostEqual(right["probability"], 0.275)
         self.assertNotIn("Thanks", str(logs.output))
@@ -315,12 +340,11 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
     async def test_one_value_for_every_yes_no_question_is_an_error_not_a_vote(self):
         jurors = ("juror-a", "juror-b", "juror-c")
         asked = (
-            "new_booking_requested",
-            "promises_backed",
-            "ended_while_caller_active",
-            "office_rules_grounded",
             "office_question_answered",
             "appointment_datetime_correct",
+            "call_ended_correctly",
+            "transfer_policy_followed",
+            "emergency_policy_followed",
         )
 
         async def behavior(juror, attempt, request, answers):
@@ -339,10 +363,6 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(answer["verdict"])
                 self.assertEqual(set(answer["votes"]), {"juror-a", "juror-c"})
                 self.assertEqual(answer["errors"], {"juror-b": "DegenerateAnswer"})
-        self.assertEqual(
-            result["results"]["expressed_sentiment"]["votes"],
-            dict.fromkeys(jurors, 2.3),
-        )
         self.assertIn("juror=juror-b", str(logs.output))
         self.assertNotIn("juror=juror-c", str(logs.output))
 
@@ -383,9 +403,9 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
 
             async def behavior(juror, attempt, request, answers):
                 if answer is None:
-                    del answers["office_rules_grounded"]
+                    del answers["emergency_policy_followed"]
                 else:
-                    answers["office_rules_grounded"] = answer
+                    answers["emergency_policy_followed"] = answer
                 body = {"answers": answers}
                 return httpx.Response(200, content=json.dumps(body).encode())
 
@@ -394,10 +414,10 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLogs("abita_s2s.observability.evaluation", "ERROR"),
             ):
                 _, result = await self.run_evaluation(behavior)
-                self.assertEqual(len(result["results"]), 9)
-                self.assertNotIn("office_rules_grounded", result["results"])
+                self.assertEqual(len(result["results"]), 5)
+                self.assertNotIn("emergency_policy_followed", result["results"])
                 self.assertEqual(
-                    result["errors"]["office_rules_grounded"],
+                    result["errors"]["emergency_policy_followed"],
                     {
                         "cause": "no_quorum",
                         "votes": {},
@@ -413,11 +433,11 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             requests, result = await self.run_evaluation(behavior)
         self.assertEqual(len(requests), 1)
         self.assertEqual(
-            result["errors"]["office_rules_grounded"]["errors"],
+            result["errors"]["emergency_policy_followed"]["errors"],
             {"typesafe/jev-1.14": "TimeoutError"},
         )
         self.assertIn("http_status=429", str(logs.output))
-        self.assertEqual(len(result["errors"]), 7)
+        self.assertEqual(len(result["errors"]), 5)
         self.assertEqual(set(result["results"]), set(NOT_ASKED))
 
     async def test_exhausted_http_and_transport_retries_remain_visible(self):
@@ -439,37 +459,11 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(set(result["results"]), set(NOT_ASKED))
             cause = "ConnectError" if transport_failure else "HTTPStatusError"
             self.assertEqual(
-                result["errors"]["office_rules_grounded"]["errors"],
+                result["errors"]["emergency_policy_followed"]["errors"],
                 {"typesafe/jev-1.14": cause},
             )
             self.assertIn("attempts=2", str(logs.output))
             self.assertNotIn("synthetic-secret", str(result) + str(logs.output))
-
-    async def test_invalid_sentiment_preserves_all_other_judges(self):
-        for answer in [
-            {"type": "score", "score": 5, "probabilities": {"2": 1}},
-            {"type": "score", "score": True, "probabilities": {"2": 1}},
-            {"type": "score", "score": 2, "probabilities": {"2": -1}},
-            {"type": "score", "score": 2},
-        ]:
-
-            async def behavior(juror, attempt, request, answers):
-                answers["expressed_sentiment"] = answer
-
-            with (
-                self.subTest(answer=answer),
-                self.assertLogs("abita_s2s.observability.evaluation", "ERROR"),
-            ):
-                _, result = await self.run_evaluation(behavior)
-            self.assertEqual(len(result["results"]), 9)
-            self.assertEqual(
-                result["errors"]["expressed_sentiment"],
-                {
-                    "cause": "no_quorum",
-                    "votes": {},
-                    "errors": {"typesafe/jev-1.14": "ValueError"},
-                },
-            )
 
 
 class JudgeStateTests(unittest.TestCase):

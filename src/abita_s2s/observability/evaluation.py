@@ -19,7 +19,7 @@ EVALUATION_SECONDS = 20
 EVALUATION_GRACE_SECONDS = 1
 RETRY_SECONDS = 0.25
 MIN_CALL_SECONDS = 30
-EVALUATOR_VERSION = "typesafe-scorecard-v7"
+EVALUATOR_VERSION = "typesafe-scorecard-v8"
 EVALUATE_URL = "https://openrouter.ai/api/alpha/decisions"
 YES_ABOVE = 0.40
 DEGENERATE_AT = 4
@@ -60,23 +60,11 @@ def judge_state(history: ChatContext) -> dict:
 
 def validate_answer(name: str, answers: dict) -> float:
     """Return the juror's value for ``name``, or raise if it is missing or malformed."""
-    question = QUESTIONS[name]
     answer = answers.get(name)
-    if not isinstance(answer, dict) or answer.get("type") != question["type"]:
+    if not isinstance(answer, dict) or answer.get("type") != "noul":
         raise ValueError("Invalid answer type")
-    if question["type"] == "noul":
-        value, maximum = answer.get("noul"), 1
-    else:
-        probabilities = answer.get("probabilities")
-        if not isinstance(probabilities, dict) or not probabilities:
-            raise ValueError("Missing probabilities")
-        if any(
-            type(v) not in (int, float) or not 0 <= v <= 1
-            for v in probabilities.values()
-        ):
-            raise ValueError("Invalid probabilities")
-        value, maximum = answer.get("score"), len(question["criteria"]) - 1
-    if type(value) not in (int, float) or not 0 <= value <= maximum:
+    value = answer.get("noul")
+    if type(value) not in (int, float) or not 0 <= value <= 1:
         raise ValueError("Invalid value")
     return value
 
@@ -85,9 +73,8 @@ def is_degenerate(asked: list, answers: dict) -> bool:
     """True when a juror gave one value to every yes/no question it answered."""
     values = []
     for name in asked:
-        if QUESTIONS[name]["type"] == "noul":
-            with contextlib.suppress(ValueError):
-                values.append(validate_answer(name, answers))
+        with contextlib.suppress(ValueError):
+            values.append(validate_answer(name, answers))
     return len(values) >= DEGENERATE_AT and len(set(values)) == 1
 
 
@@ -112,14 +99,14 @@ async def evaluate_judges(
     """Ask each juror every question in one request within one deadline.
 
     A malformed answer fails only its own question. A juror that gives one value to
-    every yes/no question is not voting, so those answers are errors too. Yes/no
-    questions take the jury's majority; score questions take the jury's mean.
+    every yes/no question is not voting, so those answers are errors too.
+    Questions take the jury's majority.
     """
     state = judge_state(history)
     results, errors = {}, {}
-    for name in QUESTIONS:
-        if name in GATES and not GATES[name][0](history):
-            results[name] = {"status": "not_applicable", "reason": GATES[name][1]}
+    for name, gate in GATES.items():
+        if skipped := gate(history):
+            results[name] = skipped
     asked = [name for name in QUESTIONS if name not in results]
     deadline = asyncio.get_running_loop().time() + seconds
     async with httpx.AsyncClient(timeout=seconds) as client:
@@ -214,7 +201,7 @@ async def evaluate_judges(
             if isinstance(reply, Exception):
                 failures[juror] = type(reply).__name__
                 continue
-            if juror in degenerate and QUESTIONS[name]["type"] == "noul":
+            if juror in degenerate:
                 failures[juror] = "DegenerateAnswer"
                 continue
             try:
@@ -226,11 +213,8 @@ async def evaluate_judges(
                 )
         if len(votes) < len(JURORS) // 2 + 1:
             errors[name] = {"cause": "no_quorum", "votes": votes, "errors": failures}
-        elif QUESTIONS[name]["type"] == "noul":
-            results[name] = {**majority(votes), "errors": failures}
         else:
-            score = sum(votes.values()) / len(votes)
-            results[name] = {"score": score, "votes": votes, "errors": failures}
+            results[name] = {**majority(votes), "errors": failures}
     return {"results": results, "errors": errors}
 
 
