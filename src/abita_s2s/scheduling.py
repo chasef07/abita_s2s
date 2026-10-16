@@ -746,6 +746,8 @@ class Scheduling:
                         "reschedule",
                     )
                 )
+                if outcome["outcome"] == "failed" and self._context() == captured:
+                    self._appointments_stale(p)
                 if outcome["outcome"] == "uncertain":
                     self._receipts[receipt_key] = MutationReceipt(outcome)
                 else:

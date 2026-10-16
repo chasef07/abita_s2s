@@ -1816,6 +1816,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 "cancellation": {"status": "cancelled", "appointmentId": 888},
             },
             {"status": "partial"},
+            {"status": "uncertain"},
             {"status": "uncertain", "booking": booking(999)},
         ):
             owner, requests = self.owner([inventory(), response])
@@ -1833,6 +1834,12 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             )
             result = await self.tool(owner, "reschedule_appointment", **args)
             self.assertIn("could not be confirmed", result)
+            self.assertEqual(owner.state.patient.active.appointmentsStatus, "found")
+            self.assertTrue(
+                any(
+                    r.result["outcome"] == "uncertain" for r in owner._receipts.values()
+                )
+            )
             self.assertEqual(
                 await self.tool(owner, "reschedule_appointment", **args), result
             )
@@ -1876,6 +1883,94 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(result.split(":", 1)[0], "success")
 
+    async def test_rejected_reschedule_reloads_appointments_and_tokens(self):
+        for rejection in (
+            "invalid_reschedule_token",
+            "ownership_mismatch",
+            "provider_rejected",
+            "write_failed",
+        ):
+            with self.subTest(rejection=rejection):
+                owner, requests = self.owner(
+                    [
+                        inventory(),
+                        {"status": "failed", "outcome": rejection},
+                        receipt(
+                            appointmentsStatus="found",
+                            appointments=[
+                                appointment(
+                                    rescheduleToken="refreshed-reschedule",
+                                    cancellationToken="refreshed-cancel",
+                                )
+                            ],
+                        ),
+                    ]
+                )
+                verified(
+                    owner.state,
+                    appointmentsStatus="found",
+                    appointments=[appointment()],
+                )
+                resolver = PatientResolver(
+                    owner.state, PatientMiddleware(owner.http._client, CONFIG)
+                )
+                self.addAsyncCleanup(resolver.aclose)
+                agent = AbitaAgent(SPRING_HILL, None, resolver, scheduling=owner)
+                resolve_patient = ToolContext(agent.tools).function_tools[
+                    "resolve_patient"
+                ]
+                result = await self.tool(
+                    owner,
+                    "reschedule_appointment",
+                    oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
+                    appointmentSlotRef=await self.slots(owner),
+                    appointmentReason="Follow up",
+                    referringDoctor="none",
+                    readBack=True,
+                )
+                self.assertIn("reschedule failed", result)
+                self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
+                self.assertEqual(owner._receipts, {})
+                await resolve_patient(speech_context(owner.state), "Jane", None)
+                self.assertEqual(len(requests), 3)
+                self.assertEqual(requests[-1][1]["patientId"], "chart-jane")
+                patient = owner.state.patient.active
+                self.assertEqual(patient.appointmentsStatus, "found")
+                self.assertEqual(
+                    patient.appointments[0].rescheduleToken, "refreshed-reschedule"
+                )
+                self.assertEqual(
+                    patient.appointments[0].cancellationToken, "refreshed-cancel"
+                )
+
+    async def test_rejected_reschedule_does_not_stale_a_new_patient_context(self):
+        async def switched(request):
+            owner.state.patient.revision += 1
+            verified(
+                owner.state,
+                "chart-john",
+                appointmentsStatus="found",
+                appointments=[appointment(id=99)],
+            )
+            return httpx.Response(
+                200, json={"status": "failed", "outcome": "invalid_reschedule_token"}
+            )
+
+        owner, _ = self.owner([inventory(), switched])
+        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        await self.tool(
+            owner,
+            "reschedule_appointment",
+            oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
+            appointmentSlotRef=await self.slots(owner),
+            appointmentReason="Follow up",
+            referringDoctor="none",
+            readBack=True,
+        )
+        self.assertEqual(owner.state.patient.active.patientId, "chart-john")
+        self.assertEqual(owner.state.patient.active.appointmentsStatus, "found")
+        self.assertEqual([a.id for a in owner.state.patient.active.appointments], [99])
+
     async def test_reschedule_retries_only_after_definite_failure_and_fresh_confirmation(
         self,
     ):
@@ -1907,6 +2002,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.assertEqual(len(requests), 2)
+        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
         args["appointmentSlotRef"] = await self.slots(owner)
         self.assertTrue(
             (
