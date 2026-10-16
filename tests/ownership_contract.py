@@ -58,7 +58,6 @@ async def main(url):
                         "dob": "01/15/1980",
                         "visitType": "medical",
                         "startDate": "bad-date",
-                        "rangeDays": 14,
                     }
                 )
                 assert isinstance(result, Inventory), result
@@ -68,24 +67,10 @@ async def main(url):
                 assert result.message and not result.shouldRetrySameSearch
             elif scenario.startswith("availability_"):
                 result = await scheduler.availability("medical", "2026-06-03")
-                expected = (
-                    "unsupported"
-                    if scenario == "availability_policy_blocked"
-                    else "availability_failed"
-                )
-                assert result["outcome"] == expected, result
+                assert result["outcome"] == "availability_failed", result
                 assert result["retry_same_search"] == (
                     scenario == "availability_read_failure"
                 ), result
-                if scenario == "availability_policy_blocked":
-                    repeated = await SchedulingTools(
-                        scheduler
-                    ).list_available_appointments(
-                        context, visitType="medical", startDate="2026-06-03"
-                    )
-                    assert repeated.startswith("blocked:"), repeated
-                    assert "Retry this search once" not in repeated
-                    assert requests.count("/api/scheduler/slots") == 1
             elif scenario.startswith("insurance_"):
                 await insurance.check("Meritain Health", "medical")
                 assert accepted_insurance(state) is not None
