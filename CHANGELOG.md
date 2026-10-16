@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/chasef07/abita_s2s/compare/v0.17.0...v0.17.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **scheduling:** refresh appointments after rejected reschedules ([#176](https://github.com/chasef07/abita_s2s/issues/176)) ([43f0919](https://github.com/chasef07/abita_s2s/commit/43f09197910af1b42ce44593ed813e401d047b78))
+
 ## [0.17.0](https://github.com/chasef07/abita_s2s/compare/v0.16.3...v0.17.0) (2026-10-15)
 
 
