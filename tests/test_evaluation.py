@@ -119,12 +119,12 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             )
         return requests, result
 
-    async def test_configured_jury_uses_jev_1_14(self):
+    async def test_configured_jury_uses_jev_perplexity_and_d1_ultra(self):
         requests, result = await self.run_evaluation(jurors=JURORS)
         expected = [
             "typesafe/jev-1.14",
             "perplexity/pplx-decider-v1.1-27b",
-            "microsoft/microsoft-decision-1",
+            "liquid/d1-ultra",
         ]
         self.assertCountEqual([request["model"] for request in requests], expected)
         self.assertEqual(result["jurors"], expected)
