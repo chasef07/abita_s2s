@@ -72,7 +72,7 @@ class CallReporter:
             "switched",
         ):
             status = "success"
-        elif outcome in ("partial", "partial_booking", "partial_reschedule"):
+        elif outcome in ("partial", "partial_reschedule"):
             status = "partial"
         elif outcome in ("uncertain", "ambiguous"):
             status = "ambiguous"

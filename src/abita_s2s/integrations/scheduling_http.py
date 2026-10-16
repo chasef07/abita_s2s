@@ -45,7 +45,6 @@ class Inventory(Record):
     status: Literal["success", "error"]
     outcome: Literal[
         "invalid_input",
-        "policy_blocked",
         "availability_found",
         "no_availability",
         "no_eligible_providers",
@@ -65,7 +64,7 @@ class Inventory(Record):
 
     @model_validator(mode="after")
     def validate_inventory(self):
-        if self.outcome in ("invalid_input", "policy_blocked") and (
+        if self.outcome == "invalid_input" and (
             self.status != "error"
             or self.shouldRetrySameSearch
             or not self.message.strip()
@@ -116,7 +115,7 @@ class RescheduleReceipt(Record):
         if self.status in ("completed", "partial"):
             if (
                 not self.booking
-                or self.booking.status not in ("booked", "partial")
+                or self.booking.status != "booked"
                 or not self.booking.appointmentId
             ):
                 raise ValueError("Missing replacement receipt")

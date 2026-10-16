@@ -10,7 +10,6 @@ from abita_s2s.insurance_state import (
     AcceptedInsurance,
     accepted_insurance,
     insurance_ready,
-    registration_insurance,
 )
 from abita_s2s.integrations.patient_middleware import Appointment, Receipt
 from abita_s2s.offices import (
@@ -327,14 +326,10 @@ class Scheduling:
             body = {
                 "office": selected,
                 "startDate": first.isoformat(),
-                "rangeDays": 14,
                 "patientId": p.patientId,
-                "coverageType": visit,
                 "visitType": visit,
                 "dob": p.dob,
             }
-            if decision := registration_insurance(self.state, visit):
-                body["insurancePlan"] = decision.canonicalPlan
             task = asyncio.create_task(self._load(body, key, self._generation))
             pending = self._search = PendingRead(task)
             self._read_tasks.add(task)
@@ -374,13 +369,13 @@ class Scheduling:
                 expired = result.bookingTokenExpiresAt <= self.now()
                 if expired:
                     result = SchedulingFailure(reason="expired_inventory")
-        if not isinstance(result, SchedulingFailure) and result.outcome in (
-            "invalid_input",
-            "policy_blocked",
+        if (
+            not isinstance(result, SchedulingFailure)
+            and result.outcome == "invalid_input"
         ):
             answer = reply(
-                "needs_input" if result.outcome == "invalid_input" else "unsupported",
-                f"{'needs_input' if result.outcome == 'invalid_input' else 'blocked'}: {result.message}",
+                "needs_input",
+                f"needs_input: {result.message}",
                 retry_same_search=False,
             )
             self._failures.pop(key, None)
@@ -713,7 +708,6 @@ class Scheduling:
             if p.patientId in self.state.insurance.registrations
             else "established"
         )
-        decision = registration_insurance(self.state, offered.visit)
         body = {
             "patientId": p.patientId,
             "patientName": p.name,
@@ -725,8 +719,6 @@ class Scheduling:
             "visitReason": reason.strip(),
             "referringDoctor": referrer.strip(),
         }
-        if decision:
-            body["insurancePlan"] = decision.canonicalPlan
         if old:
             body["rescheduleToken"] = old.rescheduleToken
         self._invalidate()
@@ -779,7 +771,7 @@ class Scheduling:
                 slot=slot,
                 call_id=call_id,
             )
-        if outcome["outcome"] not in ("booked", "partial_booking"):
+        if outcome["outcome"] != "booked":
             if old:
                 outcome = {
                     **outcome,
@@ -817,24 +809,18 @@ class Scheduling:
                 and appointment.id != old.id
             )
             cancelled_id = old.id if cancelled else None
-            note = (
-                " The patient note did not save; ask staff to complete it."
-                if outcome["outcome"] == "partial_booking"
-                else ""
-            )
             outcome = reply(
                 "rescheduled" if cancelled else "partial_reschedule",
                 (
-                    f"{'blocked' if note else 'success'}: Your new appointment is booked for {description}. Your old appointment on {old.date} at {old.time} is cancelled. Tell the caller both outcomes."
+                    f"success: Your new appointment is booked for {description}. Your old appointment on {old.date} at {old.time} is cancelled. Tell the caller both outcomes."
                     if cancelled
                     else f"blocked: The new appointment is booked for {description}, but cancellation of the old appointment requires staff reconciliation. Do not book again."
-                )
-                + note,
+                ),
             )
             self._report(
                 p,
                 booking=result,
-                booking_outcome="partial_booking" if note else "booked",
+                booking_outcome="booked",
                 cancellation_outcome="cancelled" if cancelled else "uncertain",
                 old=old,
                 slot=slot,
@@ -914,11 +900,8 @@ class Scheduling:
             return
         evidence = {"externalPatientId": str(patient.patientId)}
         if booking is not None:
-            status = (
-                "partial" if booking_outcome == "partial_booking" else booking_outcome
-            )
-            evidence["bookingResult"] = {"status": status}
-            if booking_outcome in ("booked", "partial_booking"):
+            evidence["bookingResult"] = {"status": booking_outcome}
+            if booking_outcome == "booked":
                 evidence["newAppointmentId"] = str(booking.appointmentId)
                 evidence["bookingResult"].update(
                     appointmentId=booking.appointmentId,
@@ -1031,19 +1014,8 @@ class Scheduling:
     @staticmethod
     def _book_result(result, description):
         if isinstance(result, WriteReceipt):
-            if (
-                result.status in ("booked", "success", "partial")
-                and result.appointmentId
-            ):
-                return reply(
-                    "partial_booking" if result.status == "partial" else "booked",
-                    f"{'blocked' if result.status == 'partial' else 'success'}: Booked {description}."
-                    + (
-                        " The appointment was booked, but the patient note did not save. Do not book again; ask staff to complete the note."
-                        if result.status == "partial"
-                        else ""
-                    ),
-                )
+            if result.status == "booked" and result.appointmentId:
+                return reply("booked", f"success: Booked {description}.")
             if result.outcome == "appointment_type_unresolved" and result.missing:
                 return reply(
                     "needs_input",

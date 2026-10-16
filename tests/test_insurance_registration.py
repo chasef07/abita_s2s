@@ -14,7 +14,6 @@ from abita_s2s.insurance import InsuranceRegistration, Registration
 from abita_s2s.insurance_state import (
     accepted_insurance,
     insurance_ready,
-    registration_insurance,
 )
 from abita_s2s.integrations.patient_middleware import PatientMiddleware, Receipt
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
@@ -273,9 +272,8 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                     )
                 self.assertEqual(result["outcome"], "found")
                 self.assertEqual(len(requests), 1)
-                self.assertEqual(requests[0][1]["insurancePlan"], "VSP")
+                self.assertNotIn("insurancePlan", requests[0][1])
                 self.assertEqual(requests[0][1]["patientId"], "new-chart")
-                self.assertIsNone(registration_insurance(state, "medical"))
 
     async def test_completed_chart_visit_change_uses_backend_policy(self):
         from datetime import datetime, UTC
@@ -296,7 +294,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                 200,
                 json={
                     "status": "error",
-                    "outcome": "policy_blocked",
+                    "outcome": "invalid_input",
                     "slots": [],
                     "message": "This chart needs accepted medical coverage.",
                 },
@@ -310,7 +308,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             )
             self.addAsyncCleanup(scheduling.aclose)
             result = await scheduling.availability("medical", "2026-09-15")
-        self.assertEqual(result["outcome"], "unsupported")
+        self.assertEqual(result["outcome"], "needs_input")
         self.assertIn("accepted medical coverage", result["answer"])
         self.assertEqual(len(requests), 1)
         self.assertEqual(requests[0]["patientId"], "new-chart")
