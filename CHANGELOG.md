@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.2](https://github.com/chasef07/abita_s2s/compare/v0.17.1...v0.17.2) (2026-10-16)
+
+
+### Maintenance
+
+* **evaluation:** replace Microsoft juror with Liquid d1-ultra ([#181](https://github.com/chasef07/abita_s2s/issues/181)) ([847188c](https://github.com/chasef07/abita_s2s/commit/847188c7b538306903b43e9036d8f5a56027e718))
+* **evaluation:** upgrade Jev juror to 1.14 ([#180](https://github.com/chasef07/abita_s2s/issues/180)) ([d1d2fe7](https://github.com/chasef07/abita_s2s/commit/d1d2fe794954d5c4df2ed45dfb335156ee4e4153))
+
 ## [0.17.1](https://github.com/chasef07/abita_s2s/compare/v0.17.0...v0.17.1) (2026-10-16)
 
 
