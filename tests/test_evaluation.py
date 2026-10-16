@@ -9,6 +9,7 @@ from livekit.agents import ChatContext
 from livekit.agents.llm import AgentConfigUpdate, FunctionCall, FunctionCallOutput
 
 from abita_s2s.observability.evaluation import evaluate_call, judge_state
+from abita_s2s.observability.judges import JURORS
 from abita_s2s.prompt import load_prompt
 
 NOT_ASKED = ("time_offered", "insurance_plan_as_stated", "requested_time_honored")
@@ -23,7 +24,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         tool="reschedule_appointment",
         returned=True,
         extra_tools=(),
-        jurors=("typesafe/jev-1.13",),
+        jurors=("typesafe/jev-1.14",),
     ):
         history = ChatContext()
         history.items.append(
@@ -118,6 +119,20 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             )
         return requests, result
 
+    async def test_configured_jury_uses_jev_1_14(self):
+        requests, result = await self.run_evaluation(jurors=JURORS)
+        expected = [
+            "typesafe/jev-1.14",
+            "perplexity/pplx-decider-v1.1-27b",
+            "microsoft/microsoft-decision-1",
+        ]
+        self.assertCountEqual([request["model"] for request in requests], expected)
+        self.assertEqual(result["jurors"], expected)
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(
+            set(result["results"]["promises_backed"]["votes"]), set(expected)
+        )
+
     async def test_gated_judges_require_their_returned_tool_results(self):
         gates = {
             "appointment_datetime_correct": (
@@ -167,7 +182,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         )
         sent = {}
         for request in requests:
-            self.assertEqual(request["model"], "typesafe/jev-1.13")
+            self.assertEqual(request["model"], "typesafe/jev-1.14")
             self.assertEqual(request["provider"], {"zdr": True})
             sent.update(request["questions"])
         self.assertEqual(
@@ -188,7 +203,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 1)
         self.assertEqual(result["evaluator"], "jury")
         self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v7")
-        self.assertEqual(result["jurors"], ["typesafe/jev-1.13"])
+        self.assertEqual(result["jurors"], ["typesafe/jev-1.14"])
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["errors"], {})
         self.assertEqual(set(result["results"]), set(sent))
@@ -208,7 +223,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 1)
         self.assertEqual(len(requests[0]["questions"]), 7)
         self.assertEqual(result["status"], "complete")
-        jev = "typesafe/jev-1.13"
+        jev = "typesafe/jev-1.14"
         self.assertEqual(
             result["results"]["appointment_datetime_correct"],
             {"verdict": False, "probability": 0.1, "votes": {jev: 0.1}, "errors": {}},
@@ -386,7 +401,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                     {
                         "cause": "no_quorum",
                         "votes": {},
-                        "errors": {"typesafe/jev-1.13": "ValueError"},
+                        "errors": {"typesafe/jev-1.14": "ValueError"},
                     },
                 )
 
@@ -399,7 +414,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 1)
         self.assertEqual(
             result["errors"]["office_rules_grounded"]["errors"],
-            {"typesafe/jev-1.13": "TimeoutError"},
+            {"typesafe/jev-1.14": "TimeoutError"},
         )
         self.assertIn("http_status=429", str(logs.output))
         self.assertEqual(len(result["errors"]), 7)
@@ -425,7 +440,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             cause = "ConnectError" if transport_failure else "HTTPStatusError"
             self.assertEqual(
                 result["errors"]["office_rules_grounded"]["errors"],
-                {"typesafe/jev-1.13": cause},
+                {"typesafe/jev-1.14": cause},
             )
             self.assertIn("attempts=2", str(logs.output))
             self.assertNotIn("synthetic-secret", str(result) + str(logs.output))
@@ -452,7 +467,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 {
                     "cause": "no_quorum",
                     "votes": {},
-                    "errors": {"typesafe/jev-1.13": "ValueError"},
+                    "errors": {"typesafe/jev-1.14": "ValueError"},
                 },
             )
 

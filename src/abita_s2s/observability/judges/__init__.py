@@ -14,7 +14,7 @@ from abita_s2s.observability.judges import (
 )
 
 JURORS = (
-    "typesafe/jev-1.13",
+    "typesafe/jev-1.14",
     "perplexity/pplx-decider-v1.1-27b",
     "microsoft/microsoft-decision-1",
 )
