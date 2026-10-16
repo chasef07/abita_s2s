@@ -400,10 +400,13 @@ class PatientResolver:
                     {"outcome": recorded, "externalPatientId": receipt.patientId},
                     call_id=call_id,
                 )
+        insurance = receipt.insuranceCarrier
+        if receipt.insuranceDecision and receipt.insuranceDecision.canonicalPlan:
+            insurance = receipt.insuranceDecision.canonicalPlan
         result = reply(
             outcome,
             f"success: I found the patient record for {receipt.name}. DOB is on file; do not ask for DOB."
-            f" Insurance on file: {receipt.insuranceCarrier or 'none recorded'}.",
+            f" Insurance on file: {insurance or 'none recorded'}.",
         )
         if receipt.appointmentsStatus == "error":
             result["answer"] += (

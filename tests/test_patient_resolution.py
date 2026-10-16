@@ -153,6 +153,35 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(len(calls), 1)
 
+    async def test_insurance_readback_uses_mapped_plan_when_available(self):
+        cases = (
+            ("ICARE", decision("Aetna Better Health"), "Aetna Better Health"),
+            ("Aetna", None, "Aetna"),
+            (
+                "Aetna",
+                decision(
+                    canonicalPlan="",
+                    participation="unknown",
+                    outcome="needs_staff_task",
+                    reason="chart_unverified",
+                    canSchedule=False,
+                ),
+                "Aetna",
+            ),
+            (None, None, "none recorded"),
+        )
+        for carrier, mapped, expected in cases:
+            with self.subTest(carrier=carrier, mapped=mapped):
+                r, _ = self.resolver(
+                    [receipt(insuranceCarrier=carrier, insuranceDecision=mapped)]
+                )
+                await self.preload(r)
+
+                result = await r.resolve("Jane", None)
+
+                self.assertIn(f"Insurance on file: {expected}.", result["answer"])
+                self.assertNotIn("ICARE", result["answer"])
+
     async def test_same_name_requires_dob_and_same_dob_remains_ambiguous(self):
         for second_dob in ("02/03/1982", "01/02/1980"):
             r, calls = self.resolver(
