@@ -217,10 +217,8 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                 return httpx.Response(400, json={"error": "private body"})
             answers = {
                 name: {"type": "noul", "noul": 0.5 + index / 100}
-                if question["type"] == "noul"
-                else {"type": "score", "score": 2, "probabilities": {"2": 1}}
                 for index, (name, question) in enumerate(payload["questions"].items())
-                if name != "office_rules_grounded"
+                if name != "emergency_policy_followed"
             }
             return httpx.Response(200, json={"answers": answers})
 
@@ -240,19 +238,22 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             set(evaluation["results"]),
             {
-                "appointment_datetime_correct",
-                "time_offered",
-                "insurance_plan_as_stated",
-                "requested_time_honored",
-                "new_booking_requested",
-                "promises_backed",
-                "ended_while_caller_active",
+                "knowledge_available",
                 "office_question_answered",
-                "expressed_sentiment",
+                "appointment_datetime_correct",
+                "call_ended_correctly",
+                "transfer_policy_followed",
             },
         )
         self.assertEqual(
-            evaluation["results"]["new_booking_requested"],
+            evaluation["results"]["knowledge_available"],
+            {
+                "status": "unknown",
+                "reason": "no_office_knowledge_result",
+            },
+        )
+        self.assertEqual(
+            evaluation["results"]["office_question_answered"],
             {
                 "verdict": True,
                 "probability": 0.5,
@@ -261,7 +262,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertEqual(
-            evaluation["errors"]["office_rules_grounded"]["errors"],
+            evaluation["errors"]["emergency_policy_followed"]["errors"],
             {**dict.fromkeys(JURORS[:-1], "ValueError"), JURORS[-1]: "HTTPStatusError"},
         )
         self.assertNotIn("private body", json.dumps(closeout))
