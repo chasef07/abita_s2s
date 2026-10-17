@@ -243,7 +243,10 @@ async def evaluate_call(
             return evaluation
         history = ChatContext.from_dict(report["chat_history"])
         if not any(
-            item.type == "message" and item.role == "user" for item in history.items
+            item.type == "message"
+            and item.role == "user"
+            and (item.text_content or "").strip()
+            for item in history.items
         ):
             evaluation.update(status="skipped", reason="no_user_messages")
         elif not api_key:

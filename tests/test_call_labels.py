@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import httpx
 from livekit.agents import ChatContext
+from livekit.agents.llm import AudioContent, ChatMessage
 
 from abita_s2s.observability.call_labels import (
     INTENT_CRITERIA,
@@ -218,6 +219,22 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
                     "reason": reason,
                 },
             )
+
+    async def test_empty_or_whitespace_caller_evidence_skips_without_model_request(
+        self,
+    ):
+        for content in ([], [""], [" \n\t "], [AudioContent(frame=[])]):
+            history = ChatContext(items=[ChatMessage(role="user", content=content)])
+            with patch(
+                "abita_s2s.observability.evaluation.httpx.AsyncClient"
+            ) as client:
+                result = await evaluate_call(
+                    {"chat_history": history.to_dict()}, "key", 60
+                )
+            client.assert_not_called()
+            self.assertEqual(result["classification"]["status"], "skipped")
+            self.assertEqual(result["classification"]["reason"], "no_user_messages")
+            self.assertNotIn("outcome", result["classification"])
 
     def test_probability_validation_matches_product(self):
         valid = choice(OUTCOME_CRITERIA, "resolved")
