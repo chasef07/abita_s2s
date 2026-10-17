@@ -337,34 +337,36 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(right["probability"], 0.275)
         self.assertNotIn("Thanks", str(logs.output))
 
-    async def test_one_value_for_every_yes_no_question_is_an_error_not_a_vote(self):
-        jurors = ("juror-a", "juror-b", "juror-c")
-        asked = (
+    async def test_identical_valid_answers_remain_votes(self):
+        names = (
+            "knowledge_available",
             "office_question_answered",
             "appointment_datetime_correct",
             "call_ended_correctly",
             "transfer_policy_followed",
             "emergency_policy_followed",
         )
-
-        async def behavior(juror, attempt, request, answers):
-            for name, answer in answers.items():
-                if answer["type"] == "noul" and juror == "juror-b":
-                    answer["noul"] = 0.0
-                if name in asked[:3] and juror == "juror-c":
-                    answer["noul"] = 1.0
-
-        with self.assertLogs("abita_s2s.observability.evaluation", "ERROR") as logs:
-            _, result = await self.run_evaluation(behavior, jurors=jurors)
-        self.assertEqual(result["status"], "complete")
-        for name in asked:
-            with self.subTest(name=name):
-                answer = result["results"][name]
-                self.assertTrue(answer["verdict"])
-                self.assertEqual(set(answer["votes"]), {"juror-a", "juror-c"})
-                self.assertEqual(answer["errors"], {"juror-b": "DegenerateAnswer"})
-        self.assertIn("juror=juror-b", str(logs.output))
-        self.assertNotIn("juror=juror-c", str(logs.output))
+        for tool, extra_tools, count in (
+            ("list_available_appointments", (), 4),
+            ("reschedule_appointment", ("search_office_knowledge",), 6),
+        ):
+            for value in (0.0, 0.5, 1.0):
+                with self.subTest(tool=tool, value=value):
+                    requests, result = await self.run_evaluation(
+                        values=dict.fromkeys(names, value),
+                        tool=tool,
+                        extra_tools=extra_tools,
+                        jurors=JURORS,
+                    )
+                    self.assertEqual(result["status"], "complete")
+                    self.assertEqual(result["errors"], {})
+                    self.assertEqual(len(requests[0]["questions"]), count)
+                    for name in requests[0]["questions"]:
+                        answer = result["results"][name]
+                        self.assertEqual(answer["verdict"], value > 0.4)
+                        self.assertAlmostEqual(answer["probability"], value)
+                        self.assertEqual(answer["votes"], dict.fromkeys(JURORS, value))
+                        self.assertEqual(answer["errors"], {})
 
     async def test_without_quorum_a_question_has_no_verdict(self):
         async def behavior(juror, attempt, request, answers):
