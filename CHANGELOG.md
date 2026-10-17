@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.1](https://github.com/chasef07/abita_s2s/compare/v0.19.0...v0.19.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* mark knowledge check N/A when the tool did not run ([#188](https://github.com/chasef07/abita_s2s/issues/188)) ([05cb05a](https://github.com/chasef07/abita_s2s/commit/05cb05ab9ad4f66b855c64d372d278d48dc44351))
+
 ## [0.19.0](https://github.com/chasef07/abita_s2s/compare/v0.18.0...v0.19.0) (2026-10-17)
 
 
