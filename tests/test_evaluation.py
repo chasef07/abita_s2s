@@ -121,7 +121,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         requests, result = await self.run_evaluation(jurors=JURORS)
         expected = [
             "typesafe/jev-1.14",
-            "perplexity/pplx-decider-v1.1-27b",
+            "perplexity/pplx-decider-v1.2",
             "liquid/d1-ultra",
         ]
         self.assertCountEqual([request["model"] for request in requests], expected)
