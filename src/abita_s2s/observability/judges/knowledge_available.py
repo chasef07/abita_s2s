@@ -13,13 +13,11 @@ QUESTION = {
 
 
 def skip(history: ChatContext) -> dict | None:
-    """Unknown until a search returns office information or an explicit no-results result."""
+    """Skip only when the office knowledge tool was not called."""
     if not any(
-        item.type == "function_call_output"
+        item.type in {"function_call", "function_call_output"}
         and item.name == "search_office_knowledge"
-        and not item.is_error
-        and str(item.output).strip().startswith(("success:", "no_results:"))
         for item in history.items
     ):
-        return {"status": "unknown", "reason": "no_office_knowledge_result"}
+        return {"status": "not_applicable", "reason": "no_office_knowledge_search"}
     return None

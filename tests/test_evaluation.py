@@ -27,6 +27,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         action_output="success: The appointment was moved to Wednesday at 10:00.",
         action_error=False,
         knowledge_output="success: Office hours are Monday to Friday, 9 to 5.",
+        knowledge_error=False,
         jurors=("typesafe/jev-1.14",),
     ):
         history = ChatContext()
@@ -65,7 +66,9 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                         output=knowledge_output
                         if extra_tool == "search_office_knowledge"
                         else action_output,
-                        is_error=False,
+                        is_error=knowledge_error
+                        if extra_tool == "search_office_knowledge"
+                        else False,
                     ),
                 ]
             )
@@ -160,7 +163,10 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                         )
                     self.assertEqual(
                         result["results"]["knowledge_available"],
-                        {"status": "unknown", "reason": "no_office_knowledge_result"},
+                        {
+                            "status": "not_applicable",
+                            "reason": "no_office_knowledge_search",
+                        },
                     )
 
     async def test_appointment_dates_need_a_confirmed_action(self):
@@ -191,32 +197,37 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                         },
                     )
 
-    async def test_knowledge_gap_requires_a_completed_search_not_an_outage(self):
-        for output, asked in (
-            ("success: Office hours are Monday to Friday, 9 to 5.", True),
-            ("no_results: No information was found for this question.", True),
+    async def test_knowledge_tool_results_are_sent_to_the_yes_no_jury(self):
+        for output, is_error in (
+            ("success: Office hours are Monday to Friday, 9 to 5.", False),
+            ("no_results: No information was found for this question.", False),
             ("blocked: Office information could not be checked.", False),
             ("needs_input: Provide a focused office question.", False),
+            ("Timed out", True),
         ):
             with self.subTest(output=output):
                 requests, result = await self.run_evaluation(
                     extra_tools=("search_office_knowledge",),
                     knowledge_output=output,
+                    knowledge_error=is_error,
                     values={"knowledge_available": 0.1},
                 )
-                self.assertEqual(
-                    "knowledge_available" in requests[0]["questions"], asked
-                )
-                if asked:
-                    self.assertFalse(
-                        result["results"]["knowledge_available"]["verdict"]
-                    )
-                else:
-                    self.assertEqual(
-                        result["results"]["knowledge_available"],
-                        {"status": "unknown", "reason": "no_office_knowledge_result"},
-                    )
+                question = requests[0]["questions"]["knowledge_available"]
+                self.assertEqual(question["type"], "noul")
+                self.assertEqual(set(question["criteria"]), {"true", "false"})
+                self.assertFalse(result["results"]["knowledge_available"]["verdict"])
                 self.assertIn("office_question_answered", requests[0]["questions"])
+                self.assertIn(output, str(requests[0]["state"]))
+
+    async def test_knowledge_call_without_a_result_still_gets_a_yes_no_judge(self):
+        requests, result = await self.run_evaluation(
+            tool="search_office_knowledge",
+            returned=False,
+            values={"knowledge_available": 0.1},
+        )
+        self.assertIn("knowledge_available", requests[0]["questions"])
+        self.assertFalse(result["results"]["knowledge_available"]["verdict"])
+        self.assertIn("no result", str(requests[0]["state"]))
 
     async def test_each_juror_gets_every_question_in_one_request_with_zero_retention(
         self,

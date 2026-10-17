@@ -250,8 +250,8 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             evaluation["results"]["knowledge_available"],
             {
-                "status": "unknown",
-                "reason": "no_office_knowledge_result",
+                "status": "not_applicable",
+                "reason": "no_office_knowledge_search",
             },
         )
         self.assertEqual(
