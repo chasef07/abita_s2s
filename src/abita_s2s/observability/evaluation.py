@@ -10,7 +10,7 @@ import httpx
 from livekit.agents import ChatContext
 
 from abita_s2s.observability.call_labels import classification, classify_labels
-from abita_s2s.observability.judges import GATES, JURORS, QUESTIONS, knowledge_available
+from abita_s2s.observability.judges import GATES, JURORS, QUESTIONS
 from abita_s2s.offices import EASTERN
 from abita_s2s.prompt import load_prompt, thinker_instructions
 
@@ -194,15 +194,6 @@ async def evaluate_judges(
         labels = classification("incomplete", "classification_failed")
     replies = dict(zip(jurors, replies, strict=True))
     for name in asked:
-        if name == "knowledge_available":
-            result, error = knowledge_available.judge(
-                history, replies, len(JURORS) // 2 + 1
-            )
-            if error:
-                errors[name] = error
-            else:
-                results[name] = result
-            continue
         votes, failures = {}, {}
         for juror, reply in replies.items():
             if isinstance(reply, Exception):

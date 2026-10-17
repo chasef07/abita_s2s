@@ -25,5 +25,6 @@ QUESTIONS = {
 }
 
 GATES = {
+    "knowledge_available": knowledge_available.skip,
     "appointment_datetime_correct": appointment_datetime_correct.skip,
 }
