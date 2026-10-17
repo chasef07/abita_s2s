@@ -44,8 +44,8 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
         judge.assert_not_called()
         self.assertEqual(result["reason"], "openrouter_key_not_configured")
 
-    async def test_calls_under_thirty_seconds_never_call_provider(self):
-        for seconds, called in ((29.9, False), (30, True)):
+    async def test_calls_under_thirty_seconds_skip_only_failure_jury(self):
+        for seconds, jury in ((29.9, False), (30, True)):
             with (
                 self.subTest(seconds=seconds),
                 patch(
@@ -55,8 +55,8 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
                 ) as judge,
             ):
                 result = await evaluate_call(self.report(), "offline", seconds)
-            self.assertEqual(judge.called, called)
-            if not called:
+            self.assertEqual(judge.call_args.kwargs["include_jury"], jury)
+            if not jury:
                 self.assertEqual(result["status"], "skipped")
                 self.assertEqual(result["reason"], "call_too_short")
 
@@ -65,9 +65,9 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
         report["chat_history"] = ChatContext().to_dict()
         result = await evaluate_call(report, "offline", 60)
         self.assertEqual(result["status"], "skipped")
-        with self.assertLogs("abita_s2s.observability.evaluation", "ERROR"):
-            result = await evaluate_call({}, "offline", 60)
-        self.assertEqual(result["status"], "incomplete")
+        result = await evaluate_call({}, "offline", 60)
+        self.assertEqual(result["status"], "skipped")
+        self.assertEqual(result["reason"], "native_report_unavailable")
 
     def test_openrouter_key_is_loaded_with_config(self):
         env = {"OPENAI_API_KEY": "offline", "OPENROUTER_API_KEY": " offline-key "}

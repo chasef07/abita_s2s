@@ -9,6 +9,7 @@ from email.utils import parsedate_to_datetime
 import httpx
 from livekit.agents import ChatContext
 
+from abita_s2s.observability.call_labels import classification, classify_labels
 from abita_s2s.observability.judges import GATES, JURORS, QUESTIONS
 from abita_s2s.offices import EASTERN
 from abita_s2s.prompt import load_prompt, thinker_instructions
@@ -84,6 +85,8 @@ async def evaluate_judges(
     *,
     api_key: str,
     seconds: float = EVALUATION_SECONDS,
+    closeout: dict | None = None,
+    include_jury: bool = True,
 ) -> dict:
     """Ask each juror every question in one request within one deadline.
 
@@ -92,10 +95,12 @@ async def evaluate_judges(
     """
     state = judge_state(history)
     results, errors = {}, {}
-    for name, gate in GATES.items():
-        if skipped := gate(history):
-            results[name] = skipped
-    asked = [name for name in QUESTIONS if name not in results]
+    if include_jury:
+        for name, gate in GATES.items():
+            if skipped := gate(history):
+                results[name] = skipped
+    asked = [name for name in QUESTIONS if name not in results] if include_jury else []
+    jurors = JURORS if include_jury else ()
     deadline = asyncio.get_running_loop().time() + seconds
     async with httpx.AsyncClient(timeout=seconds) as client:
 
@@ -173,9 +178,21 @@ async def evaluate_judges(
                 raise
 
         replies = await asyncio.gather(
-            *(ask(juror) for juror in JURORS), return_exceptions=True
+            *(ask(juror) for juror in jurors),
+            classify_labels(
+                client,
+                state,
+                closeout or {},
+                api_key=api_key,
+                deadline=deadline,
+                url=EVALUATE_URL,
+            ),
+            return_exceptions=True,
         )
-    replies = dict(zip(JURORS, replies, strict=True))
+    labels = replies.pop()
+    if isinstance(labels, Exception):
+        labels = classification("incomplete", "classification_failed")
+    replies = dict(zip(jurors, replies, strict=True))
     for name in asked:
         votes, failures = {}, {}
         for juror, reply in replies.items():
@@ -193,7 +210,7 @@ async def evaluate_judges(
             errors[name] = {"cause": "no_quorum", "votes": votes, "errors": failures}
         else:
             results[name] = {**majority(votes), "errors": failures}
-    return {"results": results, "errors": errors}
+    return {"results": results, "errors": errors, "classification": labels}
 
 
 async def evaluate_call(
@@ -202,6 +219,7 @@ async def evaluate_call(
     seconds: float,
     *,
     budget: float = math.inf,
+    closeout: dict | None = None,
 ) -> dict:
     """Return a persistable result without letting a judge failure break closeout.
 
@@ -214,15 +232,20 @@ async def evaluate_call(
         "jurors": list(JURORS),
         "evaluatedAt": datetime.now(UTC).isoformat(),
         "status": "incomplete",
+        "classification": classification("incomplete", "evaluation_failed"),
     }
     try:
+        if not report:
+            evaluation.update(status="skipped", reason="native_report_unavailable")
+            evaluation["classification"] = classification(
+                "skipped", evaluation["reason"]
+            )
+            return evaluation
         history = ChatContext.from_dict(report["chat_history"])
         if not any(
             item.type == "message" and item.role == "user" for item in history.items
         ):
             evaluation.update(status="skipped", reason="no_user_messages")
-        elif seconds < MIN_CALL_SECONDS:
-            evaluation.update(status="skipped", reason="call_too_short")
         elif not api_key:
             evaluation.update(status="skipped", reason="openrouter_key_not_configured")
         elif window <= 0:
@@ -230,12 +253,27 @@ async def evaluate_call(
         else:
             async with asyncio.timeout(window + EVALUATION_GRACE_SECONDS):
                 evaluation.update(
-                    await evaluate_judges(history, api_key=api_key, seconds=window)
+                    await evaluate_judges(
+                        history,
+                        api_key=api_key,
+                        seconds=window,
+                        closeout=closeout,
+                        include_jury=seconds >= MIN_CALL_SECONDS,
+                    )
                 )
-            if evaluation["errors"]:
+            if seconds < MIN_CALL_SECONDS:
+                evaluation.update(status="skipped", reason="call_too_short")
+            elif evaluation["errors"]:
                 evaluation["reason"] = "judge_errors"
             else:
                 evaluation["status"] = "complete"
+        if (
+            evaluation["status"] == "skipped"
+            and evaluation["reason"] != "call_too_short"
+        ):
+            evaluation["classification"] = classification(
+                "skipped", evaluation["reason"]
+            )
     except Exception as error:
         evaluation["reason"] = type(error).__name__
         logger.error("Call evaluation failed cause=%s", type(error).__name__)
