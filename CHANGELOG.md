@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/chasef07/abita_s2s/compare/v0.18.0...v0.19.0) (2026-10-17)
+
+
+### Features
+
+* move call intent and outcome judging into S2S ([#185](https://github.com/chasef07/abita_s2s/issues/185)) ([7fc5cad](https://github.com/chasef07/abita_s2s/commit/7fc5cadb0d1515830d664864f0a8d735adbf86f5))
+
 ## [0.18.0](https://github.com/chasef07/abita_s2s/compare/v0.17.2...v0.18.0) (2026-10-17)
 
 
