@@ -130,20 +130,30 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["classification"]["status"], "complete")
         self.assertEqual(result["classification"]["intent"], "cancel_appointment")
 
-    async def test_accepted_transfer_cannot_be_any_terminal_outcome(self):
-        for outcome in OUTCOME_CRITERIA:
-            answers = {
-                "intent": choice(INTENT_CRITERIA, "speak_to_staff"),
-                "outcome": choice(OUTCOME_CRITERIA, outcome),
-            }
-            _, result = await self.run_labels(
-                answers, closeout={"transferStatus": "accepted"}
-            )
-            labels = result["classification"]
-            self.assertEqual(labels["status"], "incomplete")
-            self.assertEqual(labels["intent"], "speak_to_staff")
-            self.assertEqual(labels["reason"], "transfer_connection_not_evidenced")
-            self.assertNotIn("outcome", labels)
+    async def test_unconfirmed_transfer_cannot_be_any_terminal_outcome(self):
+        for transfer in ("pending", "accepted", "ambiguous", "unknown"):
+            for outcome in OUTCOME_CRITERIA:
+                with self.subTest(transfer=transfer, outcome=outcome):
+                    answers = {
+                        "intent": choice(INTENT_CRITERIA, "speak_to_staff"),
+                        "outcome": choice(OUTCOME_CRITERIA, outcome),
+                    }
+                    _, result = await self.run_labels(
+                        answers, closeout={"transferStatus": transfer}
+                    )
+                    labels = result["classification"]
+                    self.assertEqual(labels["status"], "incomplete")
+                    self.assertEqual(labels["intent"], "speak_to_staff")
+                    self.assertEqual(
+                        labels["reason"], "transfer_connection_not_evidenced"
+                    )
+                    self.assertNotIn("outcome", labels)
+
+    async def test_known_failed_or_unsent_transfer_can_classify_remaining_call(self):
+        for transfer in ("failed", "retryable"):
+            _, result = await self.run_labels(closeout={"transferStatus": transfer})
+            self.assertEqual(result["classification"]["status"], "complete")
+            self.assertEqual(result["classification"]["outcome"], "resolved")
 
     async def test_model_cannot_invent_staff_connection(self):
         _, result = await self.run_labels(
