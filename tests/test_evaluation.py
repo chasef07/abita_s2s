@@ -12,8 +12,6 @@ from abita_s2s.observability.evaluation import evaluate_call, judge_state
 from abita_s2s.observability.judges import JURORS
 from abita_s2s.prompt import load_prompt
 
-NOT_ASKED = ("knowledge_available",)
-
 
 class JevTests(unittest.IsolatedAsyncioTestCase):
     async def run_evaluation(
@@ -95,7 +93,22 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 value = (values or {}).get(name, default)
                 if isinstance(value, dict):
                     value = value.get(juror, default)
-                answers[name] = {"type": "noul", "noul": value}
+                if question["type"] == "choice":
+                    selected = "available" if value > 0.4 else "missing"
+                    answers[name] = {
+                        "type": "choice",
+                        "choice": selected,
+                        "probabilities": {
+                            key: value
+                            if key == "available"
+                            else 1 - value
+                            if key == "missing"
+                            else 0
+                            for key in question["criteria"]
+                        },
+                    }
+                else:
+                    answers[name] = {"type": "noul", "noul": value}
             if behavior:
                 response = await behavior(juror, attempt, request, answers)
                 if response is not None:
@@ -160,7 +173,12 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                         )
                     self.assertEqual(
                         result["results"]["knowledge_available"],
-                        {"status": "unknown", "reason": "no_office_knowledge_result"},
+                        {
+                            "status": "unknown",
+                            "reason": "no_office_knowledge_result",
+                            "choices": {"typesafe/jev-1.14": "available"},
+                            "errors": {},
+                        },
                     )
 
     async def test_appointment_dates_need_a_confirmed_action(self):
@@ -192,7 +210,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                     )
 
     async def test_knowledge_gap_requires_a_completed_search_not_an_outage(self):
-        for output, asked in (
+        for output, graded in (
             ("success: Office hours are Monday to Friday, 9 to 5.", True),
             ("no_results: No information was found for this question.", True),
             ("blocked: Office information could not be checked.", False),
@@ -204,17 +222,20 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                     knowledge_output=output,
                     values={"knowledge_available": 0.1},
                 )
-                self.assertEqual(
-                    "knowledge_available" in requests[0]["questions"], asked
-                )
-                if asked:
+                self.assertIn("knowledge_available", requests[0]["questions"])
+                if graded:
                     self.assertFalse(
                         result["results"]["knowledge_available"]["verdict"]
                     )
                 else:
                     self.assertEqual(
                         result["results"]["knowledge_available"],
-                        {"status": "unknown", "reason": "no_office_knowledge_result"},
+                        {
+                            "status": "unknown",
+                            "reason": "no_office_knowledge_result",
+                            "choices": {"typesafe/jev-1.14": "missing"},
+                            "errors": {},
+                        },
                     )
                 self.assertIn("office_question_answered", requests[0]["questions"])
 
@@ -249,8 +270,15 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["errors"], {})
         self.assertEqual(set(result["results"]), set(sent))
         for name, question in sent.items():
-            self.assertEqual(question["type"], "noul")
-            self.assertEqual(set(question["criteria"]), {"true", "false"})
+            if name == "knowledge_available":
+                self.assertEqual(question["type"], "choice")
+                self.assertEqual(
+                    set(question["criteria"]),
+                    {"available", "missing", "not_applicable", "unknown"},
+                )
+            else:
+                self.assertEqual(question["type"], "noul")
+                self.assertEqual(set(question["criteria"]), {"true", "false"})
 
     async def test_judges_receive_full_history_and_return_verdicts(self):
         requests, result = await self.run_evaluation(
@@ -261,7 +289,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.assertEqual(len(requests), 1)
-        self.assertEqual(len(requests[0]["questions"]), 5)
+        self.assertEqual(len(requests[0]["questions"]), 6)
         self.assertEqual(result["status"], "complete")
         jev = "typesafe/jev-1.14"
         self.assertEqual(
@@ -349,7 +377,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             "emergency_policy_followed",
         )
         for tool, extra_tools, count in (
-            ("list_available_appointments", (), 4),
+            ("list_available_appointments", (), 5),
             ("reschedule_appointment", ("search_office_knowledge",), 6),
         ):
             for value in (0.0, 0.5, 1.0):
@@ -365,6 +393,9 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(len(requests[0]["questions"]), count)
                     for name in requests[0]["questions"]:
                         answer = result["results"][name]
+                        if name == "knowledge_available" and not extra_tools:
+                            self.assertEqual(answer["status"], "unknown")
+                            continue
                         self.assertEqual(answer["verdict"], value > 0.4)
                         self.assertAlmostEqual(answer["probability"], value)
                         self.assertEqual(answer["votes"], dict.fromkeys(JURORS, value))
@@ -441,8 +472,8 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             {"typesafe/jev-1.14": "TimeoutError"},
         )
         self.assertIn("http_status=429", str(logs.output))
-        self.assertEqual(len(result["errors"]), 5)
-        self.assertEqual(set(result["results"]), set(NOT_ASKED))
+        self.assertEqual(len(result["errors"]), 6)
+        self.assertEqual(set(result["results"]), set())
 
     async def test_exhausted_http_and_transport_retries_remain_visible(self):
         for transport_failure in (False, True):
@@ -460,7 +491,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             ):
                 requests, result = await self.run_evaluation(behavior)
             self.assertEqual(len(requests), 2)
-            self.assertEqual(set(result["results"]), set(NOT_ASKED))
+            self.assertEqual(set(result["results"]), set())
             cause = "ConnectError" if transport_failure else "HTTPStatusError"
             self.assertEqual(
                 result["errors"]["emergency_policy_followed"]["errors"],

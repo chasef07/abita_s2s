@@ -51,8 +51,19 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
                 200,
                 json={
                     "answers": {
-                        name: {"type": "noul", "noul": 0.8}
-                        for name in payload["questions"]
+                        name: (
+                            {
+                                "type": "choice",
+                                "choice": "not_applicable",
+                                "probabilities": {
+                                    key: float(key == "not_applicable")
+                                    for key in definition["criteria"]
+                                },
+                            }
+                            if definition["type"] == "choice"
+                            else {"type": "noul", "noul": 0.8}
+                        )
+                        for name, definition in payload["questions"].items()
                     }
                 },
             )

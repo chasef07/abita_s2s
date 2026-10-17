@@ -218,8 +218,19 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             if payload["model"] == JURORS[-1]:
                 return httpx.Response(400, json={"error": "private body"})
             answers = {
-                name: {"type": "noul", "noul": 0.5 + index / 100}
-                for index, (name, question) in enumerate(payload["questions"].items())
+                name: (
+                    {
+                        "type": "choice",
+                        "choice": "not_applicable",
+                        "probabilities": {
+                            key: float(key == "not_applicable")
+                            for key in definition["criteria"]
+                        },
+                    }
+                    if definition["type"] == "choice"
+                    else {"type": "noul", "noul": 0.5 + index / 100}
+                )
+                for index, (name, definition) in enumerate(payload["questions"].items())
                 if name != "emergency_policy_followed"
             }
             return httpx.Response(200, json={"answers": answers})
@@ -250,16 +261,18 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             evaluation["results"]["knowledge_available"],
             {
-                "status": "unknown",
-                "reason": "no_office_knowledge_result",
+                "status": "not_applicable",
+                "reason": "no_office_question",
+                "choices": dict.fromkeys(JURORS[:-1], "not_applicable"),
+                "errors": {JURORS[-1]: "HTTPStatusError"},
             },
         )
         self.assertEqual(
             evaluation["results"]["office_question_answered"],
             {
                 "verdict": True,
-                "probability": 0.5,
-                "votes": dict.fromkeys(JURORS[:-1], 0.5),
+                "probability": 0.51,
+                "votes": dict.fromkeys(JURORS[:-1], 0.51),
                 "errors": {JURORS[-1]: "HTTPStatusError"},
             },
         )
@@ -292,7 +305,19 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                 }
             else:
                 answers = {
-                    name: {"type": "noul", "noul": 0.8} for name in payload["questions"]
+                    name: (
+                        {
+                            "type": "choice",
+                            "choice": "not_applicable",
+                            "probabilities": {
+                                key: float(key == "not_applicable")
+                                for key in definition["criteria"]
+                            },
+                        }
+                        if definition["type"] == "choice"
+                        else {"type": "noul", "noul": 0.8}
+                    )
+                    for name, definition in payload["questions"].items()
                 }
             return httpx.Response(200, json={"answers": answers})
 
