@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0](https://github.com/chasef07/abita_s2s/compare/v0.17.2...v0.18.0) (2026-10-17)
+
+
+### Features
+
+* **evaluation:** replace scorecard with six failure judges (ACU-150) ([#183](https://github.com/chasef07/abita_s2s/issues/183)) ([8aede2c](https://github.com/chasef07/abita_s2s/commit/8aede2cd983adc6832b9c1408b85efcf7329c65c))
+
 ## [0.17.2](https://github.com/chasef07/abita_s2s/compare/v0.17.1...v0.17.2) (2026-10-16)
 
 
