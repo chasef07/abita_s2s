@@ -84,6 +84,8 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 request.headers["Authorization"], "Bearer synthetic-secret"
             )
             payload = json.loads(request.content)
+            if "intent" in payload["questions"]:
+                return httpx.Response(200, json={"answers": {}})
             requests.append(payload)
             juror = payload["model"]
             attempt = sum(p["model"] == juror for p in requests)

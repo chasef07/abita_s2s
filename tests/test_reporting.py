@@ -15,6 +15,8 @@ from test_patient_resolution import CONFIG, call_state
 
 from abita_s2s.config import load_config
 from abita_s2s.observability.judges import JURORS
+from abita_s2s.observability.call_labels import INTENT_CRITERIA, OUTCOME_CRITERIA
+from test_call_labels import choice
 from abita_s2s.offices import get_office_profile
 from abita_s2s.runtime.reporting import CallReporter, ReportingError
 from abita_s2s.staff_tasks import Draft, StaffTasks
@@ -267,6 +269,63 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotIn("private body", json.dumps(closeout))
 
+    async def test_classification_receives_drained_receipts_and_reaches_closeout(self):
+        history = llm.ChatContext()
+        history.add_message(role="user", content="Please save this for staff.")
+        history.add_message(role="user", content="Yes, that works. Thank you.")
+        report = {**REPORT, "chat_history": history.to_dict()}
+
+        async def drain():
+            reporter.record("staff_task", {"outcome": "created", "taskId": "synthetic"})
+
+        reporter = self.reporter(openrouter_key="offline", drain=drain)
+        reporter.started = True
+        requests = []
+
+        def respond(request):
+            payload = json.loads(request.content)
+            if "intent" in payload["questions"]:
+                requests.append(payload)
+                answers = {
+                    "intent": choice(INTENT_CRITERIA, "records_or_forms"),
+                    "outcome": choice(OUTCOME_CRITERIA, "resolved"),
+                }
+            else:
+                answers = {
+                    name: {"type": "noul", "noul": 0.8} for name in payload["questions"]
+                }
+            return httpx.Response(200, json={"answers": answers})
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        with patch(
+            "abita_s2s.observability.evaluation.httpx.AsyncClient", return_value=client
+        ):
+            await reporter.finish(lambda: report)
+        self.assertEqual(len(requests), 1)
+        closeout = self.requests[-1]["closeoutPayload"]
+        self.assertEqual(
+            requests[0]["state"]["closeout"]["domainOutcomes"],
+            closeout["domainOutcomes"],
+        )
+        self.assertEqual(closeout["domainOutcomes"][0]["outcome"], "staff_task_created")
+        self.assertEqual(closeout["evaluation"]["classification"]["status"], "complete")
+        self.assertEqual(
+            closeout["evaluation"]["classification"]["outcome"], "resolved"
+        )
+
+    async def test_missing_report_closeout_has_skipped_classification(self):
+        reporter = self.reporter()
+        await reporter.finish()
+        self.assertEqual(
+            self.requests[-1]["closeoutPayload"]["evaluation"]["classification"],
+            {
+                "version": "call-labels-v1",
+                "model": "typesafe/jev-1.14",
+                "status": "skipped",
+                "reason": "native_report_unavailable",
+            },
+        )
+
     async def test_evaluation_timeout_or_error_still_delivers_completed_call(self):
         history = llm.ChatContext()
         history.items.append(llm.AgentConfigUpdate(instructions="Manage appointments."))
@@ -305,7 +364,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
 
         budgets = []
 
-        async def evaluate(*_, budget):
+        async def evaluate(*_, budget, **__):
             budgets.append(budget)
             return {}
 

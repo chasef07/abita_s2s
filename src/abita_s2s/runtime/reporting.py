@@ -233,18 +233,20 @@ class CallReporter:
                 payload["appointmentOutcome"] = self._appointment
             remaining = deadline - loop.time() - CLOSEOUT_SECONDS
             settled = self._settle_checkpoints(remaining)
-            if report is None:
-                await settled
-            else:
+            if report is not None:
                 payload["transcript"] = report
-                payload["closeoutPayload"]["evaluation"], _ = await asyncio.gather(
-                    evaluate_call(
-                        report,
-                        self._openrouter_key,
-                        (ended_at - self._started_at).total_seconds(),
-                        budget=remaining,
-                    ),
-                    settled,
-                )
+            payload["closeoutPayload"]["evaluation"], _ = await asyncio.gather(
+                evaluate_call(
+                    report or {},
+                    self._openrouter_key,
+                    (ended_at - self._started_at).total_seconds(),
+                    budget=remaining,
+                    closeout={
+                        **deepcopy(payload["closeoutPayload"]),
+                        "callStatus": status,
+                    },
+                ),
+                settled,
+            )
             if not await self._send(payload):
                 raise ReportingError("Product did not acknowledge call closeout")
