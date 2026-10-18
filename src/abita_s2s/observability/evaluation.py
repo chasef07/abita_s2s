@@ -9,7 +9,11 @@ from email.utils import parsedate_to_datetime
 import httpx
 from livekit.agents import ChatContext
 
-from abita_s2s.observability.call_labels import classification, classify_labels
+from abita_s2s.observability.call_labels import (
+    classification,
+    classify_labels,
+    has_transfer_call,
+)
 from abita_s2s.observability.judges import GATES, JURORS, QUESTIONS
 from abita_s2s.offices import EASTERN
 from abita_s2s.prompt import load_prompt, thinker_instructions
@@ -198,6 +202,7 @@ async def evaluate_judges(
                 api_key=api_key,
                 deadline=deadline,
                 url=EVALUATE_URL,
+                transfer_called=has_transfer_call(history),
             ),
             return_exceptions=True,
         )
@@ -252,6 +257,7 @@ async def evaluate_call(
         "status": "incomplete",
         "classification": classification("incomplete", "evaluation_failed"),
     }
+    history = None
     try:
         if not report:
             evaluation.update(status="skipped", reason="native_report_unavailable")
@@ -298,4 +304,6 @@ async def evaluate_call(
     except Exception as error:
         evaluation["reason"] = type(error).__name__
         logger.error("Call evaluation failed cause=%s", type(error).__name__)
+    if history is not None and has_transfer_call(history):
+        evaluation["classification"]["outcome"] = "transferred"
     return evaluation
