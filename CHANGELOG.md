@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.2](https://github.com/chasef07/abita_s2s/compare/v0.19.1...v0.19.2) (2026-10-18)
+
+
+### Bug Fixes
+
+* **evaluation:** restore caller sentiment scoring ([#190](https://github.com/chasef07/abita_s2s/issues/190)) ([6724416](https://github.com/chasef07/abita_s2s/commit/672441631273d66489d0f86ba49b2e60906059fd))
+
 ## [0.19.1](https://github.com/chasef07/abita_s2s/compare/v0.19.0...v0.19.1) (2026-10-17)
 
 
