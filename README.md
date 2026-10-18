@@ -122,7 +122,9 @@ After accepted writes drain, calls with caller messages are scored by a jury of 
 decision models through OpenRouter with zero data retention (`OPENROUTER_API_KEY`).
 [observability/judges](src/abita_s2s/observability/judges) holds the seated `JURORS`
 and each judge's definition. Each question needs a majority of jurors to answer; a
-yes/no verdict is the majority vote. Results go into Product's
+yes/no verdict is the majority vote. Caller sentiment is the mean juror score from
+0 (very negative) to 4 (very positive), independent of failure flags. It is sent as
+`results.expressed_sentiment.score` with per-juror votes and errors. Results go into Product's
 closeout as `closeoutPayload.evaluation`, marked `complete`, `incomplete`, or `skipped`.
 Evaluation failure never blocks closeout or changes the call outcome.
 

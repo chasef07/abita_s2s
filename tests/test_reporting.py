@@ -218,7 +218,15 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             if payload["model"] == JURORS[-1]:
                 return httpx.Response(400, json={"error": "private body"})
             answers = {
-                name: {"type": "noul", "noul": 0.5 + index / 100}
+                name: (
+                    {
+                        "type": "score",
+                        "score": 1.5,
+                        "probabilities": {"1": 0.5, "2": 0.5},
+                    }
+                    if question["type"] == "score"
+                    else {"type": "noul", "noul": 0.5 + index / 100}
+                )
                 for index, (name, question) in enumerate(payload["questions"].items())
                 if name != "emergency_policy_followed"
             }
@@ -245,6 +253,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                 "appointment_datetime_correct",
                 "call_ended_correctly",
                 "transfer_policy_followed",
+                "expressed_sentiment",
             },
         )
         self.assertEqual(
@@ -260,6 +269,14 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                 "verdict": True,
                 "probability": 0.5,
                 "votes": dict.fromkeys(JURORS[:-1], 0.5),
+                "errors": {JURORS[-1]: "HTTPStatusError"},
+            },
+        )
+        self.assertEqual(
+            evaluation["results"]["expressed_sentiment"],
+            {
+                "score": 1.5,
+                "votes": dict.fromkeys(JURORS[:-1], 1.5),
                 "errors": {JURORS[-1]: "HTTPStatusError"},
             },
         )
@@ -292,7 +309,12 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                 }
             else:
                 answers = {
-                    name: {"type": "noul", "noul": 0.8} for name in payload["questions"]
+                    name: (
+                        {"type": "score", "score": 2, "probabilities": {"2": 1}}
+                        if question["type"] == "score"
+                        else {"type": "noul", "noul": 0.8}
+                    )
+                    for name, question in payload["questions"].items()
                 }
             return httpx.Response(200, json={"answers": answers})
 
