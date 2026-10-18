@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.3](https://github.com/chasef07/abita_s2s/compare/v0.19.2...v0.19.3) (2026-10-18)
+
+
+### Bug Fixes
+
+* **evaluation:** derive transferred outcome from tool calls ([#192](https://github.com/chasef07/abita_s2s/issues/192)) ([9cc456b](https://github.com/chasef07/abita_s2s/commit/9cc456b0f724cdfda1da7c3ab146cd5967d1a1f9))
+
 ## [0.19.2](https://github.com/chasef07/abita_s2s/compare/v0.19.1...v0.19.2) (2026-10-18)
 
 
