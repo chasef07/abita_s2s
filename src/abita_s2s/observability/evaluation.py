@@ -59,11 +59,23 @@ def judge_state(history: ChatContext) -> dict:
 
 def validate_answer(name: str, answers: dict) -> float:
     """Return the juror's value for ``name``, or raise if it is missing or malformed."""
+    question = QUESTIONS[name]
     answer = answers.get(name)
-    if not isinstance(answer, dict) or answer.get("type") != "noul":
+    if not isinstance(answer, dict) or answer.get("type") != question["type"]:
         raise ValueError("Invalid answer type")
-    value = answer.get("noul")
-    if type(value) not in (int, float) or not 0 <= value <= 1:
+    if question["type"] == "noul":
+        value, maximum = answer.get("noul"), 1
+    else:
+        probabilities = answer.get("probabilities")
+        if not isinstance(probabilities, dict) or not probabilities:
+            raise ValueError("Missing probabilities")
+        if any(
+            type(v) not in (int, float) or not 0 <= v <= 1
+            for v in probabilities.values()
+        ):
+            raise ValueError("Invalid probabilities")
+        value, maximum = answer.get("score"), len(question["criteria"]) - 1
+    if type(value) not in (int, float) or not 0 <= value <= maximum:
         raise ValueError("Invalid value")
     return value
 
@@ -91,7 +103,7 @@ async def evaluate_judges(
     """Ask each juror every question in one request within one deadline.
 
     A malformed answer fails only its own question. Each question takes the
-    jury's majority, even when a juror gives several questions the same value.
+    jury's majority for yes/no answers and mean for sentiment scores.
     """
     state = judge_state(history)
     results, errors = {}, {}
@@ -208,8 +220,14 @@ async def evaluate_judges(
                 )
         if len(votes) < len(JURORS) // 2 + 1:
             errors[name] = {"cause": "no_quorum", "votes": votes, "errors": failures}
-        else:
+        elif QUESTIONS[name]["type"] == "noul":
             results[name] = {**majority(votes), "errors": failures}
+        else:
+            results[name] = {
+                "score": sum(votes.values()) / len(votes),
+                "votes": votes,
+                "errors": failures,
+            }
     return {"results": results, "errors": errors, "classification": labels}
 
 

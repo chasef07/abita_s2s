@@ -94,11 +94,15 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             attempt = sum(p["model"] == juror for p in requests)
             answers = {}
             for index, (name, question) in enumerate(payload["questions"].items()):
-                default = 0.9 + index / 100
+                default = 2 if question["type"] == "score" else 0.9 + index / 100
                 value = (values or {}).get(name, default)
                 if isinstance(value, dict):
                     value = value.get(juror, default)
-                answers[name] = {"type": "noul", "noul": value}
+                answers[name] = (
+                    {"type": "score", "score": value, "probabilities": {"2": 1}}
+                    if question["type"] == "score"
+                    else {"type": "noul", "noul": value}
+                )
             if behavior:
                 response = await behavior(juror, attempt, request, answers)
                 if response is not None:
@@ -121,6 +125,94 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 {"chat_history": history.to_dict()}, "synthetic-secret", 60
             )
         return requests, result
+
+    async def test_sentiment_is_a_zero_to_four_mean_without_a_failure_verdict(self):
+        jurors = ("juror-a", "juror-b", "juror-c")
+        requests, result = await self.run_evaluation(
+            values={"expressed_sentiment": dict(zip(jurors, (0, 2, 4)))},
+            jurors=jurors,
+        )
+        question = requests[0]["questions"]["expressed_sentiment"]
+        self.assertEqual(question["type"], "score")
+        self.assertEqual(len(question["criteria"]), 5)
+        self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v8")
+        self.assertEqual(
+            result["results"]["expressed_sentiment"],
+            {
+                "score": 2,
+                "votes": dict(zip(jurors, (0, 2, 4))),
+                "errors": {},
+            },
+        )
+        self.assertEqual(result["status"], "complete")
+
+    async def test_invalid_sentiment_is_visible_without_erasing_failure_judges(self):
+        for answer in (
+            None,
+            {},
+            {"type": "noul", "noul": 0.8},
+            *(
+                {"type": "score", "score": value, "probabilities": {"2": 1}}
+                for value in (-1, 5, True, "2", float("nan"), float("inf"))
+            ),
+            *(
+                {"type": "score", "score": 2, "probabilities": probabilities}
+                for probabilities in (
+                    None,
+                    {},
+                    {"2": True},
+                    {"2": -1},
+                    {"2": float("nan")},
+                )
+            ),
+        ):
+
+            async def behavior(juror, attempt, request, answers):
+                if juror != "juror-a":
+                    answers["expressed_sentiment"] = answer
+                return httpx.Response(
+                    200, content=json.dumps({"answers": answers}).encode()
+                )
+
+            with (
+                self.subTest(answer=answer),
+                self.assertLogs("abita_s2s.observability.evaluation", "ERROR"),
+            ):
+                _, result = await self.run_evaluation(
+                    behavior, jurors=("juror-a", "juror-b", "juror-c")
+                )
+            self.assertEqual(result["status"], "incomplete")
+            self.assertNotIn("expressed_sentiment", result["results"])
+            self.assertEqual(
+                result["errors"]["expressed_sentiment"],
+                {
+                    "cause": "no_quorum",
+                    "votes": {"juror-a": 2},
+                    "errors": {"juror-b": "ValueError", "juror-c": "ValueError"},
+                },
+            )
+            self.assertTrue(result["results"]["transfer_policy_followed"]["verdict"])
+
+    async def test_sentiment_uses_valid_quorum_when_one_juror_fails(self):
+        async def behavior(juror, attempt, request, answers):
+            if juror == "juror-c":
+                answers.pop("expressed_sentiment", None)
+
+        with self.assertLogs("abita_s2s.observability.evaluation", "ERROR"):
+            _, result = await self.run_evaluation(
+                behavior,
+                values={"expressed_sentiment": {"juror-a": 0, "juror-b": 3}},
+                jurors=("juror-a", "juror-b", "juror-c"),
+            )
+        self.assertEqual(
+            result["results"]["expressed_sentiment"],
+            {
+                "score": 1.5,
+                "votes": {"juror-a": 0, "juror-b": 3},
+                "errors": {"juror-c": "ValueError"},
+            },
+        )
+        self.assertEqual(result["status"], "complete")
 
     async def test_configured_jury_uses_jev_perplexity_and_d1_ultra(self):
         requests, result = await self.run_evaluation(jurors=JURORS)
@@ -250,6 +342,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 "call_ended_correctly",
                 "transfer_policy_followed",
                 "emergency_policy_followed",
+                "expressed_sentiment",
             },
         )
         self.assertEqual(len(requests), 1)
@@ -260,6 +353,8 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["errors"], {})
         self.assertEqual(set(result["results"]), set(sent))
         for name, question in sent.items():
+            if name == "expressed_sentiment":
+                continue
             self.assertEqual(question["type"], "noul")
             self.assertEqual(set(question["criteria"]), {"true", "false"})
 
@@ -272,7 +367,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.assertEqual(len(requests), 1)
-        self.assertEqual(len(requests[0]["questions"]), 5)
+        self.assertEqual(len(requests[0]["questions"]), 6)
         self.assertEqual(result["status"], "complete")
         jev = "typesafe/jev-1.14"
         self.assertEqual(
@@ -373,8 +468,10 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                     )
                     self.assertEqual(result["status"], "complete")
                     self.assertEqual(result["errors"], {})
-                    self.assertEqual(len(requests[0]["questions"]), count)
+                    self.assertEqual(len(requests[0]["questions"]), count + 1)
                     for name in requests[0]["questions"]:
+                        if name == "expressed_sentiment":
+                            continue
                         answer = result["results"][name]
                         self.assertEqual(answer["verdict"], value > 0.4)
                         self.assertAlmostEqual(answer["probability"], value)
@@ -429,7 +526,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLogs("abita_s2s.observability.evaluation", "ERROR"),
             ):
                 _, result = await self.run_evaluation(behavior)
-                self.assertEqual(len(result["results"]), 5)
+                self.assertEqual(len(result["results"]), 6)
                 self.assertNotIn("emergency_policy_followed", result["results"])
                 self.assertEqual(
                     result["errors"]["emergency_policy_followed"],
@@ -452,7 +549,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             {"typesafe/jev-1.14": "TimeoutError"},
         )
         self.assertIn("http_status=429", str(logs.output))
-        self.assertEqual(len(result["errors"]), 5)
+        self.assertEqual(len(result["errors"]), 6)
         self.assertEqual(set(result["results"]), set(NOT_ASKED))
 
     async def test_exhausted_http_and_transport_retries_remain_visible(self):
