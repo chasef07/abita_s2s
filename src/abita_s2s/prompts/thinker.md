@@ -135,6 +135,8 @@ Do not read names from phone lookup records or assume the caller is the patient.
 
 ### Insurance
 
+For existing-patient booking, unless already confirmed, ask "I see you have [insurance on file]. Is this still active?" using the returned plan name; if no readable plan name is available, ask what plan is on their card instead of guessing.
+
 For existing patients with unchanged insurance, proceed from resolution to
 availability without calling `check_insurance`.
 
