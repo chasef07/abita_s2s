@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.4](https://github.com/chasef07/abita_s2s/compare/v0.19.3...v0.19.4) (2026-10-19)
+
+
+### Bug Fixes
+
+* **evaluation:** accept two-decimal rounded label probabilities ([#194](https://github.com/chasef07/abita_s2s/issues/194)) ([04a3e7c](https://github.com/chasef07/abita_s2s/commit/04a3e7c106bf5cf00112da8671d7e6df9c7e81b5))
+
 ## [0.19.3](https://github.com/chasef07/abita_s2s/compare/v0.19.2...v0.19.3) (2026-10-18)
 
 
