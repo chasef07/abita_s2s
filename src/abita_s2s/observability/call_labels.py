@@ -26,7 +26,11 @@ def classification(status: str, reason: str | None = None) -> dict:
 
 
 def validate_choice(answer, criteria: dict) -> str:
-    """Require the declared taxonomy and a finite distribution summing to one."""
+    """Require the declared taxonomy and a finite distribution summing to one.
+
+    The labeler rounds each probability to two decimals, so the sum may miss
+    one by up to half a rounding step per category.
+    """
     if not isinstance(answer, dict) or answer.get("type") != "choice":
         raise ValueError("classification_choice_invalid")
     probabilities = answer.get("probabilities")
@@ -41,7 +45,7 @@ def validate_choice(answer, criteria: dict) -> str:
             or not math.isfinite(value)
             for value in probabilities.values()
         )
-        or abs(sum(probabilities.values()) - 1) > 0.001
+        or abs(sum(probabilities.values()) - 1) > len(criteria) * 0.005 + 1e-9
     ):
         raise ValueError("classification_choice_invalid")
     return answer["choice"]

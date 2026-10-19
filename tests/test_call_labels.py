@@ -364,8 +364,50 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
                     float("nan"),
                     float("inf"),
                     0.9,
+                    0.98,
                 )
             ),
+            {**valid, "probabilities": {"resolved": 1, "abandoned": 0.02}},
         ):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 validate_choice(invalid, OUTCOME_CRITERIA)
+
+    def test_two_decimal_rounded_probabilities_are_accepted(self):
+        production_answer = {
+            "type": "choice",
+            "choice": "office_information",
+            "probabilities": {
+                **dict.fromkeys(INTENT_CRITERIA, 0),
+                "office_information": 0.81,
+                "other": 0.17,
+                "speak_to_staff": 0.01,
+            },
+        }
+        self.assertEqual(
+            validate_choice(production_answer, INTENT_CRITERIA), "office_information"
+        )
+        self.assertEqual(
+            validate_choice(
+                {
+                    "type": "choice",
+                    "choice": "resolved",
+                    "probabilities": {"resolved": 0.99, "abandoned": 0},
+                },
+                OUTCOME_CRITERIA,
+            ),
+            "resolved",
+        )
+
+    def test_intent_sum_beyond_rounding_error_is_rejected(self):
+        for total in (0.92, 1.08):
+            answer = {
+                "type": "choice",
+                "choice": "office_information",
+                "probabilities": {
+                    **dict.fromkeys(INTENT_CRITERIA, 0),
+                    "office_information": total - 0.17,
+                    "other": 0.17,
+                },
+            }
+            with self.subTest(total=total), self.assertRaises(ValueError):
+                validate_choice(answer, INTENT_CRITERIA)
