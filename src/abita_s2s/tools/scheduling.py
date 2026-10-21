@@ -16,6 +16,18 @@ from abita_s2s.state import CallState
 from abita_s2s.tools.context import bound
 
 
+def referral(name: str, phone: str | None, address: str | None) -> str:
+    """One referring-doctor line for the appointment comment; blank without a name."""
+    if not name.strip():
+        return ""
+    details = [name.strip()]
+    if phone and phone.strip():
+        details.append(f"phone {phone.strip()}")
+    if address and address.strip():
+        details.append(f"address {address.strip()}")
+    return "; ".join(details)
+
+
 class SchedulingTools:
     def __init__(self, scheduling: Scheduling) -> None:
         self._scheduling = scheduling
@@ -112,6 +124,8 @@ class SchedulingTools:
         appointmentReason: str,
         referringDoctor: str,
         readBack: Literal[True] | None,
+        referringDoctorPhone: str | None = None,
+        referringDoctorAddress: str | None = None,
     ) -> str:
         """Book a new appointment using a returned slot after caller confirmation of date, time and provider.
 
@@ -122,16 +136,22 @@ class SchedulingTools:
 
         Args:
             referringDoctor: New patients: reuse a supplied answer or ask "Did a doctor
-                refer you?" and get the name, phone and address they know, e.g.
-                "Dr. Lee, 352-555-0100, 12 Main St"; "none" if not referred. Existing
-                patients: "none" without asking. Never narrate "none".
+                refer you?" and get the name; "none" if not referred. Existing patients:
+                "none" without asking. Never narrate "none".
+            referringDoctorPhone: If referred, ask once for the doctor's phone and
+                address together; the office needs them to request clinical notes.
+                Say any referral note can go to eligibility@abitaeye.com. Use null for
+                what the caller does not know; do not ask again.
+            referringDoctorAddress: The referring doctor's office address.
         """
         if not bound(self._scheduling, context):
             return UNAVAILABLE
         return await self._scheduling.book(
             slot_ref=appointmentSlotRef,
             reason=appointmentReason,
-            referrer=referringDoctor,
+            referrer=referral(
+                referringDoctor, referringDoctorPhone, referringDoctorAddress
+            ),
             confirmed=readBack,
             call_id=context.function_call.call_id,
         )
@@ -166,6 +186,8 @@ class SchedulingTools:
         appointmentReason: str,
         referringDoctor: str,
         readBack: Literal[True] | None,
+        referringDoctorPhone: str | None = None,
+        referringDoctorAddress: str | None = None,
     ) -> str:
         """Move the caller-confirmed loaded appointment to a confirmed returned slot.
 
@@ -175,16 +197,22 @@ class SchedulingTools:
 
         Args:
             referringDoctor: New patients: reuse a supplied answer or ask "Did a doctor
-                refer you?" and get the name, phone and address they know, e.g.
-                "Dr. Lee, 352-555-0100, 12 Main St"; "none" if not referred. Existing
-                patients: "none" without asking. Never narrate "none".
+                refer you?" and get the name; "none" if not referred. Existing patients:
+                "none" without asking. Never narrate "none".
+            referringDoctorPhone: If referred, ask once for the doctor's phone and
+                address together; the office needs them to request clinical notes.
+                Say any referral note can go to eligibility@abitaeye.com. Use null for
+                what the caller does not know; do not ask again.
+            referringDoctorAddress: The referring doctor's office address.
         """
         if not bound(self._scheduling, context):
             return UNAVAILABLE
         return await self._scheduling.reschedule(
             slot_ref=appointmentSlotRef,
             reason=appointmentReason,
-            referrer=referringDoctor,
+            referrer=referral(
+                referringDoctor, referringDoctorPhone, referringDoctorAddress
+            ),
             confirmed=readBack,
             old_ref=oldAppointmentRef,
             call_id=context.function_call.call_id,

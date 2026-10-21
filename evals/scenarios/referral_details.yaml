@@ -4,7 +4,8 @@ name: Abita referred new patient details (ACU-137)
 # coverage with no authorization requirement and have eligible medical slots.
 # A failure partway through can leave that visit behind; cancel it before rerunning.
 # Userdata does not seed fixtures.
-# Verify the book_appointment referringDoctor argument, not only spoken claims.
+# Verify the book_appointment referringDoctor, referringDoctorPhone and
+# referringDoctorAddress arguments, not only spoken claims.
 scenarios:
   - label: Referred new patient gives the doctor's name, phone and address
     instructions: >
@@ -29,9 +30,9 @@ scenarios:
       Registers the patient, asks whether a doctor referred her, then asks once
       for the referring doctor's phone number and office address, briefly saying
       the office needs them to request clinical notes, and tells her that if she
-      has a referral note, to send it to eligibility@abitaeye.com. The book_appointment
-      referringDoctor value includes Dr. Ortiz's name, 352-555-0190, and the
-      Test Commercial Way address. Books, then cancels the same visit with
+      has a referral note, to send it to eligibility@abitaeye.com. book_appointment
+      passes referringDoctor naming Dr. Ortiz, referringDoctorPhone 352-555-0190,
+      and referringDoctorAddress with the Test Commercial Way address. Books, then cancels the same visit with
       approval, and describes each result accurately.
     userdata:
       office: spring-hill
@@ -58,8 +59,8 @@ scenarios:
       an accurate cancellation read-back and end after the result is explained.
     agent_expectations: >
       Asks for the referring doctor's phone and address once, accepts that the
-      caller does not know them without asking again, and books with a
-      referringDoctor value naming Dr. Kim. Then cancels the same visit with
+      caller does not know them without asking again, and books with
+      referringDoctor naming Dr. Kim and no phone or address. Then cancels the same visit with
       approval and describes each result accurately.
     userdata:
       office: spring-hill
