@@ -462,6 +462,8 @@ class Scheduling:
         slot_ref: str,
         reason: str,
         referrer: str,
+        referrer_phone: str | None,
+        referrer_address: str | None,
         confirmed: Literal[True] | None,
         call_id: str,
     ) -> str:
@@ -470,6 +472,8 @@ class Scheduling:
             slot_ref=slot_ref,
             reason=reason,
             referrer=referrer,
+            referrer_phone=referrer_phone,
+            referrer_address=referrer_address,
             confirmed=confirmed,
             call_id=call_id,
         )
@@ -487,6 +491,8 @@ class Scheduling:
         slot_ref: str,
         reason: str,
         referrer: str,
+        referrer_phone: str | None,
+        referrer_address: str | None,
         confirmed: Literal[True] | None,
         old_ref: str,
         call_id: str,
@@ -496,6 +502,8 @@ class Scheduling:
             slot_ref=slot_ref,
             reason=reason,
             referrer=referrer,
+            referrer_phone=referrer_phone,
+            referrer_address=referrer_address,
             confirmed=confirmed,
             old_ref=old_ref,
             call_id=call_id,
@@ -628,6 +636,8 @@ class Scheduling:
         slot_ref: str,
         reason: str,
         referrer: str,
+        referrer_phone: str | None,
+        referrer_address: str | None,
         confirmed: bool | None,
         call_id: str,
         old: Appointment | None = None,
@@ -719,6 +729,12 @@ class Scheduling:
             "visitReason": reason.strip(),
             "referringDoctor": referrer.strip(),
         }
+        for field, value in (
+            ("referringDoctorPhone", referrer_phone),
+            ("referringDoctorAddress", referrer_address),
+        ):
+            if value and value.strip():
+                body[field] = value.strip()
         if old:
             body["rescheduleToken"] = old.rescheduleToken
         self._invalidate()
@@ -848,6 +864,8 @@ class Scheduling:
         slot_ref: str,
         reason: str,
         referrer: str,
+        referrer_phone: str | None,
+        referrer_address: str | None,
         confirmed: bool | None,
         call_id: str,
     ) -> dict:
@@ -881,6 +899,8 @@ class Scheduling:
             slot_ref=slot_ref,
             reason=reason,
             referrer=referrer,
+            referrer_phone=referrer_phone,
+            referrer_address=referrer_address,
             confirmed=confirmed,
             call_id=call_id,
             old=old,

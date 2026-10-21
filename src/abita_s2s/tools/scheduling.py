@@ -16,18 +16,6 @@ from abita_s2s.state import CallState
 from abita_s2s.tools.context import bound
 
 
-def referral(name: str, phone: str | None, address: str | None) -> str:
-    """One referring-doctor line for the appointment comment; blank without a name."""
-    if not name.strip():
-        return ""
-    details = [name.strip()]
-    if phone and phone.strip():
-        details.append(f"phone {phone.strip()}")
-    if address and address.strip():
-        details.append(f"address {address.strip()}")
-    return "; ".join(details)
-
-
 class SchedulingTools:
     def __init__(self, scheduling: Scheduling) -> None:
         self._scheduling = scheduling
@@ -149,9 +137,9 @@ class SchedulingTools:
         return await self._scheduling.book(
             slot_ref=appointmentSlotRef,
             reason=appointmentReason,
-            referrer=referral(
-                referringDoctor, referringDoctorPhone, referringDoctorAddress
-            ),
+            referrer=referringDoctor,
+            referrer_phone=referringDoctorPhone,
+            referrer_address=referringDoctorAddress,
             confirmed=readBack,
             call_id=context.function_call.call_id,
         )
@@ -210,9 +198,9 @@ class SchedulingTools:
         return await self._scheduling.reschedule(
             slot_ref=appointmentSlotRef,
             reason=appointmentReason,
-            referrer=referral(
-                referringDoctor, referringDoctorPhone, referringDoctorAddress
-            ),
+            referrer=referringDoctor,
+            referrer_phone=referringDoctorPhone,
+            referrer_address=referringDoctorAddress,
             confirmed=readBack,
             old_ref=oldAppointmentRef,
             call_id=context.function_call.call_id,

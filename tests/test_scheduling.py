@@ -242,16 +242,27 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     referringDoctorPhone=" 352-555-0100 ",
                     referringDoctorAddress="12 Main St",
                 ),
-                "Dr. Lee; phone 352-555-0100; address 12 Main St",
+                {
+                    "referringDoctor": "Dr. Lee",
+                    "referringDoctorPhone": "352-555-0100",
+                    "referringDoctorAddress": "12 Main St",
+                },
             ),
-            (dict(referringDoctor="Dr. Kim", referringDoctorPhone=""), "Dr. Kim"),
+            (
+                dict(referringDoctor="Dr. Kim", referringDoctorPhone=""),
+                {"referringDoctor": "Dr. Kim"},
+            ),
         ):
             with self.subTest(expected=expected):
                 owner, requests = self.owner([inventory(), booking()])
                 ref = await self.slots(owner)
                 result = await self.book(owner, ref, **extra)
                 self.assertTrue(result.startswith("success:"), result)
-                self.assertEqual(requests[1][1]["referringDoctor"], expected)
+                body = requests[1][1]
+                self.assertEqual(
+                    {key: body[key] for key in body if key.startswith("referring")},
+                    expected,
+                )
 
     async def test_retired_booking_statuses_remain_uncertain(self):
         for status in ("partial", "success"):
