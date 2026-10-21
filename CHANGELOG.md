@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/chasef07/abita_s2s/compare/v0.19.4...v0.20.0) (2026-10-21)
+
+
+### Features
+
+* **scheduling:** collect referring doctor phone and address for referred new patients ([#196](https://github.com/chasef07/abita_s2s/issues/196)) ([7c1465f](https://github.com/chasef07/abita_s2s/commit/7c1465f768bb0d349b5589a4c8d5d5d5413dbe35))
+
 ## [0.19.4](https://github.com/chasef07/abita_s2s/compare/v0.19.3...v0.19.4) (2026-10-19)
 
 
