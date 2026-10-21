@@ -729,12 +729,10 @@ class Scheduling:
             "visitReason": reason.strip(),
             "referringDoctor": referrer.strip(),
         }
-        for field, value in (
-            ("referringDoctorPhone", referrer_phone),
-            ("referringDoctorAddress", referrer_address),
-        ):
-            if value and value.strip():
-                body[field] = value.strip()
+        if referrer_phone := (referrer_phone or "").strip():
+            body["referringDoctorPhone"] = referrer_phone
+        if referrer_address := (referrer_address or "").strip():
+            body["referringDoctorAddress"] = referrer_address
         if old:
             body["rescheduleToken"] = old.rescheduleToken
         self._invalidate()

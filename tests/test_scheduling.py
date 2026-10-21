@@ -187,17 +187,15 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.startswith("success: "), result)
         return soonest(result)[0]
 
-    async def book(self, owner, ref, **extra):
+    async def book(self, owner, ref, referringDoctor="none", **extra):
         return await self.tool(
             owner,
             "book_appointment",
             appointmentSlotRef=ref,
-            **{
-                "appointmentReason": "Blurry vision in left eye since yesterday",
-                "referringDoctor": "none",
-                "readBack": True,
-                **extra,
-            },
+            appointmentReason="Blurry vision in left eye since yesterday",
+            referringDoctor=referringDoctor,
+            readBack=True,
+            **extra,
         )
 
     async def test_scheduling_requests_omit_retired_fields(self):
