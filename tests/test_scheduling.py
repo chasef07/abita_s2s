@@ -187,13 +187,13 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.startswith("success: "), result)
         return soonest(result)[0]
 
-    async def book(self, owner, ref, **extra):
+    async def book(self, owner, ref, referringDoctor="none", **extra):
         return await self.tool(
             owner,
             "book_appointment",
             appointmentSlotRef=ref,
             appointmentReason="Blurry vision in left eye since yesterday",
-            referringDoctor="none",
+            referringDoctor=referringDoctor,
             readBack=True,
             **extra,
         )
@@ -231,6 +231,36 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                         {"insurancePlan", "coverageType", "rangeDays"}.isdisjoint(body),
                         body,
                     )
+
+    async def test_booking_sends_referring_doctor_contact_details(self):
+        for extra, expected in (
+            (
+                dict(
+                    referringDoctor="Dr. Lee",
+                    referringDoctorPhone=" 352-555-0100 ",
+                    referringDoctorAddress="12 Main St",
+                ),
+                {
+                    "referringDoctor": "Dr. Lee",
+                    "referringDoctorPhone": "352-555-0100",
+                    "referringDoctorAddress": "12 Main St",
+                },
+            ),
+            (
+                dict(referringDoctor="Dr. Kim", referringDoctorPhone=""),
+                {"referringDoctor": "Dr. Kim"},
+            ),
+        ):
+            with self.subTest(expected=expected):
+                owner, requests = self.owner([inventory(), booking()])
+                ref = await self.slots(owner)
+                result = await self.book(owner, ref, **extra)
+                self.assertTrue(result.startswith("success:"), result)
+                body = requests[1][1]
+                self.assertEqual(
+                    {key: body[key] for key in body if key.startswith("referring")},
+                    expected,
+                )
 
     async def test_retired_booking_statuses_remain_uncertain(self):
         for status in ("partial", "success"):
