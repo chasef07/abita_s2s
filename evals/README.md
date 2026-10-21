@@ -15,6 +15,7 @@ insurance, appointments, or availability.
 | [office_facts.yaml](scenarios/office_facts.yaml) | Office facts (address, office, open now, hours, staff, services) stated only from retrieved knowledge (ACU-96). |
 | [ai_disclosure.yaml](scenarios/ai_disclosure.yaml) | Saying it is an AI assistant when a caller asks, in English and Spanish. |
 | [hollywood_promotion.yaml](scenarios/hollywood_promotion.yaml) | Announcing North Miami Beach to Hollywood routine-vision callers, and not to medical callers. |
+| [referral_details.yaml](scenarios/referral_details.yaml) | Asking a referred new patient once for the referring doctor's phone and address (ACU-137). |
 
 ## Before running
 

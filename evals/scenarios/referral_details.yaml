@@ -1,0 +1,66 @@
+name: Abita referred new patient details (ACU-137)
+# Each run registers a new sandbox chart and books one medical visit, then cancels
+# it so the slot is released. Sandbox middleware must accept Aetna PPO medical
+# coverage with no authorization requirement and have eligible medical slots.
+# A failure partway through can leave that visit behind; cancel it before rerunning.
+# Userdata does not seed fixtures.
+# Verify the book_appointment referringDoctor argument, not only spoken claims.
+scenarios:
+  - label: Referred new patient gives the doctor's name, phone and address
+    instructions: >
+      You are a fictional new patient calling Abita Eye Group in Spring Hill.
+      Open with: "Hi, I'm a new patient and I'd like to book an appointment."
+      You have never registered or visited this practice before.
+      Let the receptionist lead: provide details only when asked.
+      Your full name is Rhea Referproof. When asked to spell it, say
+      R-H-E-A, R-E-F-E-R-P-R-O-O-F. Your DOB is March 3, 1988.
+      Your address is 77 Test Pine Court, Spring Hill, Florida 34609. Your sex is
+      female. Your callback number is 202-555-0161. You have no email.
+      Your insurance is Aetna commercial PPO medical coverage. You are the
+      subscriber. Your member ID is ABT03038801.
+      Your visit reason is mild dry eyes for several weeks, with no pain or sudden
+      vision changes. Dr. Lena Ortiz referred you. Only if asked, her office phone
+      is 352-555-0190 and her office is at 4100 Test Commercial Way, Spring Hill.
+      Confirm accurate read-backs, approve registration, choose an actual returned
+      slot, and approve an accurate booking read-back. After the booking is
+      confirmed, say your plans changed and ask to cancel that appointment. Approve
+      an accurate cancellation read-back and end after the result is explained.
+    agent_expectations: >
+      Registers the patient, asks whether a doctor referred her, then asks once
+      for the referring doctor's phone number and office address, briefly saying
+      the office needs them to request clinical notes, and tells her that if she
+      has a referral note, to send it to eligibility@abitaeye.com. The book_appointment
+      referringDoctor value includes Dr. Ortiz's name, 352-555-0190, and the
+      Test Commercial Way address. Books, then cancels the same visit with
+      approval, and describes each result accurately.
+    userdata:
+      office: spring-hill
+      caller_phone: "+12025550161"
+
+  - label: Referred new patient knows only the doctor's name
+    instructions: >
+      You are a fictional new patient calling Abita Eye Group in Spring Hill.
+      Open with: "Hi, I'm a new patient and I'd like to book an appointment."
+      You have never registered or visited this practice before.
+      Let the receptionist lead: provide details only when asked.
+      Your full name is Omar Nameproof. When asked to spell it, say
+      O-M-A-R, N-A-M-E-P-R-O-O-F. Your DOB is July 21, 1979.
+      Your address is 15 Test Birch Road, Spring Hill, Florida 34609. Your sex is
+      male. Your callback number is 202-555-0162. You have no email.
+      Your insurance is Aetna commercial PPO medical coverage. You are the
+      subscriber. Your member ID is ABT07217901.
+      Your visit reason is mild dry eyes for several weeks, with no pain or sudden
+      vision changes. Dr. Paul Kim referred you. You do not know his phone number
+      or office address; say so once if asked.
+      Confirm accurate read-backs, approve registration, choose an actual returned
+      slot, and approve an accurate booking read-back. After the booking is
+      confirmed, say your plans changed and ask to cancel that appointment. Approve
+      an accurate cancellation read-back and end after the result is explained.
+    agent_expectations: >
+      Asks for the referring doctor's phone and address once, accepts that the
+      caller does not know them without asking again, and books with a
+      referringDoctor value naming Dr. Kim. Then cancels the same visit with
+      approval and describes each result accurately.
+    userdata:
+      office: spring-hill
+      caller_phone: "+12025550162"

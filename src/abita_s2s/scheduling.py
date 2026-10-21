@@ -692,7 +692,7 @@ class Scheduling:
         if not referrer or not referrer.strip():
             return reply(
                 "needs_input",
-                "needs_input: Ask whether a doctor referred the caller and get their name; use 'none' only if the caller says no.",
+                "needs_input: Ask whether a doctor referred the caller and get their name, phone and address; use 'none' only if the caller says no.",
             )
         slot = offered.slot
         description = (

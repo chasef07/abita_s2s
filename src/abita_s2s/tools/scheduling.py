@@ -122,8 +122,9 @@ class SchedulingTools:
 
         Args:
             referringDoctor: New patients: reuse a supplied answer or ask "Did a doctor
-                refer you?" and get the name; "none" if not referred. Existing patients:
-                "none" without asking. Never narrate "none".
+                refer you?" and get the name, phone and address they know, e.g.
+                "Dr. Lee, 352-555-0100, 12 Main St"; "none" if not referred. Existing
+                patients: "none" without asking. Never narrate "none".
         """
         if not bound(self._scheduling, context):
             return UNAVAILABLE
@@ -174,8 +175,9 @@ class SchedulingTools:
 
         Args:
             referringDoctor: New patients: reuse a supplied answer or ask "Did a doctor
-                refer you?" and get the name; "none" if not referred. Existing patients:
-                "none" without asking. Never narrate "none".
+                refer you?" and get the name, phone and address they know, e.g.
+                "Dr. Lee, 352-555-0100, 12 Main St"; "none" if not referred. Existing
+                patients: "none" without asking. Never narrate "none".
         """
         if not bound(self._scheduling, context):
             return UNAVAILABLE
