@@ -21,6 +21,7 @@ from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.scheduling import Scheduling
 from abita_s2s.integrations.scheduling_http import SchedulingHTTP
+from abita_s2s.runtime.silence import BackendResponses
 
 
 class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
@@ -53,7 +54,12 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
             async with httpx.AsyncClient(
                 transport=httpx.MockTransport(handler)
             ) as client:
-                control = CallControl(call_state(), client, handoff=config.handoff)
+                control = CallControl(
+                    call_state(),
+                    client,
+                    handoff=config.handoff,
+                    backend=BackendResponses(),
+                )
                 with patch.dict(
                     "os.environ",
                     {"ACUITY_PRODUCT_HANDOFF_URL": "https://wrong.example/v1/handoffs"},
@@ -174,7 +180,9 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
                 )
             ) as client:
                 state = call_state()
-                control = CallControl(state, client, handoff=config.handoff)
+                control = CallControl(
+                    state, client, handoff=config.handoff, backend=BackendResponses()
+                )
                 with self.assertRaises(AdmissionRejected):
                     await control.admission.resolve()
                 state.call = replace(state.call, called_office_key="crystal-river")

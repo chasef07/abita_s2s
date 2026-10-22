@@ -33,12 +33,14 @@ class DelegationWatchdogTests(unittest.IsolatedAsyncioTestCase):
         patch.object(delegation_watchdog, "HANDOFF_SECONDS", 0.05).start()
         self.addCleanup(patch.stopall)
         self.live = FakeLive()
-        self.watchdog = DelegationWatchdog(self.live)
+        self.backend = BackendResponses()
+        self.watchdog = DelegationWatchdog(self.live, self.backend)
 
     async def quiet(self):
         await asyncio.sleep(0.1)
 
     async def test_undelegated_approval_goes_to_the_backend_with_the_false_claim(self):
+        self.backend.caller_turn()
         self.watchdog.record(caller(" Sí."))
         self.watchdog.record(voice(" Listo, ya la tengo confirmada."))
         await self.quiet()
@@ -49,6 +51,7 @@ class DelegationWatchdogTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("The caller said: Sí.", text)
         self.assertIn("Listo, ya la tengo confirmada.", text)
         self.assertEqual(create["type"], "response.create")
+        self.assertFalse(self.backend.caller_spoke_since_request)
 
     async def test_a_delegation_means_nothing_is_handed_off(self):
         self.watchdog.record(caller(" Yes, book it."))
@@ -63,9 +66,31 @@ class DelegationWatchdogTests(unittest.IsolatedAsyncioTestCase):
             await self.quiet()
         self.assertEqual(self.live.sent, [])
 
-    async def test_a_turn_the_voice_model_has_not_answered_is_left_alone(self):
-        self.watchdog.record(caller(" I'd like to book for Thursday at"))
+    async def test_a_turn_the_voice_model_has_not_answered_waits_for_silence(self):
+        self.watchdog.record(caller(" Can I talk to someone at the front desk?"))
         await self.quiet()
+        self.assertEqual(self.live.sent, [])
+        self.backend.caller_turn()
+        self.assertTrue(self.watchdog.hand_off_held())
+        item, create = self.live.sent
+        text = item["item"]["content"][0]["text"]
+        self.assertIn("The caller said: Can I talk to someone at the front desk?", text)
+        self.assertIn("The voice assistant has not answered", text)
+        self.assertEqual(create["type"], "response.create")
+        self.assertFalse(self.backend.caller_spoke_since_request)
+        self.assertFalse(self.watchdog.hand_off_held())
+
+    async def test_silence_hands_off_nothing_for_backchannels_delegations_or_busy_work(
+        self,
+    ):
+        self.watchdog.record(caller(" Mm-hmm."))
+        self.assertFalse(self.watchdog.hand_off_held())
+        self.watchdog.record(caller(" Can I talk to someone?"))
+        self.watchdog.record({"type": "session.delegation.created"})
+        self.assertFalse(self.watchdog.hand_off_held())
+        self.watchdog.record(caller(" Can I talk to someone?"))
+        self.live.backend_busy = True
+        self.assertFalse(self.watchdog.hand_off_held())
         self.assertEqual(self.live.sent, [])
 
     async def test_words_while_the_backend_works_are_not_handed_off(self):
@@ -122,12 +147,8 @@ class WiringTests(unittest.TestCase):
             ):
                 model.session()
         handlers = [call.args[1] for call in on.call_args_list]
-        self.assertTrue(
-            any(
-                getattr(h, "__self__", None).__class__ is DelegationWatchdog
-                for h in handlers
-            )
-        )
+        self.assertIsInstance(model.watchdog, DelegationWatchdog)
+        self.assertIn(model.watchdog.record, handlers)
 
 
 if __name__ == "__main__":

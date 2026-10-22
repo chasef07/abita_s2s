@@ -16,6 +16,8 @@ insurance, appointments, or availability.
 | [ai_disclosure.yaml](scenarios/ai_disclosure.yaml) | Saying it is an AI assistant when a caller asks, in English and Spanish. |
 | [hollywood_promotion.yaml](scenarios/hollywood_promotion.yaml) | Announcing North Miami Beach to Hollywood routine-vision callers, and not to medical callers. |
 | [referral_details.yaml](scenarios/referral_details.yaml) | Asking a referred new patient once for the referring doctor's phone and address (ACU-137). |
+| [record_claims.yaml](scenarios/record_claims.yaml) | Saying whether a chart exists only after a patient lookup result. |
+| [call_ending.yaml](scenarios/call_ending.yaml) | Ending the call only after the caller finishes, not on a new question after "thank you". |
 
 ## Before running
 
@@ -41,7 +43,17 @@ lk agent simulate list
 ```
 
 `--agent-name` targets an already-running registered agent. Check the selected
-project and worker configuration before running. These command forms are verified
+project and worker configuration before running.
+
+To evaluate local changes, omit `--agent-name` and pass `src/abita_s2s/main.py`
+as the entrypoint: the CLI spawns a uniquely named local agent. Never run a local
+worker registered as `abita-s2s`, because the project also hosts the deployed
+`abita-s2s` agent. The simulator writes `id:` fields into the scenario file, so
+pass a copy. Without `ACUITY_PRODUCT_KNOWLEDGE_URL` and the product secret, office
+knowledge fails locally; compare those suites before and after, not absolutely.
+Judges can mark a spoken result as premature because GPT-Live adds speech to the
+history before the tool output; check the order in the agent log before trusting
+such a failure. These command forms are verified
 against `lk agent simulate --help`, `text --help`, and `audio --help`; this guide
 does not claim a simulation was executed.
 

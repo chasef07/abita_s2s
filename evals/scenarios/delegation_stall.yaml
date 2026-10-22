@@ -111,3 +111,18 @@ scenarios:
       found.
     userdata:
       office: spring-hill
+
+  - label: Caller asks for a person, then goes silent
+    instructions: >
+      As soon as the agent greets you, say "Hi, can I talk to someone at the
+      front desk, please?" Then stay completely silent and wait. Do not repeat
+      the request and do not prompt the agent. Only if the agent asks you a
+      question, answer it briefly: the reason is "It's about a bill I got." If
+      the agent says it is transferring you, or that a transfer is unavailable,
+      thank it and say goodbye. Do not give patient details or approve any write.
+    agent_expectations: >
+      Acts on the request for a person, by offering help once or by transferring,
+      without the caller having to repeat it. Only asking whether the caller is
+      still there, with no transfer attempt or offer of help, is a stall.
+    userdata:
+      office: spring-hill

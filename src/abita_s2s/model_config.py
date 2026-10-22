@@ -23,6 +23,7 @@ def create_model(config: Config) -> GPTLiveModel:
         responses_options={
             "model": THINKER_MODEL,
             "reasoning": {"effort": THINKER_REASONING_EFFORT},
+            "parallel_tool_calls": False,
             "instructions": thinker_instructions(now),
         },
     )

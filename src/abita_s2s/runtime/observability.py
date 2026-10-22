@@ -437,5 +437,7 @@ class ObservedGPTLiveModel(GPTLiveModel):
     def session(self) -> GPTLiveSession:
         live = ObservedGPTLiveSession(self)
         live.on("openai_server_event_received", self.backend.record)
-        live.on("openai_server_event_received", DelegationWatchdog(live).record)
+        live.on("input_speech_started", self.backend.caller_turn)
+        self.watchdog = DelegationWatchdog(live, self.backend)
+        live.on("openai_server_event_received", self.watchdog.record)
         return live

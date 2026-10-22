@@ -231,8 +231,9 @@ knowledge. Follow the emergency and transfer policies immediately when applicabl
 
 - For glasses readiness, explain that a readiness text confirms pickup; the
   caller should wait for that text before coming in.
-- `end_call`: end when the caller is finished and no requested action remains
-  unhandled. Save approved staff requests before ending.
+- `end_call`: end only after the caller says goodbye or declines further help and
+  no requested action remains unhandled. Never end on an unfinished phrase or a
+  new question; answer it first. Save approved staff requests before ending.
 
 ## Return the result
 

@@ -1,10 +1,11 @@
-"""Hand the backend any caller turn the voice model answered without delegating.
+"""Hand the backend any caller turn the voice model did not delegate.
 
 GPT-Live sometimes acknowledges a request ("Sure", "Listo, confirmada") and never
-delegates it. Prompts reduce this but cannot prevent it, so once the voice model has
-answered and the call goes quiet, the caller's undelegated words go to the backend,
-which acts on them or not. A turn the voice model has not answered is left alone: the
-caller may still be talking, and the silence check-in covers a model that goes quiet.
+delegates it, or never answers at all. Prompts reduce this but cannot prevent it.
+Once the voice model has answered and the call goes quiet, the caller's undelegated
+words go to the backend, which acts on them or not. A turn the voice model has not
+answered is held, since the caller may still be talking, until the silence check-in
+finds the call quiet and hands it off.
 """
 
 import asyncio
@@ -21,8 +22,9 @@ BACKCHANNELS = frozenset({"mm-hmm", "mhm", "uh-huh", "hmm", "um", "uh"})
 class DelegationWatchdog:
     """Collects caller words the voice model has not delegated and hands them off after a quiet spell."""
 
-    def __init__(self, live) -> None:
+    def __init__(self, live, backend) -> None:
         self._live = live
+        self._backend = backend
         self._caller: list[str] = []
         self._voice: list[str] = []
         self._timer: asyncio.TimerHandle | None = None
@@ -57,21 +59,31 @@ class DelegationWatchdog:
         self._voice.clear()
 
     def _hand_off(self) -> None:
+        if "".join(self._voice).strip():
+            self.hand_off_held()
+
+    def hand_off_held(self) -> bool:
+        """Hand the backend the caller words held since the last delegation, and report whether any went."""
         caller = "".join(self._caller).strip()
         voice = "".join(self._voice).strip()
         self._reset()
         words = re.sub(r"[^\w\s-]", "", caller.lower()).strip()
-        if (
-            not voice
-            or len(words) < 2
-            or words in BACKCHANNELS
-            or self._live.backend_busy
-        ):
-            return
-        logger.warning("delegation_watchdog_handoff caller_chars=%d", len(caller))
+        if len(words) < 2 or words in BACKCHANNELS or self._live.backend_busy:
+            return False
+        logger.warning(
+            "delegation_watchdog_handoff caller_chars=%d answered=%s",
+            len(caller),
+            bool(voice),
+        )
+        self._backend.request_started()
+        answered = (
+            f"The voice assistant answered without handing it to you: {voice}\n"
+            if voice
+            else "The voice assistant has not answered or handed it to you.\n"
+        )
         message = (
             f"The caller said: {caller}\n"
-            f"The voice assistant answered without handing it to you: {voice}\n"
+            f"{answered}"
             "If the caller asked for or approved something, do it now and correct any claim "
             "that it is already done. If no backend work is needed, return an empty response."
         )
@@ -89,3 +101,4 @@ class DelegationWatchdog:
         self._live.send_event(
             {"type": "response.create", "event_id": utils.shortuuid("watchdog_create_")}
         )
+        return True

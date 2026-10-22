@@ -46,3 +46,9 @@ class ModelConfigTests(unittest.TestCase):
         options = model.call_args.kwargs["responses_options"]
         self.assertEqual(options["model"], "gpt-6-luna")
         self.assertEqual(options["reasoning"], {"effort": "high"})
+
+    def test_thinker_calls_one_tool_at_a_time(self):
+        with patch("abita_s2s.model_config.GPTLiveModel") as model:
+            create_model(Config(openai_api_key="offline"))
+        options = model.call_args.kwargs["responses_options"]
+        self.assertIs(options["parallel_tool_calls"], False)

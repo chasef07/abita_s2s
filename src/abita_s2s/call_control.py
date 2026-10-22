@@ -15,6 +15,7 @@ from abita_s2s.state import CallState
 logger = logging.getLogger(__name__)
 AMBIGUOUS = "ambiguous: Transfer may be in progress. Do not retry or end the call."
 ANNOUNCEMENT_SECONDS = 10
+TRANSFERRING = ("pending", "accepted", "ambiguous")
 
 
 class CallControl:
@@ -30,10 +31,12 @@ class CallControl:
         handoff: HandoffConfig | None = None,
         sandbox: bool = False,
         simulation: bool = False,
+        backend,
     ):
         self.state = state
         self.sandbox = sandbox
         self.simulation = simulation
+        self.backend = backend
         self.admission = HandoffAdmission(state, client, handoff)
         self.room = room
         self.sip = sip
@@ -42,6 +45,11 @@ class CallControl:
         self.ending = False
         self._closed = False
         self._transfer_task = None
+
+    @property
+    def leaving(self) -> bool:
+        """Whether a transfer or call completion is under way."""
+        return self.ending or self.status in TRANSFERRING
 
     def close_admission(self):
         self._closed = True
@@ -113,7 +121,7 @@ class CallControl:
     async def _perform_transfer(self, hold, announce):
         if self.sandbox:
             return "blocked: Human transfers are unavailable in this sandbox call. No transfer was made."
-        if self.status in ("pending", "accepted", "ambiguous"):
+        if self.status in TRANSFERRING:
             return f"{self.status}: Transfer may already be in progress. Do not retry or end the call."
         if self.ending or self.status == "failed":
             return "blocked: Transfer is unavailable. No further retry is allowed."
@@ -174,10 +182,15 @@ class CallControl:
 
     def begin_end(self, hold: Callable[[], None]) -> str | None:
         """Admit call completion, or return why the call must stay open."""
-        if self.status in ("pending", "accepted", "ambiguous"):
+        if self.status in TRANSFERRING:
             return "blocked: Transfer may be in progress. Do not hang up."
         if self.ending:
             return "pending: Call completion is already in progress."
+        if self.backend.caller_spoke_since_request:
+            return (
+                "blocked: The caller spoke again after this request. Do not end the "
+                "call; their new words come to you in a new request."
+            )
         if not self.simulation and not self._active():
             return "unavailable: No active SIP call to end. The session remains open."
         hold()

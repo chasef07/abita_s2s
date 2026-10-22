@@ -267,7 +267,6 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         session.on(
             "close", lambda event: logger.info("session_closed reason=%s", event.reason)
         )
-        check_in_on_silence(session, model.backend)
         resolver = PatientResolver(state, PatientMiddleware(client, config))
         if not ctx.is_fake_job() and simulation is None:
             sip_api = api.LiveKitAPI(failover=False)
@@ -279,6 +278,13 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             handoff=config.handoff,
             sandbox=config.deployment is not None,
             simulation=simulation is not None,
+            backend=model.backend,
+        )
+        check_in_on_silence(
+            session,
+            model.backend,
+            control,
+            lambda: model.watchdog.hand_off_held(),
         )
 
         resolver.start_phone_lookup()

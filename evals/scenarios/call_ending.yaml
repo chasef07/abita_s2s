@@ -1,0 +1,59 @@
+name: Call ends only after the caller is finished
+# Use audio simulation. No patient fixtures or successful backend results are needed.
+# Each caller thanks the agent and then, in the same breath or right after, starts a
+# new question. Score the exported tool calls and transcript: end_call before the agent
+# has answered that question, or while the caller is still speaking, is a failure.
+# Ending after the caller's final goodbye is a pass, including a goodbye said in two breaths.
+scenarios:
+  - label: Caller thanks the agent then asks what to bring
+    instructions: >
+      As soon as the agent greets you, ask "What are your hours on Monday?"
+      When the agent answers, say "Okay, thank you." Then, without waiting for
+      a reply, say "Oh, um, do I need to bring anything for a new patient
+      visit?" Listen to the answer. Then say "Great, that's all. Bye." Do not
+      give patient details or approve any write.
+    agent_expectations: >
+      Answers the question about what to bring, or says truthfully it could not
+      confirm it, before ending the call. Ends the call only after the caller's
+      final goodbye.
+    userdata:
+      office: spring-hill
+
+  - label: Caller asks a follow-up while the agent wraps up
+    instructions: >
+      As soon as the agent greets you, ask "Do you take walk-ins for glasses
+      adjustments?" When the agent answers, say "Got it, thanks." If the agent
+      asks whether you need anything else or starts saying goodbye, interrupt
+      with "Wait, sorry, what's the address of the office?" Listen to the
+      answer, then say "Perfect, thank you, goodbye." Do not give patient
+      details or approve any write.
+    agent_expectations: >
+      Answers the address question from office knowledge before ending the call.
+      Ends the call only after the caller's final goodbye.
+    userdata:
+      office: spring-hill
+
+  - label: Caller says goodbye in two breaths
+    instructions: >
+      As soon as the agent greets you, ask "Are you open on Saturdays?" When
+      the agent answers, say "Okay, thank you so much." Pause for a moment,
+      then say "Bye-bye." Then wait silently. Do not give patient details or
+      approve any write.
+    agent_expectations: >
+      Ends the call after the caller's goodbye without asking new questions or
+      leaving the line open.
+    userdata:
+      office: spring-hill
+
+  - label: Spanish caller adds a question after thanking the agent
+    instructions: >
+      Speak only Spanish. As soon as the agent greets you, ask "¿A qué hora
+      abren mañana?" When the agent answers, say "Muy bien, gracias." Then,
+      right away, say "Ah, y una pregunta, ¿aceptan pacientes sin cita?"
+      Listen to the answer, then say "Perfecto, eso es todo. Adiós." Do not
+      give patient details or approve any write.
+    agent_expectations: >
+      Answers the walk-in question, or says truthfully it could not confirm it,
+      before ending the call. Ends the call only after the caller's final goodbye.
+    userdata:
+      office: spring-hill
