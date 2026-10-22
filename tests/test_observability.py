@@ -8,13 +8,13 @@ from unittest.mock import AsyncMock, patch
 from livekit.agents import APIConnectionError
 from livekit.agents.telemetry import gen_ai
 from livekit.agents.telemetry.pii import filter_attributes
-from livekit.plugins.openai.realtime import GPTLiveSession
+from livekit.plugins.openai.realtime import GPTLiveModel, GPTLiveSession
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from abita_s2s.runtime.observability import ObservedGPTLiveModel, ProtocolTrace
+from abita_s2s.runtime.observability import ObservedGPTLiveSession, ProtocolTrace
 
 
 def backend(delegation, inner):
@@ -93,13 +93,13 @@ class TraceCase(unittest.IsolatedAsyncioTestCase):
         capture = gen_ai.capture_content_enabled()
         self.addCleanup(gen_ai.set_capture_content, capture)
         gen_ai.set_capture_content(True)
-        self.model = ObservedGPTLiveModel(
+        self.model = GPTLiveModel(
             api_key="offline",
             responses_options={"model": "gpt-6-luna", "instructions": "PRIVATE prompt"},
         )
         with self.tracer.start_as_current_span("agent_session") as parent:
             self.parent = parent
-            self.session = self.model.session()
+            self.session = ObservedGPTLiveSession(self.model)
         self.session._handle_event(
             {"type": "session.started", "session": {"id": "live_test"}}
         )

@@ -19,8 +19,7 @@ from livekit.plugins.openai.realtime.gpt_live_model import DEFAULT_BACKEND_MODEL
 from opentelemetry import trace
 from opentelemetry.util.types import AttributeValue
 
-from abita_s2s.runtime.delegation_watchdog import DelegationWatchdog
-from abita_s2s.runtime.silence import FINISHED, BackendResponses
+from abita_s2s.runtime.silence import FINISHED
 
 logger = logging.getLogger(__name__)
 
@@ -273,18 +272,6 @@ class ObservedGPTLiveSession(GPTLiveSession):
         self._backend_traces: dict[str | None, BackendResponseTrace] = {}
         self._protocol_trace = ProtocolTrace()
 
-    @property
-    def backend_busy(self) -> bool:
-        """Whether a backend response, tool call, or continuation is still outstanding.
-
-        Running responses come from our own tracker, which also clears cancelled ones.
-        """
-        return bool(
-            self._live_model.backend.running
-            or self._backend_open_calls
-            or self._backend_response_pending
-        )
-
     async def _run_ws(self, ws_conn) -> None:
         try:
             await super()._run_ws(ws_conn)
@@ -425,17 +412,3 @@ class ObservedGPTLiveSession(GPTLiveSession):
                 current.output.extend(
                     gen_ai.to_output_messages(function_calls=accepted)
                 )
-
-
-class ObservedGPTLiveModel(GPTLiveModel):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.backend = BackendResponses()
-
-    def session(self) -> GPTLiveSession:
-        live = ObservedGPTLiveSession(self)
-        live.on("openai_server_event_received", self.backend.record)
-        live.on("input_speech_started", self.backend.caller_turn)
-        self.watchdog = DelegationWatchdog(live, self.backend)
-        live.on("openai_server_event_received", self.watchdog.record)
-        return live
