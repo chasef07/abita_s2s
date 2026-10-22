@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/chasef07/abita_s2s/compare/v0.20.0...v0.20.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **voice:** SpawnThinking delegation, spoken stalls and check-ins, end_call hold, sequential tools, seeded greeting ([#198](https://github.com/chasef07/abita_s2s/issues/198)) ([b640376](https://github.com/chasef07/abita_s2s/commit/b6403762570c4e284d827232b3112299289b6567))
+
 ## [0.20.0](https://github.com/chasef07/abita_s2s/compare/v0.19.4...v0.20.0) (2026-10-21)
 
 
