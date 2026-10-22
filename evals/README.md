@@ -6,9 +6,9 @@ not seed patients, insurance, appointments, or availability.
 
 ## Before running
 
-Use a configured LiveKit Cloud project, an already-running `abita-s2s` worker,
-and sandbox patient middleware. The worker's simulation path disables Product
-writes and live SIP transfer setup; configured office knowledge reads remain
+Use a configured LiveKit Cloud project and sandbox patient middleware. The
+worker's simulation path disables Product writes and live SIP transfer setup;
+configured office knowledge reads remain
 available. Configuration is documented in [.env.example](../.env.example).
 
 Read the prerequisite comments in each YAML. The appointment scenario books,
@@ -19,22 +19,22 @@ Missing fixtures or failed middleware leave the scenario unproven.
 
 ## Run a suite
 
-From the repository root, with the intended LiveKit project selected:
+From the repository root, with the intended LiveKit project selected, pass
+`src/abita_s2s/main.py` as the entrypoint. The simulator writes `id:` fields into
+the scenario file, so pass a copy:
 
 ```sh
-lk agent simulate text --agent-name abita-s2s --scenarios evals/scenarios/scenarios.yaml
-lk agent simulate audio --agent-name abita-s2s --scenarios evals/scenarios/slot_identity.yaml
+cp evals/scenarios/ai_disclosure.yaml /tmp/ai_disclosure.yaml
+lk agent simulate audio --scenarios /tmp/ai_disclosure.yaml -k 3 -y src/abita_s2s/main.py
 lk agent simulate list
 ```
 
-`--agent-name` targets an already-running registered agent. Check the selected
-project and worker configuration before running.
+The CLI spawns a uniquely named local agent. Do not pass `--agent-name`, because
+the project also hosts the deployed `abita-s2s` agent. Only the deployed image
+sets `ABITA_S2S_DEPLOYED`, so a local `abita-s2s dev` worker registers as
+`abita-s2s-local-<user>` and never takes production calls.
 
-To evaluate local changes, omit `--agent-name` and pass `src/abita_s2s/main.py`
-as the entrypoint: the CLI spawns a uniquely named local agent. Never run a local
-worker registered as `abita-s2s`, because the project also hosts the deployed
-`abita-s2s` agent. The simulator writes `id:` fields into the scenario file, so
-pass a copy. Without `ACUITY_PRODUCT_KNOWLEDGE_URL` and the product secret, office
+Without `ACUITY_PRODUCT_KNOWLEDGE_URL` and the product secret, office
 knowledge fails locally; compare those suites before and after, not absolutely.
 Judges can mark a spoken result as premature because GPT-Live adds speech to the
 history before the tool output; check the order in the agent log before trusting
