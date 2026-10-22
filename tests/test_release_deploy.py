@@ -386,7 +386,9 @@ class DeployTests(unittest.TestCase):
         config = Path("livekit.toml").resolve()
         with (
             patch.object(deploy, "target", return_value="CA_python"),
-            patch.object(deploy, "run", return_value="lk version 2.18.8") as run,
+            patch.object(
+                deploy, "run", return_value=f"lk version {deploy.LK_VERSION}"
+            ) as run,
         ):
             client = deploy.LiveKit(config)
             client.command("deploy", ".")
