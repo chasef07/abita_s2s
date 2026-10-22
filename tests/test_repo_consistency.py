@@ -1,6 +1,7 @@
 """Hand-kept repository facts agree with their one source."""
 
 import re
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -32,6 +33,10 @@ PINS = {
 }
 
 
+def git(*args):
+    return subprocess.check_output(["git", *args], cwd=ROOT, text=True)
+
+
 class RepoConsistencyTests(unittest.TestCase):
     def test_toolchain_pins_agree_with_their_source(self):
         found = []
@@ -53,3 +58,23 @@ class RepoConsistencyTests(unittest.TestCase):
                             f"but {source_path} pins {'.'.join(expected)}"
                         )
         self.assertEqual(found, [], "Pin every file to the same version")
+
+    def test_tracked_files_match_no_gitignore_rule(self):
+        listing = git(
+            "ls-files",
+            "-z",
+            "--cached",
+            "--ignored",
+            "--exclude-per-directory=.gitignore",
+        )
+        tracked = [path for path in listing.split("\0") if path]
+        rules = (
+            git("check-ignore", "-v", "--no-index", "--", *tracked).splitlines()
+            if tracked
+            else []
+        )
+        found = [
+            f"{path} matches {rule}; run git rm --cached {path}"
+            for rule, path in (line.split("\t") for line in rules)
+        ]
+        self.assertEqual(found, [], "Scratch output stays untracked")
