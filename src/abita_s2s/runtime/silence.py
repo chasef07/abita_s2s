@@ -1,14 +1,14 @@
 """Speak up when LiveKit marks the caller away or a backend response fails; the model never speaks unprompted."""
 
+from collections.abc import Callable
+
 from livekit.agents import AgentSession, UserStateChangedEvent
 
 from abita_s2s.call_control import CallControl
 
 CHECK_IN = (
-    "The caller has been silent and no backend work is running. If the caller "
-    "gave information or a request you have not handed off yet, generate "
-    "<|SpawnThinking|> now. Otherwise, if they asked for time, briefly say you "
-    "are still here; if not, ask whether they are still there or need anything else."
+    "Briefly say you are still here, and ask whether the caller is still there "
+    "or needs anything else."
 )
 STILL_WORKING = (
     "Tell the caller in one short sentence that you are still working on it. "
@@ -56,13 +56,19 @@ class BackendResponses:
 
 
 def check_in_on_silence(
-    session: AgentSession, backend: BackendResponses, control: CallControl
+    session: AgentSession,
+    backend: BackendResponses,
+    control: CallControl,
+    hand_off_unanswered: Callable[[], bool],
 ) -> None:
     def on_user_state(event: UserStateChangedEvent) -> None:
         if event.new_state != "away":
             return
         if backend.running:
             session.generate_reply(instructions=STILL_WORKING)
+            session.reset_away_timer()
+            return
+        if hand_off_unanswered():
             session.reset_away_timer()
             return
         session.generate_reply(instructions=CHECK_IN)

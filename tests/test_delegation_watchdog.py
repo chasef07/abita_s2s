@@ -66,9 +66,31 @@ class DelegationWatchdogTests(unittest.IsolatedAsyncioTestCase):
             await self.quiet()
         self.assertEqual(self.live.sent, [])
 
-    async def test_a_turn_the_voice_model_has_not_answered_is_left_alone(self):
-        self.watchdog.record(caller(" I'd like to book for Thursday at"))
+    async def test_a_turn_the_voice_model_has_not_answered_waits_for_silence(self):
+        self.watchdog.record(caller(" Can I talk to someone at the front desk?"))
         await self.quiet()
+        self.assertEqual(self.live.sent, [])
+        self.backend.caller_turn()
+        self.assertTrue(self.watchdog.hand_off_unanswered())
+        item, create = self.live.sent
+        text = item["item"]["content"][0]["text"]
+        self.assertIn("The caller said: Can I talk to someone at the front desk?", text)
+        self.assertIn("The voice assistant has not answered", text)
+        self.assertEqual(create["type"], "response.create")
+        self.assertFalse(self.backend.caller_spoke_since_request)
+        self.assertFalse(self.watchdog.hand_off_unanswered())
+
+    async def test_silence_hands_off_nothing_for_backchannels_delegations_or_busy_work(
+        self,
+    ):
+        self.watchdog.record(caller(" Mm-hmm."))
+        self.assertFalse(self.watchdog.hand_off_unanswered())
+        self.watchdog.record(caller(" Can I talk to someone?"))
+        self.watchdog.record({"type": "session.delegation.created"})
+        self.assertFalse(self.watchdog.hand_off_unanswered())
+        self.watchdog.record(caller(" Can I talk to someone?"))
+        self.live.backend_busy = True
+        self.assertFalse(self.watchdog.hand_off_unanswered())
         self.assertEqual(self.live.sent, [])
 
     async def test_words_while_the_backend_works_are_not_handed_off(self):

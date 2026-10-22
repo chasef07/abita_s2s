@@ -280,7 +280,12 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             simulation=simulation is not None,
             backend=model.backend,
         )
-        check_in_on_silence(session, model.backend, control)
+        check_in_on_silence(
+            session,
+            model.backend,
+            control,
+            lambda: model.watchdog.hand_off_unanswered(),
+        )
 
         resolver.start_phone_lookup()
         insurance = InsuranceRegistration(
