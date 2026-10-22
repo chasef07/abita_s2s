@@ -84,6 +84,30 @@ class OfficeRoutingTests(unittest.TestCase):
                 get_office_profile_by_phone(demo)
 
 
+class GreetingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_greeting_seeds_startup_history_and_is_spoken_once(self):
+        agent = AbitaAgent(SPRING_HILL, None)
+        seeded = [
+            item
+            for item in agent.chat_ctx.items
+            if item.type == "message" and item.role == "developer"
+        ]
+        self.assertEqual(len(seeded), 1)
+        self.assertIn(
+            f'Practice name: "{SPRING_HILL.greeting_name}"', seeded[0].text_content
+        )
+        handle = asyncio.get_running_loop().create_future()
+        handle.set_result(None)
+        session = SimpleNamespace(generate_reply=Mock(return_value=handle))
+        with patch.object(
+            AbitaAgent, "session", new_callable=PropertyMock, return_value=session
+        ):
+            await agent.on_enter()
+        session.generate_reply.assert_called_once_with(
+            instructions=seeded[0].text_content
+        )
+
+
 class StartupTests(unittest.IsolatedAsyncioTestCase):
     async def test_session_and_greeting_start_while_phone_lookup_is_pending(self):
         entered, release, greeted = asyncio.Event(), asyncio.Event(), asyncio.Event()
