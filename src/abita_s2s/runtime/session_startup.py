@@ -284,7 +284,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             session,
             model.backend,
             control,
-            lambda: model.watchdog.hand_off_unanswered(),
+            lambda: model.watchdog.hand_off_held(),
         )
 
         resolver.start_phone_lookup()

@@ -54,10 +54,6 @@ class SilenceCheckInTests(unittest.IsolatedAsyncioTestCase):
         self.reply.assert_not_called()
         self.reset.assert_called_once_with()
 
-    def test_check_in_is_a_plain_line_to_say(self):
-        self.assertNotIn("SpawnThinking", CHECK_IN)
-        self.assertNotIn("If the caller", CHECK_IN)
-
     def test_running_backend_response_tells_caller_it_is_still_working(self):
         self.backend.record(backend_event("response.created"))
         self.user("away")

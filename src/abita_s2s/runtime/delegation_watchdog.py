@@ -60,15 +60,10 @@ class DelegationWatchdog:
 
     def _hand_off(self) -> None:
         if "".join(self._voice).strip():
-            self._send()
+            self.hand_off_held()
 
-    def hand_off_unanswered(self) -> bool:
-        """On silence, hand the backend caller words the voice model neither answered nor delegated."""
-        if "".join(self._voice).strip():
-            return False
-        return self._send()
-
-    def _send(self) -> bool:
+    def hand_off_held(self) -> bool:
+        """Hand the backend the caller words held since the last delegation, and report whether any went."""
         caller = "".join(self._caller).strip()
         voice = "".join(self._voice).strip()
         self._reset()

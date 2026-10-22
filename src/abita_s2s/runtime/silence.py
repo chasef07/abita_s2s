@@ -59,7 +59,7 @@ def check_in_on_silence(
     session: AgentSession,
     backend: BackendResponses,
     control: CallControl,
-    hand_off_unanswered: Callable[[], bool],
+    hand_off_held: Callable[[], bool],
 ) -> None:
     def on_user_state(event: UserStateChangedEvent) -> None:
         if event.new_state != "away":
@@ -68,7 +68,7 @@ def check_in_on_silence(
             session.generate_reply(instructions=STILL_WORKING)
             session.reset_away_timer()
             return
-        if hand_off_unanswered():
+        if hand_off_held():
             session.reset_away_timer()
             return
         session.generate_reply(instructions=CHECK_IN)
