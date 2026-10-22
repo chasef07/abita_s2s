@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from livekit.agents import AgentSession, UserStateChangedEvent
@@ -26,7 +27,8 @@ class SilenceCheckInTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.backend = BackendResponses()
         self.session = AgentSession(llm=ObservedGPTLiveModel(api_key="offline"))
-        check_in_on_silence(self.session, self.backend)
+        self.control = SimpleNamespace(leaving=False)
+        check_in_on_silence(self.session, self.backend, self.control)
         self.reset = patch.object(self.session, "reset_away_timer").start()
         self.reply = patch.object(self.session, "generate_reply").start()
         self.addCleanup(patch.stopall)
@@ -63,6 +65,16 @@ class SilenceCheckInTests(unittest.IsolatedAsyncioTestCase):
             self.backend.record(backend_event(kind))
         self.reply.assert_not_called()
 
+    def test_failure_stays_quiet_for_watchdog_other_work_or_a_leaving_call(self):
+        self.backend.record(backend_event("response.created", None))
+        self.backend.record(backend_event("response.failed", None))
+        self.backend.record(backend_event("response.created", "d1"))
+        self.backend.record(backend_event("response.created", "d2"))
+        self.backend.record(backend_event("response.failed", "d1"))
+        self.control.leaving = True
+        self.backend.record(backend_event("response.failed", "d2"))
+        self.reply.assert_not_called()
+
 
 class BackendResponsesTests(unittest.TestCase):
     def test_tracks_each_delegation_until_it_finishes(self):
@@ -74,13 +86,19 @@ class BackendResponsesTests(unittest.TestCase):
         backend.record(backend_event("response.failed", "d2"))
         self.assertEqual(backend.running, set())
 
-    def test_caller_turn_counts_until_the_next_backend_request(self):
+    def test_caller_turn_counts_until_the_next_request_not_a_continuation(self):
         backend = BackendResponses()
+        backend.record({"type": "session.delegation.created"})
         backend.record(backend_event("response.created", "d1"))
         self.assertFalse(backend.caller_spoke_since_request)
         backend.caller_turn()
+        backend.record(backend_event("response.completed", "d1"))
+        backend.record(backend_event("response.created", "d1"))
         self.assertTrue(backend.caller_spoke_since_request)
-        backend.record(backend_event("response.created", "d2"))
+        backend.record({"type": "session.delegation.created"})
+        self.assertFalse(backend.caller_spoke_since_request)
+        backend.caller_turn()
+        backend.record(backend_event("response.created", None))
         self.assertFalse(backend.caller_spoke_since_request)
 
     def test_new_connection_drops_responses_from_the_old_one(self):

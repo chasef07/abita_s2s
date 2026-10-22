@@ -3,7 +3,7 @@ name: Call ends only after the caller is finished
 # Each caller thanks the agent and then, in the same breath or right after, starts a
 # new question. Score the exported tool calls and transcript: end_call before the agent
 # has answered that question, or while the caller is still speaking, is a failure.
-# Ending after the caller's final goodbye is a pass.
+# Ending after the caller's final goodbye is a pass, including a goodbye said in two breaths.
 scenarios:
   - label: Caller thanks the agent then asks what to bring
     instructions: >
@@ -30,6 +30,18 @@ scenarios:
     agent_expectations: >
       Answers the address question from office knowledge before ending the call.
       Ends the call only after the caller's final goodbye.
+    userdata:
+      office: spring-hill
+
+  - label: Caller says goodbye in two breaths
+    instructions: >
+      As soon as the agent greets you, ask "Are you open on Saturdays?" When
+      the agent answers, say "Okay, thank you so much." Pause for a moment,
+      then say "Bye-bye." Then wait silently. Do not give patient details or
+      approve any write.
+    agent_expectations: >
+      Ends the call after the caller's goodbye without asking new questions or
+      leaving the line open.
     userdata:
       office: spring-hill
 

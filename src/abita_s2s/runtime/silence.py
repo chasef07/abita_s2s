@@ -2,6 +2,8 @@
 
 from livekit.agents import AgentSession, UserStateChangedEvent
 
+from abita_s2s.call_control import CallControl
+
 CHECK_IN = (
     "The caller has been silent and no backend work is running. If the caller "
     "gave information or a request you have not handed off yet, generate "
@@ -21,7 +23,7 @@ FINISHED = FAILED | {"response.completed", "response.cancelled"}
 
 
 class BackendResponses:
-    """Delegated backend responses the voice model is still waiting on, and whether the caller spoke since the latest began."""
+    """Delegated backend responses the voice model is still waiting on, and whether the caller spoke since the latest request."""
 
     def __init__(self) -> None:
         self.running: set[str | None] = set()
@@ -32,22 +34,28 @@ class BackendResponses:
         kind = event.get("type")
         if kind == "session.started":
             self.running.clear()
+        if kind == "session.delegation.created":
+            self.caller_spoke_since_request = False
         if kind != "response.event":
             return
         inner = event.get("event", {}).get("type")
+        delegation_id = event.get("delegation_id")
         if inner == "response.created":
-            self.running.add(event.get("delegation_id"))
-            self.caller_spoke_since_request = False
+            self.running.add(delegation_id)
+            if delegation_id is None:
+                self.caller_spoke_since_request = False
         elif inner in FINISHED:
-            self.running.discard(event.get("delegation_id"))
+            self.running.discard(delegation_id)
             if inner in FAILED and self.on_failure:
-                self.on_failure()
+                self.on_failure(delegation_id)
 
-    def caller_turn(self, _event=None) -> None:
+    def caller_turn(self) -> None:
         self.caller_spoke_since_request = True
 
 
-def check_in_on_silence(session: AgentSession, backend: BackendResponses) -> None:
+def check_in_on_silence(
+    session: AgentSession, backend: BackendResponses, control: CallControl
+) -> None:
     def on_user_state(event: UserStateChangedEvent) -> None:
         if event.new_state != "away":
             return
@@ -57,5 +65,10 @@ def check_in_on_silence(session: AgentSession, backend: BackendResponses) -> Non
             return
         session.generate_reply(instructions=CHECK_IN)
 
-    backend.on_failure = lambda: session.generate_reply(instructions=COULD_NOT_FINISH)
+    def on_failure(delegation_id: str | None) -> None:
+        if delegation_id is None or backend.running or control.leaving:
+            return
+        session.generate_reply(instructions=COULD_NOT_FINISH)
+
+    backend.on_failure = on_failure
     session.on("user_state_changed", on_user_state)

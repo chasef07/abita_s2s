@@ -20,6 +20,7 @@ from abita_s2s.config import HandoffConfig, load_config
 from abita_s2s.handoff import HandoffAdmission
 from abita_s2s.integrations.patient_middleware import Receipt
 from abita_s2s.offices import SPRING_HILL, get_office_profile
+from abita_s2s.runtime.silence import BackendResponses
 
 
 class Model(llm.LLM):
@@ -137,7 +138,9 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             transport=httpx.MockTransport(lambda request: httpx.Response(500))
         )
         self.addAsyncCleanup(self.client.aclose)
-        self.control = CallControl(self.state, self.client, self.room, self.sip)
+        self.control = CallControl(
+            self.state, self.client, self.room, self.sip, backend=BackendResponses()
+        )
         self.tools = CallControlTools(self.control)
         self.model = Model()
         self.session = AgentSession(llm=self.model, userdata=self.state)
