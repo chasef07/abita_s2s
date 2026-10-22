@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.2](https://github.com/chasef07/abita_s2s/compare/v0.20.1...v0.20.2) (2026-10-22)
+
+
+### Miscellaneous Chores
+
+* release 0.20.2 ([a99fbc9](https://github.com/chasef07/abita_s2s/commit/a99fbc99b5580f87017bbf897e379d57b715c5ce))
+
 ## [0.20.1](https://github.com/chasef07/abita_s2s/compare/v0.20.0...v0.20.1) (2026-10-22)
 
 
