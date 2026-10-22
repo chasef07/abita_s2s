@@ -1,23 +1,8 @@
 # LiveKit simulation scenarios
 
-Scenario YAML lives in [scenarios/](scenarios/). These files describe simulated
-callers, expected behavior, and office/caller context; they do not seed patients,
-insurance, appointments, or availability.
-
-| Suite | Exercises |
-| --- | --- |
-| [scenarios.yaml](scenarios/scenarios.yaml) | New-patient intake and existing-patient identity resolution. |
-| [availability.yaml](scenarios/availability.yaml) | Existing-patient availability searches. |
-| [appointments.yaml](scenarios/appointments.yaml) | Booking, rescheduling, and cancelling one visit in a single call. |
-| [knowledge.yaml](scenarios/knowledge.yaml) | Office and provider knowledge from Product. |
-| [visit_type_triage.yaml](scenarios/visit_type_triage.yaml) | Asking the visit type for an ambiguous eye exam and searching the triaged type. |
-| [slot_identity.yaml](scenarios/slot_identity.yaml) | Selecting the confirmed date when adjacent dates share a provider and time. |
-| [office_facts.yaml](scenarios/office_facts.yaml) | Office facts (address, office, open now, hours, staff, services) stated only from retrieved knowledge (ACU-96). |
-| [ai_disclosure.yaml](scenarios/ai_disclosure.yaml) | Saying it is an AI assistant when a caller asks, in English and Spanish. |
-| [hollywood_promotion.yaml](scenarios/hollywood_promotion.yaml) | Announcing North Miami Beach to Hollywood routine-vision callers, and not to medical callers. |
-| [referral_details.yaml](scenarios/referral_details.yaml) | Asking a referred new patient once for the referring doctor's phone and address (ACU-137). |
-| [record_claims.yaml](scenarios/record_claims.yaml) | Saying whether a chart exists only after a patient lookup result. |
-| [call_ending.yaml](scenarios/call_ending.yaml) | Ending the call only after the caller finishes, not on a new question after "thank you". |
+Scenario YAML lives in [scenarios/](scenarios/), one suite per file. These files
+describe simulated callers, expected behavior, and office/caller context; they do
+not seed patients, insurance, appointments, or availability.
 
 ## Before running
 
