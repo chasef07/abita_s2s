@@ -1,4 +1,4 @@
-# Abita S2S
+# Abita S2S 
 
 A Python LiveKit worker for Abita's voice receptionist. One job owns one call: one
 `AgentSession`, one `CallState`, and one shared HTTP client. GPT-Live handles speech and
