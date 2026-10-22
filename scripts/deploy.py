@@ -17,6 +17,7 @@ from release import component_version, component_files, digest
 
 from abita_s2s.release import COMPONENTS, checksums, content_digest
 
+LK_VERSION = "2.18.8"
 KEYS = (
     "agent_version",
     "git_commit",
@@ -98,8 +99,8 @@ class LiveKit:
     def __init__(self, config):
         self.agent = target(config)
         self.prefix = ["lk", "--config", os.path.relpath(config.resolve()), "--yes"]
-        if run("lk", "--version") != "lk version 2.18.8":
-            raise ValueError("LiveKit CLI 2.18.8 is required")
+        if run("lk", "--version") != f"lk version {LK_VERSION}":
+            raise ValueError(f"LiveKit CLI {LK_VERSION} is required")
 
     def command(self, *args):
         return run(*self.prefix, "agent", *args)
