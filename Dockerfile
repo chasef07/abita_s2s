@@ -2,6 +2,7 @@
 FROM ghcr.io/astral-sh/uv:0.13.1 AS uv
 FROM python:3.13.16-slim-bookworm
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy LIVEKIT_AGENTS_PRELOAD_LOCAL_INFERENCE=0
+ENV ABITA_S2S_DEPLOYED=1
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN --mount=from=uv,source=/uv,target=/bin/uv \
