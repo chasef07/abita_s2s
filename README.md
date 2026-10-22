@@ -111,7 +111,12 @@ ABITA_CONSOLE_OFFICE=spring-hill uv run abita-s2s console
 uv run abita-s2s dev
 uv run --no-sync python -m unittest discover -s tests -q
 uv run --no-sync ruff check . && uv run --no-sync ruff format --check .
+uv run --no-sync basedpyright
 ```
+
+`basedpyright` fails only on type errors missing from
+[.basedpyright/baseline.json](.basedpyright/baseline.json). When a fix removes a baselined
+error, the run rewrites the file; commit it, since CI fails on a stale baseline.
 
 Deploy middleware contracts before their agent consumer. Offline tests and
 [eval scenarios](evals/README.md) do not prove live audio, SIP, or provider writes.
