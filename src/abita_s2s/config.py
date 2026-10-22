@@ -1,5 +1,6 @@
 """Read runtime credentials without exposing them in logs or repr."""
 
+import getpass
 import os
 from dataclasses import dataclass, field
 from urllib.parse import SplitResult, urlsplit
@@ -42,6 +43,16 @@ def _is_service_url(url: SplitResult) -> bool:
             )
         )
     )
+
+
+def agent_name() -> str:
+    """Only the deployed image sets ABITA_S2S_DEPLOYED, so local workers never take production calls."""
+    deployed = os.environ.get("ABITA_S2S_DEPLOYED", "")
+    if deployed not in ("", "1"):
+        raise ValueError("ABITA_S2S_DEPLOYED must be 1 or unset")
+    if deployed:
+        return "abita-s2s"
+    return "abita-s2s-local-" + getpass.getuser()
 
 
 def load_config() -> Config:
