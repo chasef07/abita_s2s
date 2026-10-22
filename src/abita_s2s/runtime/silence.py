@@ -3,6 +3,7 @@
 from collections.abc import Callable
 
 from livekit.agents import AgentSession, UserStateChangedEvent
+from livekit.plugins.openai.realtime import GPTLiveSession
 
 from abita_s2s.call_control import CallControl
 
@@ -24,12 +25,35 @@ FINISHED = FAILED | {"response.completed", "response.cancelled"}
 
 
 class BackendResponses:
-    """Delegated backend responses the voice model is still waiting on, and whether the caller spoke since the latest request."""
+    """Whether the backend is busy, for every reader in the call, and whether the caller spoke since the latest request.
+
+    ``running`` holds the delegated responses the voice model still waits on, and decides what
+    the caller hears. ``busy`` also counts tool calls that wait for their outputs and a pending
+    continuation. The service rejects a new request that would split that batch, so the
+    watchdog checks ``busy`` before it sends one.
+    """
 
     def __init__(self) -> None:
         self.running: set[str | None] = set()
         self.caller_spoke_since_request = False
         self.on_failure = None
+        self._live: GPTLiveSession | None = None
+
+    def follow(self, live: GPTLiveSession) -> None:
+        self._live = live
+        live.on("openai_server_event_received", self.record)
+        live.on("input_speech_started", self.caller_turn)
+
+    @property
+    def busy(self) -> bool:
+        live = self._live
+        return bool(
+            self.running
+            or (
+                live is not None
+                and (live._backend_open_calls or live._backend_response_pending)
+            )
+        )
 
     def record(self, event: dict) -> None:
         kind = event.get("type")

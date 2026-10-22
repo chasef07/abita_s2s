@@ -1,12 +1,20 @@
-"""Verify the clock context supplied to the managed thinker at call startup."""
+"""Verify the managed thinker configuration and what each live session is wired to."""
 
 import unittest
 from datetime import datetime
 from unittest.mock import patch
 
+from livekit.plugins.openai.realtime import GPTLiveSession
+
 from abita_s2s.config import Config
-from abita_s2s.model_config import create_model
+from abita_s2s.model_config import CallModel, create_model
 from abita_s2s.prompt import load_prompt
+from abita_s2s.runtime.observability import ObservedGPTLiveSession
+
+
+async def idle(session):
+    async for _ in session._msg_ch:
+        pass
 
 
 class ModelConfigTests(unittest.TestCase):
@@ -21,7 +29,7 @@ class ModelConfigTests(unittest.TestCase):
         )
         with (
             patch("abita_s2s.model_config.datetime") as clock,
-            patch("abita_s2s.model_config.GPTLiveModel") as model,
+            patch("abita_s2s.model_config.CallModel") as model,
         ):
             for instant, expected in cases:
                 with self.subTest(instant=instant):
@@ -41,14 +49,59 @@ class ModelConfigTests(unittest.TestCase):
             self.assertEqual(clock.now.call_count, len(cases))
 
     def test_thinker_reasons_at_high_effort(self):
-        with patch("abita_s2s.model_config.GPTLiveModel") as model:
+        with patch("abita_s2s.model_config.CallModel") as model:
             create_model(Config(openai_api_key="offline"))
         options = model.call_args.kwargs["responses_options"]
         self.assertEqual(options["model"], "gpt-6-luna")
         self.assertEqual(options["reasoning"], {"effort": "high"})
 
     def test_thinker_calls_one_tool_at_a_time(self):
-        with patch("abita_s2s.model_config.GPTLiveModel") as model:
+        with patch("abita_s2s.model_config.CallModel") as model:
             create_model(Config(openai_api_key="offline"))
         options = model.call_args.kwargs["responses_options"]
         self.assertIs(options["parallel_tool_calls"], False)
+
+
+class CallModelTests(unittest.IsolatedAsyncioTestCase):
+    async def test_each_session_is_traced_and_feeds_the_backend_and_watchdog(self):
+        with patch.object(GPTLiveSession, "_main_task", idle):
+            model = CallModel(api_key="offline")
+            live = model.session()
+        self.addAsyncCleanup(model.aclose)
+        self.addAsyncCleanup(live.aclose)
+        self.assertIsInstance(live, ObservedGPTLiveSession)
+        sent = patch.object(live, "send_event").start()
+        self.addCleanup(patch.stopall)
+        for event in (
+            {"type": "session.input_transcript.delta", "delta": " Book it please."},
+            {
+                "type": "response.event",
+                "delegation_id": "d1",
+                "event": {"type": "response.created"},
+            },
+            {
+                "type": "response.event",
+                "delegation_id": "d1",
+                "event": {
+                    "type": "response.output_item.done",
+                    "item": {
+                        "type": "function_call",
+                        "status": "completed",
+                        "call_id": "c1",
+                        "name": "book",
+                        "arguments": "{}",
+                    },
+                },
+            },
+            {
+                "type": "response.event",
+                "delegation_id": "d1",
+                "event": {"type": "response.completed"},
+            },
+        ):
+            live.emit("openai_server_event_received", event)
+            live._handle_event(event)
+        self.assertTrue(model.backend.caller_spoke_since_request)
+        self.assertEqual(model.backend.running, set())
+        self.assertFalse(model.watchdog.hand_off_held())
+        sent.assert_not_called()
