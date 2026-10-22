@@ -1,18 +1,37 @@
 """Exercise the real evaluator through a synthetic HTTP boundary."""
 
 import json
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import httpx
 from livekit.agents import ChatContext
 from livekit.agents.llm import AgentConfigUpdate, FunctionCall, FunctionCallOutput
 
-from abita_s2s.observability.evaluation import evaluate_call, judge_state
-from abita_s2s.observability.judges import JURORS
+from abita_s2s.observability.decisions import parse
+from abita_s2s.observability.evaluation import (
+    EVALUATOR_VERSION,
+    PUBLISHED_VERSIONS,
+    evaluate_call,
+    judge_state,
+)
+from abita_s2s.observability.judges import DEFINITIONS_HASH, JURORS, QUESTIONS
 from abita_s2s.prompt import load_prompt
 
 NOT_ASKED = ("knowledge_available",)
+SOURCE = Path(__file__).parents[1] / "src"
+
+
+def confirmed(*outcomes):
+    return {
+        "transferStatus": "idle",
+        "domainOutcomes": [{"outcome": outcome} for outcome in outcomes],
+    }
 
 
 class JevTests(unittest.IsolatedAsyncioTestCase):
@@ -28,7 +47,8 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         action_error=False,
         knowledge_output="success: Office hours are Monday to Friday, 9 to 5.",
         knowledge_error=False,
-        jurors=("typesafe/jev-1.14",),
+        jurors=("juror-a",),
+        closeout=None,
     ):
         history = ChatContext()
         history.items.append(
@@ -99,7 +119,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 if isinstance(value, dict):
                     value = value.get(juror, default)
                 answers[name] = (
-                    {"type": "score", "score": value, "probabilities": {"2": 1}}
+                    {"type": "score", "score": value, "probabilities": {str(value): 1}}
                     if question["type"] == "score"
                     else {"type": "noul", "noul": value}
                 )
@@ -122,7 +142,10 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             patch("abita_s2s.observability.evaluation.RETRY_SECONDS", 0),
         ):
             result = await evaluate_call(
-                {"chat_history": history.to_dict()}, "synthetic-secret", 60
+                {"chat_history": history.to_dict()},
+                "synthetic-secret",
+                60,
+                closeout=confirmed("rescheduled") if closeout is None else closeout,
             )
         return requests, result
 
@@ -135,7 +158,6 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         question = requests[0]["questions"]["expressed_sentiment"]
         self.assertEqual(question["type"], "score")
         self.assertEqual(len(question["criteria"]), 5)
-        self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v8")
         self.assertEqual(
             result["results"]["expressed_sentiment"],
             {
@@ -163,8 +185,11 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                     {"2": True},
                     {"2": -1},
                     {"2": float("nan")},
+                    {"2": 0.9},
+                    {"2": 1, "5": 0},
                 )
             ),
+            {"type": "score", "score": 4, "probabilities": {"0": 1}},
         ):
 
             async def behavior(juror, attempt, request, answers):
@@ -214,13 +239,9 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result["status"], "complete")
 
-    async def test_configured_jury_uses_jev_perplexity_and_mammoth(self):
+    async def test_each_configured_juror_gets_one_request_and_a_vote(self):
         requests, result = await self.run_evaluation(jurors=JURORS)
-        expected = [
-            "typesafe/jev-1.14",
-            "perplexity/pplx-decider-v1.2",
-            "baseten/mammoth-1:free",
-        ]
+        expected = list(JURORS)
         self.assertCountEqual([request["model"] for request in requests], expected)
         self.assertEqual(result["jurors"], expected)
         self.assertEqual(result["status"], "complete")
@@ -228,31 +249,28 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             set(result["results"]["transfer_policy_followed"]["votes"]), set(expected)
         )
 
-    async def test_appointment_check_requires_a_returned_action_result(self):
+    async def test_appointment_action_without_a_confirmed_write_is_unknown(self):
         actions = {"book_appointment", "reschedule_appointment", "cancel_appointment"}
         for tool in (*actions, "list_available_appointments", "resolve_patient"):
             for returned in (False, True):
                 with self.subTest(tool=tool, returned=returned):
                     requests, result = await self.run_evaluation(
-                        tool=tool, returned=returned
+                        tool=tool, returned=returned, closeout=confirmed()
                     )
-                    asked = requests[0]["questions"]
+                    self.assertNotIn(
+                        "appointment_datetime_correct", requests[0]["questions"]
+                    )
                     self.assertEqual(
-                        "appointment_datetime_correct" in asked,
-                        returned and tool in actions,
+                        result["results"]["appointment_datetime_correct"],
+                        {
+                            "status": "unknown"
+                            if tool in actions
+                            else "not_applicable",
+                            "reason": "no_confirmed_appointment_action"
+                            if tool in actions
+                            else "no_appointment_action",
+                        },
                     )
-                    if not (returned and tool in actions):
-                        self.assertEqual(
-                            result["results"]["appointment_datetime_correct"],
-                            {
-                                "status": "unknown"
-                                if tool in actions
-                                else "not_applicable",
-                                "reason": "no_confirmed_appointment_action"
-                                if tool in actions
-                                else "no_appointment_action",
-                            },
-                        )
                     self.assertEqual(
                         result["results"]["knowledge_available"],
                         {
@@ -261,33 +279,40 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                         },
                     )
 
-    async def test_appointment_dates_need_a_confirmed_action(self):
-        for output, is_error, asked in (
-            ("Timed out", True, False),
-            ("blocked: The booking outcome could not be confirmed.", False, False),
-            ("needs_input: That slot could not be booked.", False, False),
-            ("success: Booked Wednesday at 10:00.", False, True),
-            (
-                "blocked: The new appointment is booked for Wednesday at 10:00, but cancellation of the old appointment requires staff reconciliation.",
-                False,
-                True,
-            ),
+    async def test_recorded_write_outcome_decides_the_date_check_not_answer_wording(
+        self,
+    ):
+        for outcome, asked in (
+            ("booked", True),
+            ("cancelled", True),
+            ("rescheduled", True),
+            ("partial_reschedule", True),
+            ("rejected", False),
+            ("failed", False),
+            ("uncertain", False),
+            ("needs_input", False),
+            ("staff_task_created", False),
         ):
-            with self.subTest(output=output):
-                requests, result = await self.run_evaluation(
-                    action_output=output, action_error=is_error
-                )
-                self.assertEqual(
-                    "appointment_datetime_correct" in requests[0]["questions"], asked
-                )
-                if not asked:
-                    self.assertEqual(
-                        result["results"]["appointment_datetime_correct"],
-                        {
-                            "status": "unknown",
-                            "reason": "no_confirmed_appointment_action",
-                        },
+            for output in (
+                "success: Booked Wednesday at 10:00.",
+                "Your visit is set for Wednesday at 10:00.",
+            ):
+                with self.subTest(outcome=outcome, output=output):
+                    requests, result = await self.run_evaluation(
+                        action_output=output, closeout=confirmed(outcome)
                     )
+                    self.assertEqual(
+                        "appointment_datetime_correct" in requests[0]["questions"],
+                        asked,
+                    )
+                    if not asked:
+                        self.assertEqual(
+                            result["results"]["appointment_datetime_correct"],
+                            {
+                                "status": "unknown",
+                                "reason": "no_confirmed_appointment_action",
+                            },
+                        )
 
     async def test_knowledge_tool_results_are_sent_to_the_yes_no_jury(self):
         for output, is_error in (
@@ -330,25 +355,14 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         )
         sent = {}
         for request in requests:
-            self.assertEqual(request["model"], "typesafe/jev-1.14")
+            self.assertEqual(request["model"], "juror-a")
             self.assertEqual(request["provider"], {"zdr": True})
             sent.update(request["questions"])
-        self.assertEqual(
-            set(sent),
-            {
-                "knowledge_available",
-                "office_question_answered",
-                "appointment_datetime_correct",
-                "call_ended_correctly",
-                "transfer_policy_followed",
-                "emergency_policy_followed",
-                "expressed_sentiment",
-            },
-        )
+        self.assertEqual(set(sent), set(QUESTIONS))
         self.assertEqual(len(requests), 1)
         self.assertEqual(result["evaluator"], "jury")
-        self.assertEqual(result["evaluatorVersion"], "typesafe-scorecard-v8")
-        self.assertEqual(result["jurors"], ["typesafe/jev-1.14"])
+        self.assertEqual(result["evaluatorVersion"], EVALUATOR_VERSION)
+        self.assertEqual(result["jurors"], ["juror-a"])
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["errors"], {})
         self.assertEqual(set(result["results"]), set(sent))
@@ -369,7 +383,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 1)
         self.assertEqual(len(requests[0]["questions"]), 6)
         self.assertEqual(result["status"], "complete")
-        jev = "typesafe/jev-1.14"
+        jev = "juror-a"
         self.assertEqual(
             result["results"]["appointment_datetime_correct"],
             {"verdict": False, "probability": 0.1, "votes": {jev: 0.1}, "errors": {}},
@@ -454,9 +468,14 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             "transfer_policy_followed",
             "emergency_policy_followed",
         )
-        for tool, extra_tools, count in (
-            ("list_available_appointments", (), 4),
-            ("reschedule_appointment", ("search_office_knowledge",), 6),
+        for tool, extra_tools, facts, count in (
+            ("list_available_appointments", (), (), 4),
+            (
+                "reschedule_appointment",
+                ("search_office_knowledge",),
+                ("rescheduled",),
+                6,
+            ),
         ):
             for value in (0.0, 0.5, 1.0):
                 with self.subTest(tool=tool, value=value):
@@ -465,6 +484,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                         tool=tool,
                         extra_tools=extra_tools,
                         jurors=JURORS,
+                        closeout=confirmed(*facts),
                     )
                     self.assertEqual(result["status"], "complete")
                     self.assertEqual(result["errors"], {})
@@ -533,7 +553,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                     {
                         "cause": "no_quorum",
                         "votes": {},
-                        "errors": {"typesafe/jev-1.14": "ValueError"},
+                        "errors": {"juror-a": "ValueError"},
                     },
                 )
 
@@ -546,7 +566,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 1)
         self.assertEqual(
             result["errors"]["emergency_policy_followed"]["errors"],
-            {"typesafe/jev-1.14": "TimeoutError"},
+            {"juror-a": "TimeoutError"},
         )
         self.assertIn("http_status=429", str(logs.output))
         self.assertEqual(len(result["errors"]), 6)
@@ -572,7 +592,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             cause = "ConnectError" if transport_failure else "HTTPStatusError"
             self.assertEqual(
                 result["errors"]["emergency_policy_followed"]["errors"],
-                {"typesafe/jev-1.14": cause},
+                {"juror-a": cause},
             )
             self.assertIn("attempts=2", str(logs.output))
             self.assertNotIn("synthetic-secret", str(result) + str(logs.output))
@@ -620,3 +640,64 @@ class JudgeStateTests(unittest.TestCase):
             instructions,
         )
         self.assertTrue(instructions.endswith(load_prompt("speaker")))
+
+
+class DecisionsAnswerTests(unittest.TestCase):
+    sentiment = QUESTIONS["expressed_sentiment"]
+
+    def test_score_within_rounding_of_its_weighted_distribution_is_kept(self):
+        for score, probabilities in (
+            (1.99, {"0": 0, "1": 0, "2": 1}),
+            (2.01, {"1": 0.33, "2": 0.34, "3": 0.34}),
+            (0.6, {"0": 0.4, "1": 0.6}),
+        ):
+            answer = {"type": "score", "score": score, "probabilities": probabilities}
+            with self.subTest(answer=answer):
+                self.assertEqual(parse(self.sentiment, answer), score)
+
+    def test_score_that_contradicts_its_distribution_is_rejected(self):
+        for score, probabilities in (
+            (4, {"0": 1}),
+            (0, {"0": 0.5, "4": 0.5}),
+            (1, {"0": 0.5, "4": 0.5}),
+        ):
+            answer = {"type": "score", "score": score, "probabilities": probabilities}
+            with self.subTest(answer=answer), self.assertRaises(ValueError):
+                parse(self.sentiment, answer)
+
+
+class EvaluatorVersionTests(unittest.TestCase):
+    def test_current_judge_definitions_have_a_published_version(self):
+        self.assertIn(
+            DEFINITIONS_HASH,
+            PUBLISHED_VERSIONS,
+            "Judge definitions changed. Product reads evaluatorVersion by exact "
+            "value: map this hash to a new version name in PUBLISHED_VERSIONS "
+            "after Product supports it, or to the current name if meaning is "
+            "unchanged.",
+        )
+        self.assertEqual(EVALUATOR_VERSION, PUBLISHED_VERSIONS[DEFINITIONS_HASH])
+
+    def test_editing_one_judge_question_changes_the_version(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            package = Path(scratch) / "abita_s2s"
+            shutil.copytree(SOURCE / "abita_s2s", package)
+            judge = package / "observability" / "judges" / "call_ended_correctly.py"
+            text = judge.read_text()
+            judge.write_text(text.replace("Did the agent wait", "Did the agent pause"))
+            self.assertNotEqual(judge.read_text(), text)
+            version = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "from abita_s2s.observability.evaluation import EVALUATOR_VERSION;"
+                    "print(EVALUATOR_VERSION)",
+                ],
+                cwd=scratch,
+                env={"PYTHONPATH": scratch},
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+        self.assertTrue(version)
+        self.assertNotEqual(version, EVALUATOR_VERSION)

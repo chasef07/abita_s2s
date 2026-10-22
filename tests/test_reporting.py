@@ -225,9 +225,9 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                         "probabilities": {"1": 0.5, "2": 0.5},
                     }
                     if question["type"] == "score"
-                    else {"type": "noul", "noul": 0.5 + index / 100}
+                    else {"type": "noul", "noul": 0.5}
                 )
-                for index, (name, question) in enumerate(payload["questions"].items())
+                for name, question in payload["questions"].items()
                 if name != "emergency_policy_followed"
             }
             return httpx.Response(200, json={"answers": answers})
@@ -285,6 +285,57 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             {**dict.fromkeys(JURORS[:-1], "ValueError"), JURORS[-1]: "HTTPStatusError"},
         )
         self.assertNotIn("private body", json.dumps(closeout))
+
+    async def test_recorded_appointment_write_opens_the_date_check(self):
+        for evidence, asked in (
+            (OUTCOME, True),
+            ({**OUTCOME, "bookingResult": {"status": "rejected"}}, False),
+            (None, False),
+        ):
+            history = llm.ChatContext()
+            history.add_message(role="user", content="Book Wednesday at ten.")
+            history.items.extend(
+                [
+                    llm.FunctionCall(
+                        call_id="book-1", name="book_appointment", arguments="{}"
+                    ),
+                    llm.FunctionCallOutput(
+                        call_id="book-1",
+                        name="book_appointment",
+                        output="Your visit is set for Wednesday at ten.",
+                        is_error=False,
+                    ),
+                ]
+            )
+            report = {**REPORT, "chat_history": history.to_dict()}
+            reporter = self.reporter(openrouter_key="offline")
+            reporter.started = True
+            if evidence:
+                reporter.appointment(evidence)
+            asked_questions = []
+
+            def respond(request):
+                payload = json.loads(request.content)
+                asked_questions.extend(payload["questions"])
+                return httpx.Response(200, json={"answers": {}})
+
+            client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+            with (
+                self.subTest(evidence=evidence),
+                patch(
+                    "abita_s2s.observability.evaluation.httpx.AsyncClient",
+                    return_value=client,
+                ),
+                self.assertLogs("abita_s2s.observability.evaluation", "ERROR"),
+            ):
+                await reporter.finish(lambda: report)
+            self.assertEqual("appointment_datetime_correct" in asked_questions, asked)
+            evaluation = self.requests[-1]["closeoutPayload"]["evaluation"]
+            if not asked:
+                self.assertEqual(
+                    evaluation["results"]["appointment_datetime_correct"]["status"],
+                    "unknown",
+                )
 
     async def test_classification_receives_drained_receipts_and_reaches_closeout(self):
         history = llm.ChatContext()

@@ -18,8 +18,10 @@ from abita_s2s.observability.call_labels import (
     INTENT_CRITERIA,
     MODEL,
     OUTCOME_CRITERIA,
-    validate_choice,
+    QUESTIONS,
+    VERSION,
 )
+from abita_s2s.observability.decisions import parse
 from abita_s2s.observability.evaluation import evaluate_call
 
 
@@ -135,7 +137,7 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             result["classification"],
             {
-                "version": "call-labels-v1",
+                "version": VERSION,
                 "model": MODEL,
                 "status": "complete",
                 "intent": "cancel_appointment",
@@ -314,7 +316,7 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 result["classification"],
                 {
-                    "version": "call-labels-v1",
+                    "version": VERSION,
                     "model": MODEL,
                     "status": "skipped",
                     "reason": reason,
@@ -339,7 +341,7 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
 
     def test_probability_validation_matches_product(self):
         valid = choice(OUTCOME_CRITERIA, "resolved")
-        self.assertEqual(validate_choice(valid, OUTCOME_CRITERIA), "resolved")
+        self.assertEqual(parse(QUESTIONS["outcome"], valid), "resolved")
         for invalid in (
             None,
             {**valid, "type": "noul"},
@@ -370,7 +372,7 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
             {**valid, "probabilities": {"resolved": 1, "abandoned": 0.02}},
         ):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
-                validate_choice(invalid, OUTCOME_CRITERIA)
+                parse(QUESTIONS["outcome"], invalid)
 
     def test_two_decimal_rounded_probabilities_are_accepted(self):
         production_answer = {
@@ -384,16 +386,16 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
             },
         }
         self.assertEqual(
-            validate_choice(production_answer, INTENT_CRITERIA), "office_information"
+            parse(QUESTIONS["intent"], production_answer), "office_information"
         )
         self.assertEqual(
-            validate_choice(
+            parse(
+                QUESTIONS["outcome"],
                 {
                     "type": "choice",
                     "choice": "resolved",
                     "probabilities": {"resolved": 0.99, "abandoned": 0},
                 },
-                OUTCOME_CRITERIA,
             ),
             "resolved",
         )
@@ -410,4 +412,4 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
                 },
             }
             with self.subTest(total=total), self.assertRaises(ValueError):
-                validate_choice(answer, INTENT_CRITERIA)
+                parse(QUESTIONS["intent"], answer)

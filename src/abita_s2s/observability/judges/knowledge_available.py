@@ -12,7 +12,7 @@ QUESTION = {
 }
 
 
-def skip(history: ChatContext) -> dict | None:
+def skip(history: ChatContext, closeout: dict) -> dict | None:
     """Skip only when the office knowledge tool was not called."""
     if not any(
         item.type in {"function_call", "function_call_output"}
