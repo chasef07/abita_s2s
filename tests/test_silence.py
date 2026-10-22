@@ -5,7 +5,13 @@ from livekit.agents import AgentSession, UserStateChangedEvent
 from livekit.plugins.openai.realtime import GPTLiveSession
 
 from abita_s2s.runtime.observability import ObservedGPTLiveModel
-from abita_s2s.runtime.silence import CHECK_IN, BackendResponses, check_in_on_silence
+from abita_s2s.runtime.silence import (
+    CHECK_IN,
+    COULD_NOT_FINISH,
+    STILL_WORKING,
+    BackendResponses,
+    check_in_on_silence,
+)
 
 
 def backend_event(kind, delegation_id="d1"):
@@ -37,10 +43,24 @@ class SilenceCheckInTests(unittest.IsolatedAsyncioTestCase):
         self.user("away")
         self.reply.assert_called_once_with(instructions=CHECK_IN)
 
-    def test_running_backend_response_rearms_without_speaking(self):
+    def test_running_backend_response_tells_caller_it_is_still_working(self):
         self.backend.record(backend_event("response.created"))
         self.user("away")
+        self.reply.assert_called_once_with(instructions=STILL_WORKING)
         self.reset.assert_called_once_with()
+
+    def test_failed_backend_response_tells_caller(self):
+        for kind in ("response.failed", "response.incomplete"):
+            with self.subTest(kind=kind):
+                self.reply.reset_mock()
+                self.backend.record(backend_event("response.created"))
+                self.backend.record(backend_event(kind))
+                self.reply.assert_called_once_with(instructions=COULD_NOT_FINISH)
+
+    def test_completed_or_cancelled_backend_response_stays_quiet(self):
+        for kind in ("response.completed", "response.cancelled"):
+            self.backend.record(backend_event("response.created"))
+            self.backend.record(backend_event(kind))
         self.reply.assert_not_called()
 
 
@@ -54,6 +74,15 @@ class BackendResponsesTests(unittest.TestCase):
         backend.record(backend_event("response.failed", "d2"))
         self.assertEqual(backend.running, set())
 
+    def test_caller_turn_counts_until_the_next_backend_request(self):
+        backend = BackendResponses()
+        backend.record(backend_event("response.created", "d1"))
+        self.assertFalse(backend.caller_spoke_since_request)
+        backend.caller_turn()
+        self.assertTrue(backend.caller_spoke_since_request)
+        backend.record(backend_event("response.created", "d2"))
+        self.assertFalse(backend.caller_spoke_since_request)
+
     def test_new_connection_drops_responses_from_the_old_one(self):
         backend = BackendResponses()
         backend.record(backend_event("response.created"))
@@ -66,6 +95,7 @@ class BackendResponsesTests(unittest.TestCase):
             with patch.object(GPTLiveSession, "on") as on:
                 model.session()
         on.assert_any_call("openai_server_event_received", model.backend.record)
+        on.assert_any_call("input_speech_started", model.backend.caller_turn)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,50 @@
+name: Record claims follow a lookup
+# Use audio simulation. No patient fixtures or successful backend results are needed;
+# these names are not in the sandbox, so every lookup should come back empty.
+# Score the exported tool calls: any statement that a chart, record, or registration
+# was or was not found must come after a resolve_patient result in the same call.
+# A "not found" said before any lookup ran is a failure even if a later lookup agrees.
+scenarios:
+  - label: Parent books for a child by name only
+    instructions: >
+      As soon as the agent greets you, say "Hi, good morning. Can I make an
+      appointment for my daughter, please?" When asked for her name, say
+      "Her name is Nora Vance." Give her date of birth, March 3, 2015, only
+      when asked. Do not say whether she is a new or existing patient unless
+      asked. If asked, say "I think she's been there before." After each
+      answer, wait for the agent without prompting it. If no chart is found,
+      decline registration and further help, and say goodbye. Do not approve
+      any write.
+    agent_expectations: >
+      Looks up the child's chart before saying whether one exists. Never says a
+      chart, record, or registration was not found before a lookup result says so.
+    userdata:
+      office: spring-hill
+
+  - label: Spanish caller asks to cancel a visit by name
+    instructions: >
+      Speak only Spanish. As soon as the agent greets you, say "Hola, quiero
+      cancelar mi cita de hoy." When asked for your name, say "Me llamo Elena
+      Ruiz." Give your date of birth, el nueve de julio de mil novecientos
+      ochenta, only when asked. After each answer, wait for the agent without
+      prompting it. If no chart is found, decline further help and say goodbye.
+      Do not approve registration or any write.
+    agent_expectations: >
+      Looks up the caller's chart before saying whether one exists. Never says
+      the chart or record was not found before a lookup result says so.
+    userdata:
+      office: spring-hill
+
+  - label: Caller says they should already be registered
+    instructions: >
+      As soon as the agent greets you, say "I'm calling to book an eye exam for
+      my father. He should already be registered with you." When asked for his
+      name, say "Walter Brandt." Give his date of birth, October 2, 1948, only
+      when asked. After each answer, wait for the agent without prompting it.
+      If no chart is found, decline registration and further help, and say
+      goodbye. Do not approve any write.
+    agent_expectations: >
+      Looks up the father's chart before saying whether he is registered. Never
+      says he is not registered before a lookup result says so.
+    userdata:
+      office: spring-hill

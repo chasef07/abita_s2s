@@ -283,6 +283,13 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.sip.transfer_sip_participant.assert_not_awaited()
         self.assertEqual(self.events, [])
 
+    async def test_end_call_waits_for_a_caller_turn_newer_than_the_request(self):
+        self.control.backend = SimpleNamespace(caller_spoke_since_request=True)
+        result = await self.run_tool("end_call")
+        self.assertTrue(result.startswith("blocked: The caller spoke again"))
+        self.assertFalse(self.control.ending)
+        self.sip.transfer_sip_participant.assert_not_awaited()
+
     async def test_simulation_ends_without_a_sip_caller(self):
         del self.room.remote_participants["caller"]
         self.control.simulation = True

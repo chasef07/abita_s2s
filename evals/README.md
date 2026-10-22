@@ -16,6 +16,8 @@ insurance, appointments, or availability.
 | [ai_disclosure.yaml](scenarios/ai_disclosure.yaml) | Saying it is an AI assistant when a caller asks, in English and Spanish. |
 | [hollywood_promotion.yaml](scenarios/hollywood_promotion.yaml) | Announcing North Miami Beach to Hollywood routine-vision callers, and not to medical callers. |
 | [referral_details.yaml](scenarios/referral_details.yaml) | Asking a referred new patient once for the referring doctor's phone and address (ACU-137). |
+| [record_claims.yaml](scenarios/record_claims.yaml) | Saying whether a chart exists only after a patient lookup result. |
+| [call_ending.yaml](scenarios/call_ending.yaml) | Ending the call only after the caller finishes, not on a new question after "thank you". |
 
 ## Before running
 

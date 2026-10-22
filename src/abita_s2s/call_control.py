@@ -30,10 +30,12 @@ class CallControl:
         handoff: HandoffConfig | None = None,
         sandbox: bool = False,
         simulation: bool = False,
+        backend=None,
     ):
         self.state = state
         self.sandbox = sandbox
         self.simulation = simulation
+        self.backend = backend
         self.admission = HandoffAdmission(state, client, handoff)
         self.room = room
         self.sip = sip
@@ -178,6 +180,11 @@ class CallControl:
             return "blocked: Transfer may be in progress. Do not hang up."
         if self.ending:
             return "pending: Call completion is already in progress."
+        if self.backend and self.backend.caller_spoke_since_request:
+            return (
+                "blocked: The caller spoke again after this request. Do not end the "
+                "call; their new words come to you in a new request."
+            )
         if not self.simulation and not self._active():
             return "unavailable: No active SIP call to end. The session remains open."
         hold()

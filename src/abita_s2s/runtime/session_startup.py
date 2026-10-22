@@ -279,6 +279,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             handoff=config.handoff,
             sandbox=config.deployment is not None,
             simulation=simulation is not None,
+            backend=model.backend,
         )
 
         resolver.start_phone_lookup()
