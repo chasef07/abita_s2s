@@ -21,8 +21,9 @@ BACKCHANNELS = frozenset({"mm-hmm", "mhm", "uh-huh", "hmm", "um", "uh"})
 class DelegationWatchdog:
     """Collects caller words the voice model has not delegated and hands them off after a quiet spell."""
 
-    def __init__(self, live) -> None:
+    def __init__(self, live, backend) -> None:
         self._live = live
+        self._backend = backend
         self._caller: list[str] = []
         self._voice: list[str] = []
         self._timer: asyncio.TimerHandle | None = None
@@ -69,6 +70,7 @@ class DelegationWatchdog:
         ):
             return
         logger.warning("delegation_watchdog_handoff caller_chars=%d", len(caller))
+        self._backend.request_started()
         message = (
             f"The caller said: {caller}\n"
             f"The voice assistant answered without handing it to you: {voice}\n"

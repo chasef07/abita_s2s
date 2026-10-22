@@ -96,9 +96,12 @@ class BackendResponsesTests(unittest.TestCase):
         backend.record(backend_event("response.created", "d1"))
         self.assertTrue(backend.caller_spoke_since_request)
         backend.record({"type": "session.delegation.created"})
+        self.assertTrue(backend.caller_spoke_since_request)
+        backend.record(backend_event("response.completed", "d1"))
+        backend.record({"type": "session.delegation.created"})
         self.assertFalse(backend.caller_spoke_since_request)
         backend.caller_turn()
-        backend.record(backend_event("response.created", None))
+        backend.request_started()
         self.assertFalse(backend.caller_spoke_since_request)
 
     def test_new_connection_drops_responses_from_the_old_one(self):

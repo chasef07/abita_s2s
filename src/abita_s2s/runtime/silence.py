@@ -15,8 +15,9 @@ STILL_WORKING = (
     "Do not guess the result."
 )
 COULD_NOT_FINISH = (
-    "Tell the caller in one short sentence that you could not finish that just "
-    "now, and ask whether they would like you to try again."
+    "Tell the caller in one short sentence that you could not finish the rest "
+    "of that just now, without taking back anything a result already confirmed, "
+    "and ask whether they would like you to try again."
 )
 FAILED = frozenset({"response.failed", "response.incomplete"})
 FINISHED = FAILED | {"response.completed", "response.cancelled"}
@@ -34,20 +35,21 @@ class BackendResponses:
         kind = event.get("type")
         if kind == "session.started":
             self.running.clear()
-        if kind == "session.delegation.created":
-            self.caller_spoke_since_request = False
+        if kind == "session.delegation.created" and not self.running:
+            self.request_started()
         if kind != "response.event":
             return
         inner = event.get("event", {}).get("type")
         delegation_id = event.get("delegation_id")
         if inner == "response.created":
             self.running.add(delegation_id)
-            if delegation_id is None:
-                self.caller_spoke_since_request = False
         elif inner in FINISHED:
             self.running.discard(delegation_id)
             if inner in FAILED and self.on_failure:
                 self.on_failure(delegation_id)
+
+    def request_started(self) -> None:
+        self.caller_spoke_since_request = False
 
     def caller_turn(self) -> None:
         self.caller_spoke_since_request = True

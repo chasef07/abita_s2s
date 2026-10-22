@@ -33,12 +33,14 @@ class DelegationWatchdogTests(unittest.IsolatedAsyncioTestCase):
         patch.object(delegation_watchdog, "HANDOFF_SECONDS", 0.05).start()
         self.addCleanup(patch.stopall)
         self.live = FakeLive()
-        self.watchdog = DelegationWatchdog(self.live)
+        self.backend = BackendResponses()
+        self.watchdog = DelegationWatchdog(self.live, self.backend)
 
     async def quiet(self):
         await asyncio.sleep(0.1)
 
     async def test_undelegated_approval_goes_to_the_backend_with_the_false_claim(self):
+        self.backend.caller_turn()
         self.watchdog.record(caller(" Sí."))
         self.watchdog.record(voice(" Listo, ya la tengo confirmada."))
         await self.quiet()
@@ -49,6 +51,7 @@ class DelegationWatchdogTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("The caller said: Sí.", text)
         self.assertIn("Listo, ya la tengo confirmada.", text)
         self.assertEqual(create["type"], "response.create")
+        self.assertFalse(self.backend.caller_spoke_since_request)
 
     async def test_a_delegation_means_nothing_is_handed_off(self):
         self.watchdog.record(caller(" Yes, book it."))
