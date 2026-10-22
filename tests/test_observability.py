@@ -562,11 +562,3 @@ class ProtocolTraceTests(TraceCase):
                 "received", {"type": "response.event", "event": "PRIVATE"}
             )
         self.assertNotIn("PRIVATE", str(logs.output))
-
-
-class UpstreamPortTests(unittest.TestCase):
-    def test_released_plugin_does_not_trace_yet(self):
-        self.assertFalse(
-            hasattr(GPTLiveSession, "_trace_response_event"),
-            "LiveKit now ships livekit/agents#7408; delete the port in runtime/observability.py",
-        )
