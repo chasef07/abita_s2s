@@ -20,7 +20,7 @@ from opentelemetry import trace
 from opentelemetry.util.types import AttributeValue
 
 from abita_s2s.runtime.delegation_watchdog import DelegationWatchdog
-from abita_s2s.runtime.silence import BackendResponses
+from abita_s2s.runtime.silence import FINISHED, BackendResponses
 
 logger = logging.getLogger(__name__)
 
@@ -386,11 +386,7 @@ class ObservedGPTLiveSession(GPTLiveSession):
             ]
             if parts:
                 current.output.append({"role": "assistant", "parts": parts})
-        if event.type in (
-            "response.completed",
-            "response.failed",
-            "response.incomplete",
-        ):
+        if event.type in FINISHED:
             self._backend_traces.pop(d_id)
             failure = None
             if event.type == "response.failed":
@@ -400,6 +396,8 @@ class ObservedGPTLiveSession(GPTLiveSession):
             elif event.type == "response.incomplete":
                 details = (response and response.incomplete_details) or {}
                 failure = details.get("reason") or event.type
+            elif event.type != "response.completed":
+                failure = event.type
             current.finish(failure)
 
     def _handle_response_event(self, envelope) -> None:
