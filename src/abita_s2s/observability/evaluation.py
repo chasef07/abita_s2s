@@ -12,9 +12,10 @@ from livekit.agents import ChatContext
 from abita_s2s.observability.call_labels import (
     classification,
     classify_labels,
-    has_transfer_call,
+    transfer_called,
 )
-from abita_s2s.observability.judges import GATES, JURORS, QUESTIONS
+from abita_s2s.observability.decisions import URL, parse, read_answers
+from abita_s2s.observability.judges import DEFINITIONS_HASH, GATES, JURORS, QUESTIONS
 from abita_s2s.offices import EASTERN
 from abita_s2s.prompt import load_prompt, thinker_instructions
 
@@ -23,8 +24,10 @@ EVALUATION_SECONDS = 20
 EVALUATION_GRACE_SECONDS = 1
 RETRY_SECONDS = 0.25
 MIN_CALL_SECONDS = 30
-EVALUATOR_VERSION = "typesafe-scorecard-v8"
-EVALUATE_URL = "https://openrouter.ai/api/alpha/decisions"
+PUBLISHED_VERSIONS = {"08dd0cd605e2": "typesafe-scorecard-v8"}
+EVALUATOR_VERSION = PUBLISHED_VERSIONS.get(
+    DEFINITIONS_HASH, f"typesafe-scorecard-{DEFINITIONS_HASH}"
+)
 YES_ABOVE = 0.40
 SPEAKERS = {"user": "caller", "assistant": "agent"}
 
@@ -61,29 +64,6 @@ def judge_state(history: ChatContext) -> dict:
     }
 
 
-def validate_answer(name: str, answers: dict) -> float:
-    """Return the juror's value for ``name``, or raise if it is missing or malformed."""
-    question = QUESTIONS[name]
-    answer = answers.get(name)
-    if not isinstance(answer, dict) or answer.get("type") != question["type"]:
-        raise ValueError("Invalid answer type")
-    if question["type"] == "noul":
-        value, maximum = answer.get("noul"), 1
-    else:
-        probabilities = answer.get("probabilities")
-        if not isinstance(probabilities, dict) or not probabilities:
-            raise ValueError("Missing probabilities")
-        if any(
-            type(v) not in (int, float) or not 0 <= v <= 1
-            for v in probabilities.values()
-        ):
-            raise ValueError("Invalid probabilities")
-        value, maximum = answer.get("score"), len(question["criteria"]) - 1
-    if type(value) not in (int, float) or not 0 <= value <= maximum:
-        raise ValueError("Invalid value")
-    return value
-
-
 def majority(votes: dict) -> dict:
     """Yes when more jurors vote yes than no; a tie goes to the mean probability."""
     yes = sum(p > YES_ABOVE for p in votes.values())
@@ -101,7 +81,8 @@ async def evaluate_judges(
     *,
     api_key: str,
     seconds: float = EVALUATION_SECONDS,
-    closeout: dict | None = None,
+    closeout: dict,
+    transferred: bool,
     include_jury: bool = True,
 ) -> dict:
     """Ask each juror every question in one request within one deadline.
@@ -113,7 +94,7 @@ async def evaluate_judges(
     results, errors = {}, {}
     if include_jury:
         for name, gate in GATES.items():
-            if skipped := gate(history):
+            if skipped := gate(history, closeout):
                 results[name] = skipped
     asked = [name for name in QUESTIONS if name not in results] if include_jury else []
     jurors = JURORS if include_jury else ()
@@ -131,7 +112,7 @@ async def evaluate_judges(
                         delay = RETRY_SECONDS
                         try:
                             response = await client.post(
-                                EVALUATE_URL,
+                                URL,
                                 headers={"Authorization": f"Bearer {api_key}"},
                                 json={
                                     "model": juror,
@@ -175,13 +156,7 @@ async def evaluate_judges(
                             if attempt:
                                 raise
                         else:
-                            body = response.json()
-                            answers = (
-                                body.get("answers") if isinstance(body, dict) else None
-                            )
-                            if not isinstance(answers, dict):
-                                raise ValueError("Missing answers")
-                            return answers
+                            return read_answers(response.content)
                         await asyncio.sleep(delay)
             except Exception as error:
                 logger.error(
@@ -198,11 +173,10 @@ async def evaluate_judges(
             classify_labels(
                 client,
                 state,
-                closeout or {},
+                closeout,
                 api_key=api_key,
                 deadline=deadline,
-                url=EVALUATE_URL,
-                transfer_called=has_transfer_call(history),
+                transferred=transferred,
             ),
             return_exceptions=True,
         )
@@ -217,7 +191,7 @@ async def evaluate_judges(
                 failures[juror] = type(reply).__name__
                 continue
             try:
-                votes[juror] = validate_answer(name, reply)
+                votes[juror] = parse(QUESTIONS[name], reply.get(name))
             except ValueError:
                 failures[juror] = "ValueError"
                 logger.error(
@@ -257,7 +231,7 @@ async def evaluate_call(
         "status": "incomplete",
         "classification": classification("incomplete", "evaluation_failed"),
     }
-    history = None
+    transferred = False
     try:
         if not report:
             evaluation.update(status="skipped", reason="native_report_unavailable")
@@ -266,6 +240,7 @@ async def evaluate_call(
             )
             return evaluation
         history = ChatContext.from_dict(report["chat_history"])
+        transferred = transfer_called(history)
         if not any(
             item.type == "message"
             and item.role == "user"
@@ -284,7 +259,8 @@ async def evaluate_call(
                         history,
                         api_key=api_key,
                         seconds=window,
-                        closeout=closeout,
+                        closeout=closeout or {},
+                        transferred=transferred,
                         include_jury=seconds >= MIN_CALL_SECONDS,
                     )
                 )
@@ -304,6 +280,6 @@ async def evaluate_call(
     except Exception as error:
         evaluation["reason"] = type(error).__name__
         logger.error("Call evaluation failed cause=%s", type(error).__name__)
-    if history is not None and has_transfer_call(history):
+    if transferred:
         evaluation["classification"]["outcome"] = "transferred"
     return evaluation
