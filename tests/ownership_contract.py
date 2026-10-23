@@ -15,7 +15,11 @@ from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
 from abita_s2s.tools.scheduling import SchedulingTools
 from abita_s2s.scheduling import Scheduling
-from abita_s2s.integrations.scheduling_http import Inventory, SchedulingHTTP
+from abita_s2s.integrations.scheduling_http import (
+    Inventory,
+    SchedulingHTTP,
+    SlotSearch,
+)
 
 
 async def main(url):
@@ -52,13 +56,13 @@ async def main(url):
             assert "respPartyId" not in state.patient.active.model_dump()
             if scenario == "availability_invalid_input":
                 result = await scheduler.http.availability(
-                    {
-                        "office": "Spring Hill",
-                        "patientId": "12345",
-                        "dob": "01/15/1980",
-                        "visitType": "medical",
-                        "startDate": "bad-date",
-                    }
+                    SlotSearch(
+                        office="spring-hill",
+                        patientId="12345",
+                        dob="01/15/1980",
+                        visitType="medical",
+                        startDate="bad-date",
+                    )
                 )
                 assert isinstance(result, Inventory), result
                 assert result.status == "error" and result.outcome == "invalid_input", (

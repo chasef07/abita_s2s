@@ -1486,7 +1486,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             )
         ] + [
             (WriteReceipt(status="cancelled", appointmentId=999), "found"),
-            (WriteReceipt(status="error", outcome="unexpected"), "found"),
+            (SchedulingFailure(reason="invalid_response", uncertain=True), "found"),
             (SchedulingFailure(reason="transport_error", uncertain=True), "found"),
             (SchedulingFailure(reason="not_configured"), "found"),
         ]

@@ -14,6 +14,7 @@ from abita_s2s.integrations.patient_middleware import (
     NotFound,
     PatientMiddleware,
     Receipt,
+    ResolveRequest,
 )
 from abita_s2s.name_matcher import (
     dob_matches,
@@ -117,7 +118,10 @@ class PatientResolver:
 
     async def _lookup_phone(self, token: object) -> CandidateLookup:
         result = await self._middleware.resolve(
-            self.state.call.called_office_key, {"phone": self.state.call.caller_phone}
+            ResolveRequest(
+                phone=self.state.call.caller_phone,
+                office=self.state.call.called_office_key,
+            )
         )
         if isinstance(result, Receipt):
             matches = [result]
@@ -258,7 +262,9 @@ class PatientResolver:
                 "needs_identity", "needs_input: What is the patient's date of birth?"
             )
         result = await self._middleware.resolve(
-            self.state.call.called_office_key, {"firstName": name, "dob": dob}
+            ResolveRequest(
+                firstName=name, dob=dob, office=self.state.call.called_office_key
+            )
         )
         if not self._current(token):
             return superseded()
@@ -300,7 +306,10 @@ class PatientResolver:
             phone and receipt.appointmentsStatus == "error"
         ):
             receipt = await self._middleware.resolve(
-                self.state.call.called_office_key, {"patientId": candidate.patientId}
+                ResolveRequest(
+                    patientId=candidate.patientId,
+                    office=self.state.call.called_office_key,
+                )
             )
         if not self._current(token):
             return superseded()
