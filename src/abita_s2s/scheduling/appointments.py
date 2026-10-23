@@ -1,146 +1,35 @@
-"""One per-call scheduling owner: private references, inventory and write receipts."""
+"""One per-call scheduling owner: private appointment references and write receipts."""
 
 import asyncio
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Literal
 
-from abita_s2s.insurance_contract import CoverageType
-from abita_s2s.insurance_state import (
-    AcceptedInsurance,
-    accepted_insurance,
-    insurance_ready,
-)
+from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.integrations.patient_middleware import Appointment, Receipt
-from abita_s2s.offices import (
-    EASTERN,
-    HOLLYWOOD_PROMOTED_OFFICE,
-    SHARED_SCHEDULING_OFFICES,
-    get_office_profile,
-)
-from abita_s2s.results import reply
 from abita_s2s.integrations.scheduling_http import (
     Booking,
     Cancellation,
     RescheduleReceipt,
     SchedulingFailure,
     SchedulingHTTP,
-    Slot,
-    SlotSearch,
     WriteReceipt,
 )
+from abita_s2s.offices import get_office_profile
+from abita_s2s.results import reply
+from abita_s2s.scheduling.answers import (
+    CHOOSE_LOADED_APPOINTMENT,
+    STALE_BEFORE_WRITE,
+    UNAVAILABLE,
+)
+from abita_s2s.scheduling.availability import (
+    Offers,
+    OfferedSlot,
+    SchedulingContext,
+    provider_name,
+    scheduling_context,
+)
 from abita_s2s.state import CallState
-
-
-UNAVAILABLE = "blocked: Scheduling is unavailable."
-STALE_BEFORE_WRITE = (
-    "blocked: The call or patient changed before the appointment operation started."
-)
-CHOOSE_LOADED_APPOINTMENT = "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed."
-SHARED_OFFICE_CHOICE = "needs_input: Ask for Hollywood or Sweetwater on those office calls; omit office for other calls."
-HOLLYWOOD_ROUTINE_OFFICE_CHOICE = (
-    "needs_input: Before searching, tell the caller: Before we schedule your appointment "
-    "at Hollywood, Abita Eye Group is excited to announce our newest office, at 633 "
-    "Northeast 167th Street in North Miami Beach. Would you like to schedule your "
-    "appointment there with Dr. Miriam Bach, or continue booking at our Hollywood "
-    "location? Then search with the office the caller chooses."
-)
-HOLLYWOOD_ROUTINE_OFFICE_FOLLOW_UP = "needs_input: Ask whether the caller wants North Miami Beach or Hollywood, then search with that office."
-
-
-def provider_name(name):
-    for old, new in (
-        ("Dr. Austin Bach (Overflow)", "Dr. Bach"),
-        ("Dr. Austin Bach", "Dr. Bach"),
-        ("Dr. J. Licht", "Dr. Licht"),
-        ("Dr. D. Noel", "Dr. Noel"),
-    ):
-        name = name.replace(old, new)
-    return name
-
-
-def eastern_datetime(value: str) -> datetime:
-    start = datetime.fromisoformat(value)
-    return (
-        start.replace(tzinfo=EASTERN)
-        if start.tzinfo is None
-        else start.astimezone(EASTERN)
-    )
-
-
-def slot_identity(slot: Slot) -> tuple[str, datetime]:
-    """One bookable choice per provider and start, whichever middleware column backs it."""
-    return provider_name(slot.provider), eastern_datetime(slot.datetime)
-
-
-def afternoon(start: datetime) -> bool:
-    return start.hour >= 12
-
-
-def slot_reference(slot: Slot) -> str:
-    """A readable reference such as SEP15-0900-BACH: date, 24-hour time, provider surname."""
-    surname = "".join(filter(str.isalpha, provider_name(slot.provider).split()[-1]))
-    return f"{eastern_datetime(slot.datetime):%b%d-%H%M}-{surname}".upper()
-
-
-def soonest(offered: list[tuple[str, Slot]]) -> list[str]:
-    """Refs to offer first: open slots on the earliest day, one morning and one afternoon.
-
-    When that day has only shared starts, offer its earliest shared start and the
-    earliest open slot on a later day.
-    """
-    starts = [(ref, slot, eastern_datetime(slot.datetime)) for ref, slot in offered]
-    first_day = starts[0][2].date()
-    day = [item for item in starts if item[2].date() == first_day]
-    open_slots = [(ref, start) for ref, slot, start in day if not slot.sameStartBooked]
-    if not open_slots:
-        later = [
-            ref
-            for ref, slot, start in starts
-            if start.date() != first_day and not slot.sameStartBooked
-        ]
-        return [day[0][0], *later[:1]]
-    halves = [
-        [ref for ref, start in open_slots if afternoon(start) is half]
-        for half in (False, True)
-    ]
-    if all(halves):
-        return [half[0] for half in halves]
-    return [ref for ref, _ in open_slots[:2]]
-
-
-@dataclass(frozen=True, repr=False)
-class SchedulingContext:
-    patient_revision: int
-    patient_id: str | None
-    dob: str | None
-    accepted_insurance: AcceptedInsurance | None
-    acceptance_id: int
-    insurance_write_pending: bool
-    insurance_write_uncertain: bool
-    registration: str | None
-
-
-@dataclass(frozen=True, repr=False)
-class AvailabilitySearch:
-    context: SchedulingContext
-    office: str
-    visit: CoverageType
-    start: date
-    today: date
-
-
-@dataclass(frozen=True, repr=False)
-class OfferedSlot:
-    slot: Slot
-    context: SchedulingContext
-    office: str
-    visit: CoverageType
-    expires: datetime
-
-    @property
-    def selection(self):
-        return self.office, self.visit, slot_identity(self.slot)
 
 
 @dataclass(repr=False)
@@ -151,40 +40,24 @@ class MutationReceipt:
     offered: OfferedSlot | None = None
 
 
-@dataclass(repr=False)
-class PendingRead:
-    task: asyncio.Task
-    waiters: int = 0
-
-
 class Scheduling:
     def __init__(self, state: CallState, http: SchedulingHTTP, *, now=None):
         self.state = state
         self.http = http
         self.now = now or (lambda: datetime.now(UTC))
-        self._slots: dict[str, OfferedSlot] = {}
-        self._issued: dict[str, int] = {}
+        self._offers = Offers(state, http, lambda: self.now())
         self._references: dict[tuple, str] = {}
         self._next_ref = 0
-        self._generation = 0
-        self._search_key = None
-        self._search: PendingRead | None = None
-        self._read_tasks = set()
-        self._cache = None
-        self._failures = {}
         self._write_task = None
         self._closed = False
         self._receipts: dict[tuple, MutationReceipt] = {}
-        self._announced_promoted_office = False
 
     def close_admission(self) -> None:
         self._closed = True
 
     async def aclose(self):
         self._closed = True
-        for task in self._read_tasks:
-            task.cancel()
-        await asyncio.gather(*self._read_tasks, return_exceptions=True)
+        await self._offers.aclose()
         if self._write_task:
             try:
                 await asyncio.shield(self._write_task)
@@ -193,20 +66,7 @@ class Scheduling:
                     raise
 
     def _context(self) -> SchedulingContext:
-        p = self.state.patient.active
-        insurance = self.state.insurance
-        registration = insurance.registrations.get(p.patientId) if p else None
-        accepted = accepted_insurance(self.state) if registration is not None else None
-        return SchedulingContext(
-            patient_revision=self.state.patient.revision,
-            patient_id=p.patientId if p else None,
-            dob=p.dob if p else None,
-            accepted_insurance=accepted,
-            acceptance_id=id(accepted),
-            insurance_write_pending=insurance.write_pending,
-            insurance_write_uncertain=insurance.write_uncertain,
-            registration=registration,
-        )
+        return scheduling_context(self.state)
 
     def _reference(self, appointment):
         p = self.state.patient
@@ -249,213 +109,15 @@ class Scheduling:
             )
         return "\n" + "\n".join(lines)
 
-    def _invalidate(self):
-        self._generation += 1
-        self._slots.clear()
-        self._cache = None
-        self._search_key = None
-        self._search = None
-
-    def _office(self, requested, visit):
-        """The office to search, or the question to put to the caller first."""
-        called = self.state.call.called_office_key
-        if called == "hollywood" and visit == "routine_vision":
-            if not self._announced_promoted_office and requested in (None, "hollywood"):
-                self._announced_promoted_office = True
-                return None, HOLLYWOOD_ROUTINE_OFFICE_CHOICE
-            if requested in (*SHARED_SCHEDULING_OFFICES, HOLLYWOOD_PROMOTED_OFFICE):
-                return requested, None
-            return None, HOLLYWOOD_ROUTINE_OFFICE_FOLLOW_UP
-        elif called in SHARED_SCHEDULING_OFFICES:
-            if requested in SHARED_SCHEDULING_OFFICES:
-                return requested, None
-        elif requested is None:
-            return called, None
-        return None, SHARED_OFFICE_CHOICE
-
     async def availability(self, visit, start=None, office=None):
         if self._closed:
             return reply("unavailable", "blocked: Scheduling has closed for this call.")
-        context = self._context()
-        today = self.now().astimezone(EASTERN).date()
-        try:
-            first = date.fromisoformat(start) if start else today + timedelta(days=1)
-            if start and first.isoformat() != start:
-                raise ValueError()
-        except ValueError:
-            self._invalidate()
-            return reply(
-                "needs_input", "needs_input: Provide the requested date as YYYY-MM-DD."
-            )
-        if first <= today:
-            self._invalidate()
-            return reply(
-                "needs_input",
-                "needs_input: Same-day and past dates cannot be scheduled here. Ask whether tomorrow or later works; do not silently change the date.",
-            )
-        selected, office_choice = self._office(office, visit)
-        if selected is None:
-            self._invalidate()
-            return reply("needs_input", office_choice)
-        p = self.state.patient.active
-        if (
-            visit not in ("medical", "routine_vision")
-            or p is None
-            or not insurance_ready(self.state)
-        ):
-            self._invalidate()
-            return reply(
-                "needs_input",
-                "needs_input: Verify the patient, finish new-patient registration, or resolve the pending or uncertain insurance update before scheduling.",
-            )
-        if self._write_task and not self._write_task.done():
-            return reply(
-                "in_progress",
-                "blocked: An appointment change is in progress. Wait for its result.",
-            )
-        key = AvailabilitySearch(context, selected, visit, first, today)
-        if self._search_key != key:
-            self._invalidate()
-            self._search_key = key
-        if self._cache and self._cache[0] > self.now():
-            return self._cache[1]
-        failed = self._failures.get(key)
-        if failed and (failed[0] >= 2 or not failed[1]):
-            return reply(
-                "availability_failed",
-                "blocked: Availability could not be verified. Do not describe this as no openings or retry this search; ask staff for help.",
-            )
-        if self._search and not self._search.task.done():
-            pending = self._search
-        else:
-            search = SlotSearch(
-                office=selected,
-                startDate=first.isoformat(),
-                patientId=p.patientId,
-                visitType=visit,
-                dob=p.dob,
-            )
-            task = asyncio.create_task(self._load(search, key, self._generation))
-            pending = self._search = PendingRead(task)
-            self._read_tasks.add(task)
-            task.add_done_callback(self._read_tasks.discard)
-        pending.waiters += 1
-        try:
-            return await asyncio.shield(pending.task)
-        finally:
-            pending.waiters -= 1
-            if pending.waiters == 0 and not pending.task.done():
-                pending.task.cancel()
-                if self._search is pending:
-                    self._invalidate()
-
-    async def _load(self, search, key, generation):
-        result = await self.http.availability(search)
-        if generation != self._generation or key.context != self._context():
-            return reply(
-                "stale",
-                "blocked: The patient or appointment details changed. Check again with current details.",
-            )
-        self._slots.clear()
-        first = key.start.isoformat()
-        through = (key.start + timedelta(days=13)).isoformat()
-        expired = False
-        if not isinstance(result, SchedulingFailure):
-            if (
-                (result.searchedFrom is not None and result.searchedFrom != first)
-                or (
-                    result.searchedThrough is not None
-                    and result.searchedThrough != through
-                )
-                or any(not first <= slot.date <= through for slot in result.slots)
-            ):
-                result = SchedulingFailure(reason="invalid_search_window")
-            elif result.outcome == "availability_found":
-                expired = result.bookingTokenExpiresAt <= self.now()
-                if expired:
-                    result = SchedulingFailure(reason="expired_inventory")
-        if (
-            not isinstance(result, SchedulingFailure)
-            and result.outcome == "invalid_input"
-        ):
-            answer = reply(
-                "needs_input",
-                f"needs_input: {result.message}",
-                retry_same_search=False,
-            )
-            self._failures.pop(key, None)
-            return self._remember(answer)
-        if (
-            isinstance(result, SchedulingFailure)
-            or result.outcome == "availability_search_incomplete"
-            or result.status == "error"
-        ):
-            retry = (
-                isinstance(result, SchedulingFailure) or result.shouldRetrySameSearch
-            )
-            count = self._failures.get(key, (0, False))[0] + 1
-            self._failures[key] = (count, retry)
-            if expired and count < 2:
-                return await self._load(search, key, generation)
-            return reply(
-                "availability_failed",
-                "blocked: Availability could not be verified; this does not mean no openings.",
-                retry_same_search=retry and count < 2,
-            )
-        self._failures.pop(key, None)
-        if result.outcome == "no_eligible_providers":
-            answer = reply(
-                "unsupported",
-                "blocked: No providers are eligible for the selected office, visit type, and patient requirements. Confirm the office and visit type or ask staff for help; changing dates will not resolve this restriction.",
-            )
-            return self._remember(answer)
-        if result.outcome == "no_availability":
-            answer = reply(
-                "none",
-                "no_results: No eligible openings in the searched window. Ask what other dates work.",
-                searchedFrom=first,
-                searchedThrough=through,
-            )
-            return self._remember(answer)
-        expiry = result.bookingTokenExpiresAt
-        choices = {}
-        for slot in sorted(
-            result.slots,
-            key=lambda s: (*reversed(slot_identity(s)), s.sameStartBooked),
-        ):
-            choices.setdefault(slot_identity(slot), slot)
-        for slot in choices.values():
-            ref = base = slot_reference(slot)
-            collision = 1
-            while ref in self._slots:
-                collision += 1
-                ref = f"{base}-{collision}"
-            self._slots[ref] = OfferedSlot(
-                slot, key.context, key.office, key.visit, expiry
-            )
-            self._issued[ref] = generation
-        answer = reply(
-            "found",
-            "success: Found eligible openings.",
-            searchedFrom=first,
-            searchedThrough=through,
-            slots=[
-                {
-                    "appointmentSlotRef": ref,
-                    "datetime": item.slot.datetime,
-                    "provider": provider_name(item.slot.provider),
-                    "shared": bool(item.slot.sameStartBooked),
-                }
-                for ref, item in self._slots.items()
-            ],
-            soonest=soonest([(ref, item.slot) for ref, item in self._slots.items()]),
+        return await self._offers.search(
+            visit,
+            start,
+            office,
+            writing=bool(self._write_task and not self._write_task.done()),
         )
-        return self._remember(answer, expiry)
-
-    def _remember(self, answer, expires=None):
-        ttl = self.now() + timedelta(seconds=60)
-        self._cache = (ttl if expires is None else min(expires, ttl), answer)
-        return answer
 
     @property
     def closed(self) -> bool:
@@ -606,7 +268,7 @@ class Scheduling:
                 f"needs_input: Confirm cancellation of {old.date} at {old.time} Eastern"
                 f" with {provider_name(old.provider)} before cancelling.",
             )
-        self._invalidate()
+        self._offers.invalidate()
         self._receipts[receipt_key] = MutationReceipt(
             self._write_failure(
                 SchedulingFailure(reason="pending", uncertain=True), "cancellation"
@@ -651,18 +313,18 @@ class Scheduling:
         receipt_key = (
             (p.patientId, "reschedule", old.id)
             if old
-            else (p.patientId, "book", (slot_ref, self._issued.get(slot_ref)))
+            else (p.patientId, "book", (slot_ref, self._offers.issued(slot_ref)))
         )
         if not old and (saved := self._receipts.get(receipt_key)):
             return self._replay(p, saved)
-        offered = self._slots.get(slot_ref)
+        offered = self._offers.get(slot_ref)
         if not offered:
             return reply(
                 "needs_input",
                 "needs_input: That slot reference was not returned. Choose a slot exactly as listed in the latest results.",
             )
         if offered.context != captured or offered.expires <= self.now():
-            self._invalidate()
+            self._offers.invalidate()
             return reply(
                 "needs_input",
                 "needs_input: Search availability again and choose a current returned slot.",
@@ -678,7 +340,7 @@ class Scheduling:
                 ):
                     return saved.result
         if not insurance_ready(self.state):
-            self._invalidate()
+            self._offers.invalidate()
             return reply(
                 "needs_input",
                 "needs_input: Finish new-patient registration or resolve the pending or uncertain insurance update before booking.",
@@ -737,7 +399,7 @@ class Scheduling:
             referringDoctorAddress=(referrer_address or "").strip() or None,
             rescheduleToken=old.rescheduleToken if old else None,
         )
-        self._invalidate()
+        self._offers.invalidate()
         self._receipts[receipt_key] = MutationReceipt(
             self._write_failure(
                 SchedulingFailure(reason="pending", uncertain=True), "booking"
@@ -871,7 +533,7 @@ class Scheduling:
     ) -> dict:
         old, receipt_key = self._target(p, "reschedule", old_ref)
         saved = self._receipts.get(receipt_key)
-        offered = self._slots.get(slot_ref.strip().upper())
+        offered = self._offers.get(slot_ref.strip().upper())
         if saved:
             different = (
                 offered

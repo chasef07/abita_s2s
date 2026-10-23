@@ -240,7 +240,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_creation_proceeds_directly_to_availability_without_recheck(self):
         from datetime import datetime, UTC
-        from abita_s2s.scheduling import Scheduling
+        from abita_s2s.scheduling.appointments import Scheduling
         from abita_s2s.integrations.scheduling_http import SchedulingHTTP
         from test_scheduling import inventory
 
@@ -277,7 +277,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_completed_chart_visit_change_uses_backend_policy(self):
         from datetime import datetime, UTC
-        from abita_s2s.scheduling import Scheduling
+        from abita_s2s.scheduling.appointments import Scheduling
         from abita_s2s.integrations.scheduling_http import SchedulingHTTP
 
         state, _, owner = await self.prepared(

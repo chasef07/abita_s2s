@@ -28,7 +28,7 @@ from abita_s2s.offices import (
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
 from abita_s2s.runtime.reporting import FINISH_SECONDS, CallReporter
 from abita_s2s.runtime.silence import check_in_on_silence
-from abita_s2s.scheduling import Scheduling
+from abita_s2s.scheduling.appointments import Scheduling
 from abita_s2s.integrations.scheduling_http import SchedulingHTTP
 from abita_s2s.staff_tasks import StaffTasks
 from abita_s2s.state import CallContext, CallState

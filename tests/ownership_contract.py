@@ -14,7 +14,7 @@ from abita_s2s.insurance_state import accepted_insurance, insurance_ready
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
 from abita_s2s.tools.scheduling import SchedulingTools
-from abita_s2s.scheduling import Scheduling
+from abita_s2s.scheduling.appointments import Scheduling
 from abita_s2s.integrations.scheduling_http import (
     Inventory,
     SchedulingHTTP,
