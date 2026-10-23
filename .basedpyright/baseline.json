@@ -1,23 +1,5 @@
 {
     "files": {
-        "./src/abita_s2s/insurance.py": [
-            {
-                "code": "reportAttributeAccessIssue",
-                "range": {
-                    "startColumn": 63,
-                    "endColumn": 72,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportAttributeAccessIssue",
-                "range": {
-                    "startColumn": 69,
-                    "endColumn": 78,
-                    "lineCount": 1
-                }
-            }
-        ],
         "./src/abita_s2s/integrations/scheduling_http.py": [
             {
                 "code": "reportOptionalMemberAccess",

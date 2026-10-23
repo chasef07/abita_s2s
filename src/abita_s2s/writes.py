@@ -90,6 +90,11 @@ class WriteLedger[R]:
     def receipts(self, subject: Hashable) -> list[R]:
         return [w.receipt for w in self._writes.values() if w.key.subject == subject]
 
+    def latest(self, subject: Hashable) -> WriteKey | None:
+        """The key of the last kept write for the subject."""
+        keys = [key for key in self._writes if key.subject == subject]
+        return keys[-1] if keys else None
+
     def blocking(self, subject: Hashable) -> R | None:
         """The receipt that answers every later write for the subject, if any."""
         return next(

@@ -26,10 +26,10 @@ from abita_s2s.integrations.registration_middleware import (
     InsuranceChange,
     NewPatient,
     RegistrationMiddleware,
-    UpdatedReceipt,
     WriteFailure,
 )
 from abita_s2s.state import CallState
+from abita_s2s.writes import WriteKey, WriteLedger, WriteOutcome, write_effect
 
 
 def normalize(text: str) -> str:
@@ -111,8 +111,7 @@ class InsuranceRegistration:
         self.state = state
         self._resolver = resolver
         self._middleware = middleware
-        self._creations: list[tuple[tuple, dict]] = []
-        self._updates: list[tuple[tuple, dict]] = []
+        self._ledger: WriteLedger[dict] = WriteLedger()
         self._task: asyncio.Task | None = None
         self._closed = False
 
@@ -208,18 +207,26 @@ class InsuranceRegistration:
         self._task = asyncio.create_task(run())
         return await asyncio.shield(self._task)
 
+    def _record(self, key: WriteKey, outcome: WriteOutcome, answer: dict) -> dict:
+        if write_effect(outcome).blocks:
+            self.state.insurance.write_uncertain = True
+        self._ledger.record(key, outcome, answer)
+        return answer
+
     async def add(
         self, registration: Registration, *, call_id: str | None = None
     ) -> dict:
         r = registration
-        key = (
-            self.state.call.called_office_key,
-            exact_name(r.firstName),
-            parse_dob(r.dob),
+        key = WriteKey(
+            (
+                self.state.call.called_office_key,
+                exact_name(r.firstName),
+                parse_dob(r.dob),
+            ),
+            "register",
         )
-        for prior, result in self._creations:
-            if prior == key:
-                return result
+        if saved := self._ledger.get(key):
+            return saved
         if blocked := self._write_blocker():
             return blocked
         if self.state.patient.active and not self._resolver.begin_registration(
@@ -304,9 +311,9 @@ class InsuranceRegistration:
 
         async def create():
             result = await self._middleware.create(request)
+            chart = None
             if isinstance(result, WriteFailure):
-                if result.status == "uncertain":
-                    self.state.insurance.write_uncertain = True
+                outcome: WriteOutcome = result.status
                 answer = (
                     reply(
                         "failed",
@@ -316,29 +323,28 @@ class InsuranceRegistration:
                     else staff(result.status)
                 )
             else:
-                answer = self._created(result, r, checked)
+                outcome, answer = self._created(result, r, checked)
+                if outcome == "written":
+                    chart = result.patientId
             if self.state.reporter:
-                evidence = {"outcome": answer["outcome"]}
-                if answer["outcome"] in ("created", "partial"):
-                    evidence["externalPatientId"] = str(result.patientId)
+                evidence: dict[str, object] = {"outcome": answer["outcome"]}
+                if chart is not None:
+                    evidence["externalPatientId"] = str(chart)
                     active = self.state.patient.active
-                    evidence["superseded"] = (
-                        active is None or active.patientId != result.patientId
-                    )
+                    evidence["superseded"] = active is None or active.patientId != chart
                 self.state.reporter.record("patient", evidence, call_id=call_id)
-            if not isinstance(result, WriteFailure) or result.status != "failed":
-                self._creations.append((key, answer))
-            return answer
+            return self._record(key, outcome, answer)
 
         return await self._run_write(checked, create)
 
-    def _created(self, result: CreationReceipt, r: Registration, checked) -> dict:
+    def _created(
+        self, result: CreationReceipt, r: Registration, checked
+    ) -> tuple[WriteOutcome, dict]:
         expected = {full_name(r), exact_name(f"{r.lastName} {r.firstName}")}
         if exact_name(result.name) not in expected or not dob_matches(
             result.dob, r.dob
         ):
-            self.state.insurance.write_uncertain = True
-            return staff("invalid_receipt")
+            return "uncertain", staff("invalid_receipt")
         patient = Receipt(
             status="verified",
             patientId=result.patientId,
@@ -370,7 +376,7 @@ class InsuranceRegistration:
             answer += " Insurance attachment is not confirmed. Office staff must finish registration; do not create another chart."
         if not activated:
             answer += f" The chart is for {result.name}. The patient context changed while this was running; this receipt was not applied to the current patient. Do not repeat chart creation."
-        return reply(result.status, answer)
+        return "written", reply(result.status, answer)
 
     async def update(self, member_id: str, *, call_id: str | None = None) -> dict:
         active = self.state.patient.active
@@ -391,22 +397,21 @@ class InsuranceRegistration:
                 "needs_member_id",
                 "needs_input: What is the member ID on the insurance card?",
             )
-        key = (
-            checked.office_key,
-            active.patientId,
-            checked.decision.canonicalPlan,
-            checked.decision.coverageType,
-            member_id,
+        subject = (checked.office_key, active.patientId)
+        key = WriteKey(
+            subject,
+            "update_insurance",
+            (checked.decision.canonicalPlan, checked.decision.coverageType, member_id),
         )
-        for prior, result in reversed(self._updates):
-            if prior[:2] == key[:2]:
-                if result["outcome"] == "partial":
-                    return result
-                if prior == key and normalize(
-                    active.insuranceCarrier or ""
-                ) == normalize(checked.decision.canonicalPlan):
-                    return result
-                break
+        if blocked := self._ledger.blocking(subject):
+            return blocked
+        if (
+            (saved := self._ledger.get(key))
+            and self._ledger.latest(subject) == key
+            and normalize(active.insuranceCarrier or "")
+            == normalize(checked.decision.canonicalPlan)
+        ):
+            return saved
 
         async def update():
             result = await self._middleware.update(
@@ -420,31 +425,27 @@ class InsuranceRegistration:
                     office=checked.office_key,
                 )
             )
+            outcome: WriteOutcome
             if isinstance(result, WriteFailure):
+                outcome = result.status
                 if result.status == "failed":
                     answer = reply(
                         "failed",
                         f"needs_input: Insurance was not changed ({result.reason}). Resolve the failure before trying again.",
                     )
-                else:
-                    self.state.insurance.write_uncertain = True
-                    answer = (
-                        reply(
-                            "partial",
-                            "blocked: The previous insurance plan was ended, but the replacement was not attached. Office staff must finish the change. Do not repeat this write.",
-                        )
-                        if result.status == "partial"
-                        else staff(result.status)
+                elif result.status == "partial":
+                    answer = reply(
+                        "partial",
+                        "blocked: The previous insurance plan was ended, but the replacement was not attached. Office staff must finish the change. Do not repeat this write.",
                     )
-            elif (
-                not isinstance(result, UpdatedReceipt)
-                or result.patientId != active.patientId
-                or normalize(result.newInsurance)
-                != normalize(checked.decision.canonicalPlan)
-            ):
-                self.state.insurance.write_uncertain = True
-                answer = staff("uncertain")
+                else:
+                    answer = staff(result.status)
+            elif result.patientId != active.patientId or normalize(
+                result.newInsurance
+            ) != normalize(checked.decision.canonicalPlan):
+                outcome, answer = "uncertain", staff("uncertain")
             else:
+                outcome = "written"
                 if active.patientId in self.state.insurance.registrations:
                     self.state.insurance.registrations[active.patientId] = "created"
                 updated = active.model_copy(
@@ -473,8 +474,6 @@ class InsuranceRegistration:
                     },
                     call_id=call_id,
                 )
-            if not isinstance(result, WriteFailure) or result.status != "failed":
-                self._updates.append((key, answer))
-            return answer
+            return self._record(key, outcome, answer)
 
         return await self._run_write(checked, update)
