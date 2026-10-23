@@ -19,6 +19,7 @@ from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
+from abita_s2s.integrations.product import Product
 from abita_s2s.scheduling import Scheduling
 from abita_s2s.integrations.scheduling_http import SchedulingHTTP
 from abita_s2s.runtime.silence import BackendResponses
@@ -55,10 +56,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
                 transport=httpx.MockTransport(handler)
             ) as client:
                 control = CallControl(
-                    call_state(),
-                    client,
-                    handoff=config.handoff,
-                    backend=BackendResponses(),
+                    call_state(), Product(client, config), backend=BackendResponses()
                 )
                 with patch.dict(
                     "os.environ",
@@ -181,7 +179,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
             ) as client:
                 state = call_state()
                 control = CallControl(
-                    state, client, handoff=config.handoff, backend=BackendResponses()
+                    state, Product(client, config), backend=BackendResponses()
                 )
                 with self.assertRaises(AdmissionRejected):
                     await control.admission.resolve()

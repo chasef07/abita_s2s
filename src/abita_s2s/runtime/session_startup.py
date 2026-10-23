@@ -19,6 +19,7 @@ from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.knowledge import OfficeKnowledge
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
+from abita_s2s.integrations.product import Product
 from abita_s2s.model_config import create_model
 from abita_s2s.offices import (
     get_office_profile,
@@ -268,14 +269,14 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             "close", lambda event: logger.info("session_closed reason=%s", event.reason)
         )
         resolver = PatientResolver(state, PatientMiddleware(client, config))
+        product = Product(client, config)
         if not ctx.is_fake_job() and simulation is None:
             sip_api = api.LiveKitAPI(failover=False)
         control = CallControl(
             state,
-            client,
+            product,
             ctx.room,
             sip_api.sip if sip_api else None,
-            handoff=config.handoff,
             sandbox=config.deployment is not None,
             simulation=simulation is not None,
             backend=model.backend,
@@ -292,14 +293,14 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             state, resolver, RegistrationMiddleware(client, config)
         )
         scheduling = Scheduling(state, SchedulingHTTP(client, config))
-        staff_tasks = StaffTasks(state, resolver, client, config)
+        staff_tasks = StaffTasks(state, resolver, product)
         await start_session(
             session,
             ctx,
             room_options,
             AbitaAgent(
                 office,
-                OfficeKnowledge(client, config),
+                OfficeKnowledge(product),
                 resolver,
                 insurance=insurance,
                 scheduling=scheduling,

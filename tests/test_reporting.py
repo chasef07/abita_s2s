@@ -532,10 +532,8 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
     async def test_staff_delivery_exception_or_cancellation_fails_closeout(self):
         for error in (RuntimeError("delivery failed"), asyncio.CancelledError()):
             with self.subTest(error=type(error).__name__):
-                owner = StaffTasks(call_state(), Mock(), Mock(), CONFIG)
-                owner._drafts["accepted"] = Draft(
-                    {"summary": "Synthetic request"}, None
-                )
+                owner = StaffTasks(call_state(), Mock(), Mock())
+                owner._drafts["accepted"] = Draft(Mock(), None)
                 owner._deliver = AsyncMock(side_effect=error)
                 reporter = self.reporter(drain=owner.aclose)
                 reporter.started = True
