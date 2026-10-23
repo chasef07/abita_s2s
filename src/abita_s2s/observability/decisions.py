@@ -11,7 +11,7 @@ def read_answers(content: bytes) -> dict:
     """Return the response's answers by question name, or raise ``ValueError``."""
     if len(content) > MAX_RESPONSE_BYTES:
         raise ValueError("Response too large")
-    body = json.loads(content)
+    body = json.loads(content, parse_constant=_reject_constant)
     answers = body.get("answers") if isinstance(body, dict) else None
     if not isinstance(answers, dict):
         raise ValueError("Missing answers")
@@ -62,3 +62,7 @@ def parse(question: dict, answer) -> float | str:
 
 def _within(value, maximum: int) -> bool:
     return type(value) in (int, float) and 0 <= value <= maximum
+
+
+def _reject_constant(constant: str):
+    raise ValueError(f"Non-finite {constant}")
