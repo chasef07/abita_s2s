@@ -19,7 +19,31 @@ from abita_s2s.identity import (
 from abita_s2s.integrations.patient_middleware import PatientMiddleware, Receipt
 from abita_s2s.name_matcher import phone_name_matches
 from abita_s2s.offices import SPRING_HILL
+from abita_s2s.staff_tasks import _same_patient
 from abita_s2s.state import CallContext, CallState
+
+DOB = "01/02/1980"
+SAME_PATIENT = (
+    ("Jon said after John verified the chart", "Doe, John", "Jon", None, False, True),
+    ("Jon repeated after Jon verified John", "Doe, John", "Jon", "Jon", True, True),
+    ("Janet said after Jane", "Doe, Jane", "Janet", None, True, True),
+    (
+        "Anna Jones after Ann Smith, same DOB; open product call on last names",
+        "Smith, Ann",
+        "Anna",
+        None,
+        False,
+        True,
+    ),
+    (
+        "Ann Jones after Ann Smith, same DOB; open product call on last names",
+        "Smith, Ann",
+        "Ann",
+        None,
+        True,
+        True,
+    ),
+)
 
 CONFIG = Config(
     "offline", middleware_url="https://middleware.test", middleware_token="test-auth"
@@ -307,6 +331,25 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(r.state.patient.active, active)
         self.assertEqual(r.state.patient.revision, revision)
         self.assertEqual(len(calls), 1)
+
+    async def test_same_patient_table_holds_each_site_rule(self):
+        for label, chart, said, verified_by, resolver_same, staff_same in SAME_PATIENT:
+            with self.subTest(label):
+                r, _ = self.resolver(
+                    [{**receipt("chart", chart.split(", ")[1]), "name": chart}]
+                )
+                if verified_by:
+                    await self.preload(r)
+                await r.resolve(verified_by or chart.split(", ")[1], DOB)
+                self.assertIsNotNone(r.state.patient.active)
+                self.assertIs(not r.begin_registration(said, DOB), resolver_same)
+                self.assertIs(
+                    _same_patient(
+                        {"name": said, "dob": DOB},
+                        {"id": "chart", "name": chart, "dob": DOB},
+                    ),
+                    staff_same,
+                )
 
     async def test_appointment_load_error_is_retained_and_reloaded(self):
         r, calls = self.resolver([receipt(appointmentsStatus="error"), receipt()])
