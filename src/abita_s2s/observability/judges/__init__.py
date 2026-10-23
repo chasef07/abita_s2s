@@ -28,8 +28,8 @@ DEFINITIONS_HASH = hashlib.sha256(
     b"".join(
         name.encode()
         + b"\0"
-        + Path(judge.__file__).read_bytes().replace(b"\r\n", b"\n")
+        + Path(__file__).with_name(f"{name}.py").read_bytes().replace(b"\r\n", b"\n")
         + b"\0"
-        for name, judge in JUDGES.items()
+        for name in JUDGES
     )
 ).hexdigest()[:12]
