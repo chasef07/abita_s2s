@@ -14,7 +14,12 @@ from abita_s2s.integrations.product import (
     Urgency,
 )
 from abita_s2s.name_matcher import names_match, phone_name_matches, same_patient
-from abita_s2s.offices import e164, get_office_profile, get_product_office_key
+from abita_s2s.offices import (
+    e164,
+    get_office_profile,
+    get_product_office_key,
+    us_trunk_number,
+)
 from abita_s2s.results import reply
 from abita_s2s.state import CallState
 
@@ -190,7 +195,7 @@ class StaffTasks:
             raise ValueError(
                 "Patient details exceed the delivery contract. No request was sent."
             )
-        inbound = e164(call.called_number)
+        inbound = us_trunk_number(call.called_number)
         other_trunk = bool(call.called_number) and inbound != office.trunk_numbers[0]
         if other_trunk and inbound not in office.trunk_numbers:
             raise ValueError(

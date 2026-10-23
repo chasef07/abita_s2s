@@ -335,10 +335,14 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_sweetwater_preserves_inbound_number_and_product_location(self):
         office = get_office_profile("sweetwater")
-        for phone in office.trunk_numbers:
-            with self.subTest(phone=phone):
+        for phone, spelling in (
+            (number, spelling)
+            for number in office.trunk_numbers
+            for spelling in (number, "+" + number.removeprefix("+1"))
+        ):
+            with self.subTest(spelling=spelling):
                 state = call_state(office)
-                state.call = replace(state.call, called_number=phone)
+                state.call = replace(state.call, called_number=spelling)
                 async with self.setup_session(state=state) as (
                     _,
                     _,
