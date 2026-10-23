@@ -27,7 +27,7 @@ class AgentNameTests(unittest.TestCase):
                     "from abita_s2s.main import server; print(server._agent_name)",
                 ],
                 cwd=directory,
-                env={**os.environ, **IMAGE_ENV},
+                env={**os.environ, "LIVEKIT_AGENT_NAME_OVERRIDE": "", **IMAGE_ENV},
                 capture_output=True,
                 text=True,
                 check=True,
