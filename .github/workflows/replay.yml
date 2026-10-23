@@ -1,0 +1,63 @@
+name: Offline replay
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: replay-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Decide whether the offline replay runs
+        id: gate
+        env:
+          FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HAS_KEY: ${{ secrets.REPLAY_OPENAI_API_KEY != '' }}
+          PATHS: >-
+            src/abita_s2s/prompts
+            src/abita_s2s/tools
+            src/abita_s2s/agent.py
+            src/abita_s2s/model_config.py
+            src/abita_s2s/prompt.py
+            src/abita_s2s/runtime/silence.py
+            src/abita_s2s/runtime/delegation_watchdog.py
+            evals/replay
+        run: |
+          skip() {
+            echo "Offline replay skipped: $1" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          if [ "$FORK" = true ]; then
+            skip "pull requests from forks never receive the replay key."
+          fi
+          if git cat-file -e "$BASE^{commit}" 2>/dev/null && git diff --quiet "$BASE" HEAD -- $PATHS; then
+            skip "nothing changed in $PATHS."
+          fi
+          if [ "$HAS_KEY" != true ]; then
+            skip "the REPLAY_OPENAI_API_KEY secret is not set."
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+      - if: steps.gate.outputs.run == 'true'
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: '0.13.1'
+          python-version: '3.13.16'
+          enable-cache: true
+      - if: steps.gate.outputs.run == 'true'
+        run: uv sync --locked
+      - name: Replay the scripted calls against GPT-Live
+        if: steps.gate.outputs.run == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.REPLAY_OPENAI_API_KEY }}
+        run: uv run --no-sync python -m evals.replay --summary "$GITHUB_STEP_SUMMARY"

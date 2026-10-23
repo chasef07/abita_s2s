@@ -14,7 +14,7 @@ DIRECTIVE = re.compile(rf"# noqa: ?{CODE}(, ?{CODE})*")
 class NoCommentTests(unittest.TestCase):
     def test_sources_have_no_comments(self):
         found = []
-        for folder in ("src", "tests", "scripts"):
+        for folder in ("src", "tests", "scripts", "evals"):
             for path in sorted((ROOT / folder).rglob("*.py")):
                 source = io.StringIO(path.read_text())
                 for token in tokenize.generate_tokens(source.readline):
