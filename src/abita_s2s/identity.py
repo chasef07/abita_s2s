@@ -2,6 +2,7 @@
 
 import asyncio
 
+from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.insurance_state import (
     AcceptedInsurance,
     accepted_insurance,
@@ -102,7 +103,7 @@ class PatientResolver:
 
     def _begin_lookup(self) -> object:
         self._token = object()
-        self.state.patient.absence = None
+        self.state.patient.record_absence(None)
         return self._token
 
     def start_phone_lookup(self) -> None:
@@ -143,7 +144,7 @@ class PatientResolver:
             lookup = CandidateLookup("found", tuple(matches))
         if self._current(token):
             self._token = None
-            self.state.patient.lookup = lookup
+            self.state.patient.record_lookup(lookup)
         return lookup
 
     def close_admission(self) -> None:
@@ -186,8 +187,7 @@ class PatientResolver:
         active = self.state.patient.active
         if active and not self._same_as_active(active, first_name, dob):
             self._previous_id = active.patientId
-            self.state.patient.active = None
-            self.state.patient.revision += 1
+            self.state.patient.deactivate()
         token = self._begin_lookup()
         if self._task is not None:
             self._task.cancel()
@@ -198,7 +198,7 @@ class PatientResolver:
                     candidates = await asyncio.shield(self._precall)
                     if not self._current(token):
                         return superseded()
-                    self.state.patient.lookup = candidates
+                    self.state.patient.record_lookup(candidates)
                 return await self._resolve(first_name, dob, token, call_id=call_id)
             except asyncio.CancelledError:
                 if self._token is token:
@@ -269,8 +269,8 @@ class PatientResolver:
         if not self._current(token):
             return superseded()
         if isinstance(result, NotFound):
-            self.state.patient.absence = PatientAbsence(
-                name, dob, self.state.call.called_office_key
+            self.state.patient.record_absence(
+                PatientAbsence(name, dob, self.state.call.called_office_key)
             )
             return reply(
                 "not_found",
@@ -326,10 +326,7 @@ class PatientResolver:
         previous_id = previous.patientId if previous else self._previous_id
         switched = previous_id not in (None, receipt.patientId)
         self._token = None
-        if previous is None or previous.patientId != receipt.patientId:
-            self.state.patient.revision += 1
-        self.state.patient.active = receipt
-        self.state.patient.absence = None
+        self.state.patient.activate(receipt)
         self._pending = (None, None)
         self._previous_id = None
         self._verified_as = (receipt.patientId, exact_name(name))
@@ -338,22 +335,22 @@ class PatientResolver:
         )
 
     def refresh_insurance(
-        self, expected: Receipt, updated: Receipt, checked: AcceptedInsurance
+        self,
+        expected: Receipt,
+        carrier: str,
+        decision: InsuranceDecision,
+        checked: AcceptedInsurance,
     ) -> bool:
         """Commit validated coverage and its acceptance, fencing older patient reads."""
         if (
             self._closed
             or self.state.patient.revision != checked.patient_revision
             or self.state.patient.active is not expected
-            or updated.patientId != expected.patientId
-            or updated.name != expected.name
-            or updated.dob != expected.dob
         ):
             return False
         self._token = None
-        self.state.patient.active = updated
-        self.state.patient.revision += 1
-        rebind_acceptance(self.state, checked, updated.insuranceDecision)
+        self.state.patient.update_insurance(carrier, decision)
+        rebind_acceptance(self.state, checked, decision)
         return True
 
     def begin_registration(self, first_name: str, dob: str) -> bool:
@@ -369,9 +366,7 @@ class PatientResolver:
         self._token = None
         self._pending = (first_name, dob)
         self._previous_id = None
-        self.state.patient.active = None
-        self.state.patient.absence = None
-        self.state.patient.revision += 1
+        self.state.patient.deactivate()
         clear_acceptance(self.state)
         return True
 
@@ -384,9 +379,7 @@ class PatientResolver:
         ):
             return False
         self._token = None
-        self.state.patient.active = receipt
-        self.state.patient.absence = None
-        self.state.patient.revision += 1
+        self.state.patient.activate(receipt)
         self._pending = (None, None)
         self._previous_id = None
         rebind_acceptance(
