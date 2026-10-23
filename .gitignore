@@ -10,3 +10,6 @@ dist/
 src/abita_s2s/release.json
 livekit.toml
 .ruff_cache/
+/docs/
+evals/results/
+evals/*.yaml
