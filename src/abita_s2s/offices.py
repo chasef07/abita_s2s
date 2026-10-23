@@ -2,10 +2,11 @@
 
 import re
 from dataclasses import dataclass
-from typing import Literal, get_args
+from typing import Literal, NewType, get_args
 from zoneinfo import ZoneInfo
 
 EASTERN = ZoneInfo("America/New_York")
+E164 = NewType("E164", str)
 
 SharedSchedulingOffice = Literal["hollywood", "sweetwater"]
 SHARED_SCHEDULING_OFFICES: tuple[str, ...] = get_args(SharedSchedulingOffice)
@@ -81,11 +82,14 @@ def same_office(office_id: str, key: str) -> bool:
     return office_id.replace("_", "-") == key
 
 
-def e164(phone: str) -> str:
-    digits = re.sub(r"\D", "", phone)
-    if len(digits) == 10:
+def e164(phone: str | None) -> E164 | None:
+    """A number with a leading + keeps its country code; ten bare digits are US."""
+    text = (phone or "").strip()
+    digits = re.sub(r"\D", "", text)
+    if len(digits) == 10 and not text.startswith("+"):
         digits = "1" + digits
-    return "+" + digits
+    number = "+" + digits
+    return E164(number) if re.fullmatch(r"\+[1-9][0-9]{7,14}", number) else None
 
 
 def get_office_profile_by_phone(phone: str) -> OfficeProfile:

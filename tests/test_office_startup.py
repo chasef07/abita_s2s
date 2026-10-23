@@ -17,6 +17,7 @@ from abita_s2s.integrations.patient_middleware import NotFound
 from abita_s2s.offices import (
     OFFICES,
     SPRING_HILL,
+    e164,
     get_office_profile,
     get_office_profile_by_phone,
 )
@@ -57,6 +58,24 @@ class OfficeRoutingTests(unittest.TestCase):
     def test_aliases_select_same_office(self):
         for phone in (*SPRING_HILL.trunk_numbers, "(727) 591-9997", "1-813-548-4830"):
             self.assertIs(get_office_profile_by_phone(phone), SPRING_HILL)
+
+    def test_e164_keeps_a_given_country_code_and_reads_ten_digits_as_us(self):
+        for given, expected in (
+            ("+17275919997", "+17275919997"),
+            ("(727) 591-9997", "+17275919997"),
+            ("727.591.9997", "+17275919997"),
+            ("1-813-548-4830", "+18135484830"),
+            ("+1 (813) 548-4830", "+18135484830"),
+            ("+4741234567", "+4741234567"),
+            (" +44 20 7946 0958", "+442079460958"),
+            ("591-9997", None),
+            ("+0123456789", None),
+            ("1234567890123456", None),
+            ("", None),
+            (None, None),
+        ):
+            with self.subTest(given=given):
+                self.assertEqual(e164(given), expected)
 
     def test_all_production_routes(self):
         expected = {

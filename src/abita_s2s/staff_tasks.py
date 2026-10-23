@@ -1,7 +1,6 @@
 """Editable per-call staff requests, delivered once at call closeout."""
 
 import asyncio
-import re
 from dataclasses import dataclass
 from typing import Literal, get_args
 from uuid import uuid4
@@ -18,11 +17,6 @@ from abita_s2s.name_matcher import names_match, phone_name_matches, same_patient
 from abita_s2s.offices import e164, get_office_profile, get_product_office_key
 from abita_s2s.results import reply
 from abita_s2s.state import CallState
-
-
-def _phone(value: str | None) -> str:
-    phone = e164(value or "")
-    return phone if re.fullmatch(r"\+[1-9][0-9]{7,14}", phone) else ""
 
 
 def _same_patient(old: dict | None, new: dict | None) -> bool:
@@ -184,7 +178,7 @@ class StaffTasks:
             raise ValueError(
                 "No request was sent. Use a supported urgency, a summary up to 240 characters and details up to 2500 characters. Preserve essential intake and missing details."
             )
-        phone = _phone(call.caller_phone)
+        phone = e164(call.caller_phone)
         if not phone or not 1 <= len(call.call_id) <= 255:
             raise ValueError(
                 "A valid caller contact and call identity are required. No request was sent; offer office help."
@@ -196,7 +190,7 @@ class StaffTasks:
             raise ValueError(
                 "Patient details exceed the delivery contract. No request was sent."
             )
-        inbound = _phone(call.called_number)
+        inbound = e164(call.called_number)
         other_trunk = bool(call.called_number) and inbound != office.trunk_numbers[0]
         if other_trunk and inbound not in office.trunk_numbers:
             raise ValueError(
