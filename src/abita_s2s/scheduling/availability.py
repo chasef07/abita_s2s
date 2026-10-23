@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
-from abita_s2s.insurance_contract import CoverageType
+from abita_s2s.insurance_contract import COVERAGE_TYPES, CoverageType
 from abita_s2s.insurance_state import (
     AcceptedInsurance,
     accepted_insurance,
@@ -17,23 +17,11 @@ from abita_s2s.integrations.scheduling_http import (
     Slot,
     SlotSearch,
 )
-from abita_s2s.offices import (
-    EASTERN,
-    HOLLYWOOD_PROMOTED_OFFICE,
-    SHARED_SCHEDULING_OFFICES,
-)
+from abita_s2s.offices import EASTERN, get_office_profile
 from abita_s2s.results import reply
 from abita_s2s.state import CallState
 
 SHARED_OFFICE_CHOICE = "needs_input: Ask for Hollywood or Sweetwater on those office calls; omit office for other calls."
-HOLLYWOOD_ROUTINE_OFFICE_CHOICE = (
-    "needs_input: Before searching, tell the caller: Before we schedule your appointment "
-    "at Hollywood, Abita Eye Group is excited to announce our newest office, at 633 "
-    "Northeast 167th Street in North Miami Beach. Would you like to schedule your "
-    "appointment there with Dr. Miriam Bach, or continue booking at our Hollywood "
-    "location? Then search with the office the caller chooses."
-)
-HOLLYWOOD_ROUTINE_OFFICE_FOLLOW_UP = "needs_input: Ask whether the caller wants North Miami Beach or Hollywood, then search with that office."
 
 
 def provider_name(name):
@@ -195,19 +183,20 @@ class Offers:
 
     def _office(self, requested, visit) -> tuple[str, None] | tuple[None, str]:
         """The office to search, or the question to put to the caller first."""
-        called = self.state.call.called_office_key
-        if called == "hollywood" and visit == "routine_vision":
-            if not self._announced_promoted_office and requested in (None, "hollywood"):
+        office = get_office_profile(self.state.call.called_office_key)
+        promotion = office.promotion
+        if promotion and visit == promotion.visit:
+            if not self._announced_promoted_office and requested in (None, office.key):
                 self._announced_promoted_office = True
-                return None, HOLLYWOOD_ROUTINE_OFFICE_CHOICE
-            if requested in (*SHARED_SCHEDULING_OFFICES, HOLLYWOOD_PROMOTED_OFFICE):
+                return None, promotion.announcement
+            if requested in (*office.scheduling_offices, promotion.office):
                 return requested, None
-            return None, HOLLYWOOD_ROUTINE_OFFICE_FOLLOW_UP
-        elif called in SHARED_SCHEDULING_OFFICES:
-            if requested in SHARED_SCHEDULING_OFFICES:
+            return None, promotion.follow_up
+        elif office.scheduling_offices:
+            if requested in office.scheduling_offices:
                 return requested, None
         elif requested is None:
-            return called, None
+            return office.key, None
         return None, SHARED_OFFICE_CHOICE
 
     async def search(self, visit, start=None, office=None, *, writing: bool) -> dict:
@@ -234,11 +223,7 @@ class Offers:
             return reply("needs_input", choice[1])
         selected = choice[0]
         p = self.state.patient.active
-        if (
-            visit not in ("medical", "routine_vision")
-            or p is None
-            or not insurance_ready(self.state)
-        ):
+        if visit not in COVERAGE_TYPES or p is None or not insurance_ready(self.state):
             self.invalidate()
             return reply(
                 "needs_input",
