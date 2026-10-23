@@ -187,7 +187,7 @@ async def evaluate_judges(
     for name in asked:
         votes, failures = {}, {}
         for juror, reply in replies.items():
-            if isinstance(reply, Exception):
+            if not isinstance(reply, dict):
                 failures[juror] = type(reply).__name__
                 continue
             try:

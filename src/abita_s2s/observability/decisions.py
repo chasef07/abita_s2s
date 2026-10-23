@@ -1,6 +1,7 @@
 """Read OpenRouter Decisions answers for the jury and the call labeler."""
 
 import json
+from typing import TypeGuard
 
 URL = "https://openrouter.ai/api/alpha/decisions"
 MAX_RESPONSE_BYTES = 1024 * 1024
@@ -60,7 +61,7 @@ def parse(question: dict, answer) -> float | str:
     return score
 
 
-def _within(value, maximum: int) -> bool:
+def _within(value, maximum: int) -> TypeGuard[float]:
     return type(value) in (int, float) and 0 <= value <= maximum
 
 
