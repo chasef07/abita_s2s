@@ -10,6 +10,7 @@ from livekit.agents import AgentSession, llm
 from test_knowledge import CONFIG, FOUND, call_state
 
 from abita_s2s.agent import AbitaAgent
+from abita_s2s.integrations.product import Product
 from abita_s2s.knowledge import OfficeKnowledge
 from abita_s2s.offices import SPRING_HILL
 
@@ -72,7 +73,9 @@ class KnowledgeSessionTests(unittest.IsolatedAsyncioTestCase):
                     transport=httpx.MockTransport(handler)
                 ) as client:
                     model = KnowledgeModel()
-                    agent = AbitaAgent(SPRING_HILL, OfficeKnowledge(client, CONFIG))
+                    agent = AbitaAgent(
+                        SPRING_HILL, OfficeKnowledge(Product(client, CONFIG))
+                    )
                     async with AgentSession(
                         llm=model, userdata=call_state()
                     ) as session:

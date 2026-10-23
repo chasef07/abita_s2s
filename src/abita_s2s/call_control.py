@@ -4,12 +4,11 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 
-import httpx
 from google.protobuf.duration_pb2 import Duration
 from livekit import api, rtc
 
-from abita_s2s.config import HandoffConfig
 from abita_s2s.handoff import AdmissionRejected, HandoffAdmission
+from abita_s2s.integrations.product import Product
 from abita_s2s.state import CallState
 
 logger = logging.getLogger(__name__)
@@ -24,11 +23,10 @@ class CallControl:
     def __init__(
         self,
         state: CallState,
-        client: httpx.AsyncClient,
+        product: Product,
         room=None,
         sip=None,
         *,
-        handoff: HandoffConfig | None = None,
         sandbox: bool = False,
         simulation: bool = False,
         backend,
@@ -37,7 +35,7 @@ class CallControl:
         self.sandbox = sandbox
         self.simulation = simulation
         self.backend = backend
-        self.admission = HandoffAdmission(state, client, handoff)
+        self.admission = HandoffAdmission(state, product)
         self.room = room
         self.sip = sip
         self.status = "idle"

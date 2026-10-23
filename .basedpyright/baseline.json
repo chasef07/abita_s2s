@@ -322,24 +322,6 @@
                 }
             }
         ],
-        "./src/abita_s2s/staff_tasks.py": [
-            {
-                "code": "reportArgumentType",
-                "range": {
-                    "startColumn": 12,
-                    "endColumn": 30,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportArgumentType",
-                "range": {
-                    "startColumn": 24,
-                    "endColumn": 33,
-                    "lineCount": 1
-                }
-            }
-        ],
         "./src/abita_s2s/tools/insurance.py": [
             {
                 "code": "reportOptionalMemberAccess",

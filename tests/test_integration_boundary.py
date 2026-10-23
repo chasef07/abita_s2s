@@ -1,15 +1,25 @@
 """Typed requests keep the wire bytes, and adapters parse every outcome at the boundary."""
 
+import hashlib
+import json
 import unittest
+from datetime import UTC, datetime, timedelta
 
 import httpx
 from pydantic import ValidationError
 from test_patient_resolution import CONFIG
 
 from insurance_fixtures import decision
+from abita_s2s.config import Config, HandoffConfig
 from abita_s2s.integrations.patient_middleware import (
     PatientMiddleware,
     ResolveRequest,
+)
+from abita_s2s.integrations.product import (
+    HandoffGrant,
+    Product,
+    StaffTask,
+    StaffTaskReceipt,
 )
 from abita_s2s.integrations.registration_middleware import (
     DecisionRequest,
@@ -28,6 +38,19 @@ from abita_s2s.integrations.scheduling_http import (
     WriteReceipt,
 )
 from abita_s2s.offices import SPRING_HILL
+
+PRODUCT = Config(
+    "offline",
+    product_secret="test-secret",
+    staff_tasks_url="https://product.test/v1/tasks",
+    knowledge_url="https://product.test/v1/agent/knowledge/search",
+    handoff=HandoffConfig(
+        "https://product.test/v1/handoffs",
+        "handoff-secret",
+        "00000000-0000-4000-8000-000000000001",
+    ),
+)
+TASK_ID = "00000000-0000-4000-8000-000000000009"
 
 
 def wire(body: dict) -> bytes:
@@ -50,6 +73,21 @@ def new_patient(**changes):
         subscriberName="Jane Doe",
         subscriberNum="member-example",
         office="spring-hill",
+        **changes,
+    )
+
+
+def staff_task(**changes):
+    return StaffTask(
+        callId="call",
+        callerPhone="+15555550101",
+        category="medication",
+        message="Refill requested by caller.",
+        officePhone=SPRING_HILL.trunk_numbers[0],
+        source="agent",
+        summary="Refill",
+        urgency="normal",
+        officeKey="spring-hill",
         **changes,
     )
 
@@ -291,6 +329,68 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(body=previous):
                 self.assertEqual(await self.sent(call), wire(previous))
 
+    async def test_product_requests_match_previous_dict_bodies(self):
+        task = staff_task(
+            patient={"id": "chart-jane", "name": "Doe, Jane", "dob": "01/02/1980"},
+            inboundOfficePhone=SPRING_HILL.trunk_numbers[-1],
+        )
+        previous = {
+            "callId": "call",
+            "callerPhone": "+15555550101",
+            "category": "medication",
+            "message": "Refill requested by caller.",
+            "officePhone": SPRING_HILL.trunk_numbers[0],
+            "source": "agent",
+            "summary": "Refill",
+            "urgency": "normal",
+            "patient": {"id": "chart-jane", "name": "Doe, Jane", "dob": "01/02/1980"},
+            "inboundOfficePhone": SPRING_HILL.trunk_numbers[-1],
+            "officeKey": "spring-hill",
+        }
+        previous["idempotencyKey"] = (
+            "staff_task_"
+            + hashlib.sha256(json.dumps(previous, sort_keys=True).encode()).hexdigest()
+        )
+        receipt = {
+            "status": "created",
+            "taskId": TASK_ID,
+            "category": "medication",
+            "urgency": "normal",
+        }
+        self.assertEqual(
+            await self.sent(lambda c: Product(c, PRODUCT).submit(task), receipt),
+            wire(previous),
+        )
+        self.assertEqual(
+            await self.sent(
+                lambda c: Product(c, PRODUCT).search("spring-hill", "Hours?")
+            ),
+            wire({"query": "Hours?"}),
+        )
+        identity = {
+            "practiceId": "00000000-0000-4000-8000-000000000001",
+            "officeKey": "spring-hill",
+            "sourceCallId": "call",
+        }
+        handoff = {
+            **identity,
+            "contact": {
+                "phone": "+15555550101",
+                "phoneSource": "livekit.sip.callerPhoneNumber",
+            },
+            "idempotencyKey": hashlib.sha256(
+                json.dumps(identity, separators=(",", ":")).encode()
+            ).hexdigest(),
+        }
+        self.assertEqual(
+            await self.sent(
+                lambda c: Product(c, PRODUCT).admit(
+                    "spring-hill", "call", "+15555550101"
+                )
+            ),
+            wire(handoff),
+        )
+
     def test_office_phone_and_unknown_fields_fail_before_send(self):
         for changes in (
             {"office": SPRING_HILL.trunk_numbers[0]},
@@ -453,3 +553,67 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
                     await self.registration(method, body),
                     WriteFailure(status="uncertain", reason="unverified_write"),
                 )
+
+    async def test_staff_task_statuses_parse_and_unknown_status_is_ambiguous(self):
+        for status in ("created", "duplicate"):
+            with self.subTest(status=status):
+                recorder = Recorder(
+                    {
+                        "status": status,
+                        "taskId": TASK_ID,
+                        "category": "medication",
+                        "urgency": "normal",
+                    }
+                )
+                result = await Product(self.client(recorder), PRODUCT).submit(
+                    staff_task()
+                )
+                self.assertIsInstance(result, StaffTaskReceipt)
+                self.assertEqual(result.status, status)
+        recorder = Recorder(
+            *[
+                {
+                    "status": "queued",
+                    "taskId": TASK_ID,
+                    "category": "medication",
+                    "urgency": "normal",
+                }
+            ]
+            * 2
+        )
+        result = await Product(self.client(recorder), PRODUCT).submit(staff_task())
+        self.assertEqual(result, "ambiguous")
+        self.assertEqual(len(recorder.requests), 2)
+        self.assertEqual(recorder.requests[0].content, recorder.requests[1].content)
+
+    async def test_handoff_admission_failures_are_typed(self):
+        grant = {
+            "id": TASK_ID,
+            "expiresAt": (datetime.now(UTC) + timedelta(minutes=2)).isoformat(),
+            "sipDestination": "sip:acuity-handoff@product.test",
+        }
+        for response, expected in (
+            (httpx.Response(201, json=grant), HandoffGrant),
+            (httpx.Response(400), "rejected"),
+            (httpx.Response(409), "unconfirmed"),
+            (httpx.Response(503), "unconfirmed"),
+            (httpx.Response(201, json=grant | {"id": "bad"}), "unconfirmed"),
+            (
+                httpx.Response(201, json=grant | {"expiresAt": "2026-01-01T00:00:00"}),
+                "unconfirmed",
+            ),
+        ):
+            with self.subTest(code=response.status_code, expected=expected):
+                result = await Product(self.client(Recorder(response)), PRODUCT).admit(
+                    "spring-hill", "call", "+15555550101"
+                )
+                if expected is HandoffGrant:
+                    self.assertIsInstance(result, HandoffGrant)
+                else:
+                    self.assertEqual(result, expected)
+        self.assertEqual(
+            await Product(self.client(Recorder()), Config("offline")).admit(
+                "spring-hill", "call", ""
+            ),
+            "not_configured",
+        )

@@ -171,7 +171,11 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
             )
         dependencies = args["dependencies"]
         owner, resolver = dependencies.staff_tasks, dependencies.resolver
-        owner._url, owner._secret = CONFIG.staff_tasks_url, CONFIG.product_secret
+        owner._product._config = replace(
+            owner._product._config,
+            staff_tasks_url=CONFIG.staff_tasks_url,
+            product_secret=CONFIG.product_secret,
+        )
         owner.state.call = replace(owner.state.call, caller_phone="+15555550101")
 
         async def private_read():

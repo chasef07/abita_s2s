@@ -272,8 +272,9 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             config.knowledge_url, "https://product.test/v1/agent/knowledge/search"
         )
-        self.assertEqual(args["dependencies"].knowledge._url, config.knowledge_url)
-        self.assertEqual(args["dependencies"].knowledge._secret, "product-token")
+        product = args["dependencies"].knowledge._product._config
+        self.assertEqual(product.knowledge_url, config.knowledge_url)
+        self.assertEqual(product.product_secret, "product-token")
         self.assertIsNone(config.interaction_url)
         self.assertIsNone(config.handoff)
 
@@ -368,7 +369,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             entered.set()
             await finish.wait()
 
-        client = dependencies.staff_tasks._client
+        client = dependencies.staff_tasks._product._client
         with (
             patch.object(
                 dependencies.scheduling,
