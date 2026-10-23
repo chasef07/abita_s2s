@@ -60,9 +60,9 @@ OPENAI_API_KEY=... uv run --no-sync python -m evals.replay
 | Each time budget in `budgets.py` fits inside the budget it runs in, up to the process kill. | `tests/test_budgets.py` |
 | The uv, Python, and LiveKit CLI pins agree. No tracked file matches `.gitignore`. Each file this table names exists. | `tests/test_repo_consistency.py` |
 | A local worker never registers as `abita-s2s`. `config.agent_name` returns that name only when the image sets `ABITA_S2S_DEPLOYED=1`. | `src/abita_s2s/config.py`, `tests/test_agent_name.py`, `.github/workflows/ci.yml` |
-| Each private LiveKit member that the runtime overrides or reads still exists with the same parameters. | `tests/test_livekit_surface.py` |
+| Each private LiveKit method the runtime overrides keeps its parameters, and each private member it reads still exists. | `tests/test_livekit_surface.py` |
 | Judges read recorded write outcomes, not answer wording. Changed judge definitions need a `PUBLISHED_VERSIONS` entry. | `tests/test_evaluation.py` |
-| A change to prompts, tools, or the agent replays the scripted calls. The replay runs apart from `Verify` and never blocks a release. | `.github/workflows/replay.yml`, `tests/test_replay.py` |
+| Once the `REPLAY_OPENAI_API_KEY` secret is set, a change to prompts, tools, or the agent replays the scripted calls. The replay runs apart from `Verify` and never blocks a release. | `.github/workflows/replay.yml`, `tests/test_replay.py` |
 | Python files carry no comments except shebangs and ruff `noqa` directives. | `tests/test_no_comments.py` |
 | The number of type errors only goes down. | `.basedpyright/baseline.json`, `.github/workflows/ci.yml` |
 
