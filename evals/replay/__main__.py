@@ -59,20 +59,34 @@ SPEECH_MODEL = "gpt-4o-mini-tts"
 SPEECH_VOICE = "alloy"
 
 
+class OverBudget(Exception):
+    pass
+
+
 class Budget:
+    """Model calls made so far against ``limit``.
+
+    The replay asks before each speech request and each GPT-Live session, and is
+    refused at the limit. Thinker responses start inside GPT-Live, so they are counted
+    as they start, and the run stops once they pass the limit.
+    """
+
     def __init__(self, limit: int) -> None:
         self.limit = limit
         self.calls = 0
         self.exceeded = asyncio.Event()
 
     def spend(self) -> None:
-        self.calls += 1
-        if self.calls > self.limit:
+        if self.calls >= self.limit:
             self.exceeded.set()
+            raise OverBudget(f"the run reached {self.limit} model calls")
+        self.calls += 1
 
     def record(self, event: dict) -> None:
         if event.get("event", {}).get("type") == "response.created":
-            self.spend()
+            self.calls += 1
+            if self.calls > self.limit:
+                self.exceeded.set()
 
 
 class CallerAudio(AudioInput):
@@ -191,6 +205,7 @@ async def play(
     scenario: Scenario, voice: dict[str, bytes], budget: Budget, api_key: str
 ) -> Result:
     began = time.monotonic()
+    budget.spend()
     world = World()
     settings = config(api_key)
     office = get_office_profile(scenario.office)
@@ -237,7 +252,6 @@ async def play(
     heard: list[tuple[float, Caller]] = []
     failures: list[str] = []
     with fake_job_context(job_id=f"replay-{scenario.name}"):
-        budget.spend()
         resolver.start_phone_lookup()
         try:
             await session.start(agent, record=False)
@@ -312,31 +326,41 @@ async def synthesize(lines: set[str], api_key: str, budget: Budget) -> dict[str,
                 reply.raise_for_status()
                 return line, reply.content
 
-        return dict(await asyncio.gather(*(speak(line) for line in sorted(lines))))
+        async with asyncio.TaskGroup() as group:
+            spoken = [group.create_task(speak(line)) for line in sorted(lines)]
+        return dict(task.result() for task in spoken)
 
 
 async def replay(
     scenarios: list[Scenario], api_key: str, budget: Budget, concurrency: int
 ) -> list[Result] | None:
-    """Every scenario's result, or None once the run passes its model-call limit."""
-    voice = await synthesize(
-        {line for s in scenarios for turn in s.turns for line in turn}, api_key, budget
-    )
-    gate = asyncio.Semaphore(concurrency)
+    """Every scenario's result, or None once the run reaches its model-call limit."""
 
-    async def one(scenario: Scenario) -> Result:
-        async with gate:
-            return await play(scenario, voice, budget, api_key)
+    async def run() -> list[Result]:
+        voice = await synthesize(
+            {line for s in scenarios for turn in s.turns for line in turn},
+            api_key,
+            budget,
+        )
+        gate = asyncio.Semaphore(concurrency)
 
-    calls = asyncio.gather(*(one(scenario) for scenario in scenarios))
+        async def one(scenario: Scenario) -> Result:
+            async with gate:
+                return await play(scenario, voice, budget, api_key)
+
+        async with asyncio.TaskGroup() as group:
+            played = [group.create_task(one(scenario)) for scenario in scenarios]
+        return [task.result() for task in played]
+
     stop = asyncio.ensure_future(budget.exceeded.wait())
-    await asyncio.wait({calls, stop}, return_when=asyncio.FIRST_COMPLETED)
+    work = asyncio.ensure_future(run())
+    await asyncio.wait({work, stop}, return_when=asyncio.FIRST_COMPLETED)
     if budget.exceeded.is_set():
-        calls.cancel()
-        await asyncio.gather(calls, return_exceptions=True)
+        work.cancel()
+        await asyncio.gather(work, return_exceptions=True)
         return None
     stop.cancel()
-    return calls.result()
+    return work.result()
 
 
 def cell(text: str) -> str:
@@ -395,7 +419,7 @@ def main() -> int:
     began = time.monotonic()
     results = asyncio.run(replay(scenarios, api_key, budget, args.concurrency))
     if results is None:
-        print(f"Stopped: the run passed {budget.limit} model calls.")
+        print(f"Stopped: the run reached {budget.limit} model calls.")
         return 2
     for result in results:
         print(f"--- {result.name}: {'FAIL' if result.failures else 'pass'}")

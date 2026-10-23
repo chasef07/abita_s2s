@@ -28,6 +28,10 @@ INVENTED_PARKING = (
     r"|\bparking (lot|garage|is (free|available)|available)\b|\byou can park\b"
     r"|\bestacionamiento (gratis|gratuito|disponible)\b"
 )
+WRONG_FACTS = (
+    r"(?:^|[.!?])(?![^.!?]*(?:\b(?:not|no|actually|instead)\b|n['’]t\b))[^.!?]*"
+    r"(?:\bmain street\b|\b(?:close|closes|open until|until) (?:at )?(?:seven|7)\b)"
+)
 RULES_OUT_TRANSFER = r"\b(can't|cannot|can not|unable to|not able to|no puedo) (transfer|connect|put you through|transferir|comunicar)"
 STAFF_AVAILABILITY = (
     r"\b(she|whitney)(?:'s| is) (available|busy|in|out|here|not here|with a patient|at lunch|in a meeting|on another call)\b"
@@ -81,6 +85,7 @@ SCENARIOS: tuple[Scenario, ...] = (
             grounded(
                 SEARCH, AGREES + "|" + HOURS + r"|\bmain street\b", "an office fact"
             ),
+            never_says(WRONG_FACTS, "confirmed a wrong fact"),
             no_unstarted_action(),
             ends_call(1),
         ),

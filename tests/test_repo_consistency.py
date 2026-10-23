@@ -10,6 +10,7 @@ WORKFLOWS = (
     ".github/workflows/ci.yml",
     ".github/workflows/publish.yml",
     ".github/workflows/deploy.yml",
+    ".github/workflows/replay.yml",
 )
 VERSION = r"(\d+(?:\.\d+)+)"
 

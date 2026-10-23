@@ -1,9 +1,13 @@
 """The offline replay judges transcripts deterministically, and its fixture backend speaks the real contracts."""
 
+import importlib
 import unittest
 from dataclasses import fields
 from pathlib import Path
+from unittest import mock
 from urllib.parse import urlsplit
+
+import httpx
 
 from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.integrations.patient_middleware import (
@@ -26,12 +30,14 @@ from evals.replay.checks import (
     ends_call,
     first_argument,
     grounded,
+    never_says,
     no_unstarted_action,
 )
-from evals.replay.scenarios import ACCEPTS, SCENARIOS
+from evals.replay.scenarios import ACCEPTS, SCENARIOS, WRONG_FACTS
 from evals.replay.world import World, config
 
 ROOT = Path(__file__).parents[1]
+harness = importlib.import_module("evals.replay.__main__")
 ASKS = Caller(0, "Can I talk to someone at the front desk?")
 
 
@@ -71,6 +77,25 @@ class ChecksTests(unittest.TestCase):
         self.assertIsNotNone(
             check([ASKS, accepting, Call("check_insurance", {}, "i1")])
         )
+
+    def test_flags_a_wrong_street_confirmed_after_the_search(self):
+        check = never_says(WRONG_FACTS, "confirmed a wrong fact")
+        suggests = Caller(
+            0, "You close at seven on Fridays, right? And you're on Main Street?"
+        )
+        confirms = Agent(
+            " No, we close at five on Fridays. And yes, we're on Main Street."
+        )
+        self.assertEqual(
+            check([suggests, *search(), confirms]),
+            'confirmed a wrong fact: "No, we close at five on Fridays. And yes, '
+            "we're on Main Street.\"",
+        )
+        corrects = Agent(
+            "No, we close at five on Fridays, and we're at 100 Fixture Way, "
+            "not Main Street."
+        )
+        self.assertIsNone(check([suggests, *search(), corrects]))
 
     def test_accepts_a_check_the_backend_starts(self):
         events = [ASKS, Agent("Let me check."), *search(), Agent("We're at 100.")]
@@ -190,6 +215,35 @@ class WorldTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             world.unrouted, ["POST https://middleware.fixture.invalid/api/x"]
         )
+
+
+class BudgetTests(unittest.IsolatedAsyncioTestCase):
+    async def test_max_calls_two_makes_at_most_two_calls(self):
+        requests = []
+
+        def answer(request):
+            requests.append(request)
+            return httpx.Response(200, content=bytes(960))
+
+        real = httpx.AsyncClient
+        transport = httpx.MockTransport(answer)
+        budget = harness.Budget(2)
+        with mock.patch.object(
+            harness.httpx,
+            "AsyncClient",
+            lambda **kwargs: real(transport=transport, **kwargs),
+        ):
+            results = await harness.replay(list(SCENARIOS), "offline", budget, 4)
+        self.assertIsNone(results)
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(budget.calls, 2)
+
+    async def test_refuses_a_session_once_the_limit_is_reached(self):
+        budget = harness.Budget(0)
+        with self.assertRaises(harness.OverBudget):
+            await harness.play(SCENARIOS[0], {}, budget, "offline")
+        self.assertEqual(budget.calls, 0)
+        self.assertTrue(budget.exceeded.is_set())
 
 
 class IsolationTests(unittest.TestCase):

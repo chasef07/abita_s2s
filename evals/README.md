@@ -80,36 +80,48 @@ Each call runs in four steps:
    with no thinker work, then plays the next turn.
 4. The checks in [replay/checks.py](replay/checks.py) judge the transcript. They
    flag an action the agent says it is doing with no tool behind it (#153), a fact
-   stated before the tool that grounds it, a stall after the caller answered, a
-   call that ends early or never ends, and the visit type of the first insurance
-   check (#173).
+   stated before the tool that grounds it, a wrong office fact the caller suggested
+   and the agent confirmed, a stall after the caller answered, a call that ends
+   early or never ends, and the visit type of the first insurance check (#173).
 
 The run prints every transcript, a Markdown verdict table, and the model spend.
 `--out` writes the results as JSON, and `--summary` appends the table to a file.
 The exit code is 0 when every call passes, 1 when a check fails, and 2 when the key
-is missing or the run passes `--max-calls`, which defaults to 200.
+is missing or the run reaches `--max-calls`, which defaults to 200.
+
+`--max-calls` counts each speech request, each GPT-Live session, and each thinker
+response. The replay asks before every speech request and before every GPT-Live
+session starts, and stops without making the call once the count reaches the limit.
+Thinker responses start inside GPT-Live, so the replay can count one only after it
+has started, and the run stops once those push the count past the limit. GPT-Live
+audio is billed by the second and is reported in the summary, not counted as calls.
 
 Nine full local runs on 2026-10-23 each made 70 to 74 model calls and used 420 to
 490 seconds of GPT-Live audio, 250,000 to 290,000 thinker input tokens (about 72%
 cached), and 3,600 to 5,400 thinker output tokens. Each took 70 to 99 seconds.
 
 Verdicts vary between runs because the models do. In three runs at one commit, 9
-of the 10 calls got the same verdict each time with the current checks. The tenth
-did not end the call after the caller's goodbye in one run. Read a failed call's
-transcript before you act on it.
+of the 10 calls got the same verdict each time with the current checks. The tenth,
+`wrong_facts_suggested`, confirmed the caller's wrong street ("And yes, we're on
+Main Street.") in two of the three runs and passed in the third. Read a failed
+call's transcript before you act on it.
 
 To add a scenario, add a `Scenario` to [replay/scenarios.py](replay/scenarios.py).
 Give the caller everything the agent needs in the first turn, because a scripted
 caller does not adapt. Put any backend data it needs in `replay/world.py`. A
 transfer returns "No active SIP caller", because the replay has no room.
 
-The `replay` job in `.github/workflows/ci.yml` runs on pull requests from branches
-in this repository and on pushes to `main` that change `src/abita_s2s/prompts/`,
-`src/abita_s2s/tools/`, `src/abita_s2s/agent.py`, or `evals/replay/`. It reads the
-`REPLAY_OPENAI_API_KEY` secret and skips with a summary line when the secret is not
-set. Pull requests from forks never run it, and the job stops after 10 minutes.
-Anyone who can push a branch to this repository can run code that reads the key,
-so use a dedicated key with a spending limit.
+The `Offline replay` workflow in `.github/workflows/replay.yml` runs on pull
+requests from branches in this repository and on pushes to `main` that change
+`src/abita_s2s/prompts/`, `src/abita_s2s/tools/`, `src/abita_s2s/agent.py`,
+`src/abita_s2s/model_config.py`, `src/abita_s2s/prompt.py`,
+`src/abita_s2s/runtime/silence.py`, `src/abita_s2s/runtime/delegation_watchdog.py`,
+or `evals/replay/`. It is separate from `Verify`, so a model outage or a failed
+replay never holds back a release. It reads the `REPLAY_OPENAI_API_KEY` secret and
+skips with a summary line when the secret is not set. Pull requests from forks
+never run it, and the job stops after 10 minutes. Anyone who can push a branch to
+this repository can run code that reads the key, so use a dedicated key with a
+spending limit.
 
 ## Releases and offline checks
 
