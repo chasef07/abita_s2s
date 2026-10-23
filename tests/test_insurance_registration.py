@@ -208,6 +208,25 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.requests), 1)
         self.assertIsNone(state.patient.active)
 
+    async def test_callback_must_be_a_us_number(self):
+        state, _, owner = await self.prepared([], plan="VSP", coverage="routine_vision")
+        for phone, callback in (
+            ("(555) 555-0999", "5555550999"),
+            ("1-555-555-0999", "5555550999"),
+            ("+1 555 555 0999", "5555550999"),
+            ("555-0999", None),
+            ("+4741234567", None),
+        ):
+            with self.subTest(phone=phone):
+                result = await owner.add(
+                    registration(phone=phone, inboundPhoneConfirmed=None, readBack=None)
+                )
+                if callback:
+                    self.assertIn(f"callback {callback}.", result["answer"])
+                else:
+                    self.assertEqual(result["outcome"], "needs_callback")
+        self.assertIsNone(state.patient.active)
+
     async def test_self_pay_and_insured_vision_omit_ssn(self):
         for plan, member in [
             ("Self Pay", "self pay"),
