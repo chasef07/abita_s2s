@@ -186,16 +186,6 @@
                 }
             }
         ],
-        "./src/abita_s2s/runtime/observability.py": [
-            {
-                "code": "reportAttributeAccessIssue",
-                "range": {
-                    "startColumn": 29,
-                    "endColumn": 36,
-                    "lineCount": 1
-                }
-            }
-        ],
         "./src/abita_s2s/runtime/reporting.py": [
             {
                 "code": "reportArgumentType",
