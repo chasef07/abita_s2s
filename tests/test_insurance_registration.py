@@ -240,7 +240,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_creation_proceeds_directly_to_availability_without_recheck(self):
         from datetime import datetime, UTC
-        from abita_s2s.scheduling import Scheduling
+        from abita_s2s.scheduling.appointments import Scheduling
         from abita_s2s.integrations.scheduling_http import SchedulingHTTP
         from test_scheduling import inventory
 
@@ -277,7 +277,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_completed_chart_visit_change_uses_backend_policy(self):
         from datetime import datetime, UTC
-        from abita_s2s.scheduling import Scheduling
+        from abita_s2s.scheduling.appointments import Scheduling
         from abita_s2s.integrations.scheduling_http import SchedulingHTTP
 
         state, _, owner = await self.prepared(
@@ -705,3 +705,85 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         finish.set()
         self.assertEqual((await reading)["outcome"], "superseded")
         self.assertEqual(state.patient.active.insuranceCarrier, "Aetna")
+
+    async def test_every_registration_outcome_has_one_answer_and_effect(self):
+        cases = {
+            "written": (created(), "created", (True, False)),
+            "written without insurance": (created("partial"), "partial", (True, False)),
+            "failed": (
+                {
+                    "status": "error",
+                    "outcome": "validation_failed",
+                    "message": "Correct the postal code.",
+                },
+                "failed",
+                (False, False),
+            ),
+            "uncertain": (
+                {"status": "error", "outcome": "indeterminate_write"},
+                "uncertain",
+                (True, True),
+            ),
+            "uncertain receipt": (
+                created(name="Other, Person"),
+                "invalid_receipt",
+                (True, True),
+            ),
+        }
+        for case, (response, outcome, (replays, blocks)) in cases.items():
+            with self.subTest(case=case):
+                state, _, owner = await self.prepared([response, created()])
+                first = await owner.add(registration())
+                self.assertEqual(first["outcome"], outcome)
+                sent = len(self.requests)
+                again = await owner.add(registration())
+                self.assertEqual(again == first and len(self.requests) == sent, replays)
+                self.assertEqual(state.insurance.write_uncertain, blocks)
+
+    async def test_every_insurance_update_outcome_has_one_answer_and_effect(self):
+        cases = {
+            "written": (updated(), "updated", (True, False)),
+            "partial": (
+                {
+                    "status": "error",
+                    "effect": "partial",
+                    "outcome": "reconciled_failure",
+                },
+                "partial",
+                (True, True),
+            ),
+            "failed": (
+                {
+                    "status": "error",
+                    "effect": "no_effect",
+                    "outcome": "validation_failed",
+                },
+                "failed",
+                (False, False),
+            ),
+            "uncertain": (
+                {
+                    "status": "error",
+                    "effect": "uncertain",
+                    "outcome": "reconciled_failure",
+                },
+                "uncertain",
+                (True, True),
+            ),
+            "uncertain receipt": (
+                updated(patientId="other-chart"),
+                "uncertain",
+                (True, True),
+            ),
+        }
+        for case, (response, outcome, (replays, blocks)) in cases.items():
+            with self.subTest(case=case):
+                state, _, owner = self.owner([response, updated()])
+                state.patient.active = Receipt.model_validate(receipt())
+                await owner.check("Aetna", "medical")
+                first = await owner.update("member-example")
+                self.assertEqual(first["outcome"], outcome)
+                sent = len(self.requests)
+                again = await owner.update("member-example")
+                self.assertEqual(again == first and len(self.requests) == sent, replays)
+                self.assertEqual(state.insurance.write_uncertain, blocks)

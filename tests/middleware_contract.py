@@ -12,7 +12,7 @@ from test_scheduling import verified
 from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.offices import get_office_profile
 from abita_s2s.tools.scheduling import SchedulingTools
-from abita_s2s.scheduling import Scheduling
+from abita_s2s.scheduling.appointments import Scheduling
 from abita_s2s.integrations.scheduling_http import SchedulingHTTP
 
 
