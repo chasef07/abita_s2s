@@ -1,63 +1,27 @@
-"""Assemble the voice agent's tools and own its greeting; startup owns lifecycle."""
+"""Build the voice agent from the registry's tools for one call and seed its greeting; startup owns lifecycle."""
 
 import logging
 from datetime import datetime
 
 from livekit.agents import Agent, llm
 
-from abita_s2s.call_control import CallControl
-from abita_s2s.identity import PatientResolver
-from abita_s2s.insurance import InsuranceRegistration
-from abita_s2s.knowledge import OfficeKnowledge
-from abita_s2s.offices import EASTERN, OfficeProfile
-from abita_s2s.prompt import greeting, load_prompt
-from abita_s2s.scheduling.appointments import Scheduling
-from abita_s2s.staff_tasks import StaffTasks
-from abita_s2s.tools.call_control import CallControlTools
-from abita_s2s.tools.insurance import InsuranceTools
-from abita_s2s.tools.knowledge import KnowledgeTools
-from abita_s2s.tools.patients import PatientTools
-from abita_s2s.tools.scheduling import SchedulingTools
-from abita_s2s.tools.staff_tasks import StaffTaskTools
+from abita_s2s.offices import EASTERN
+from abita_s2s.prompt import greeting, speaker_instructions
+from abita_s2s.tools.registry import Owners, offer
 
 logger = logging.getLogger(__name__)
 
 
 class AbitaAgent(Agent):
-    def __init__(
-        self,
-        office: OfficeProfile,
-        knowledge: OfficeKnowledge,
-        resolver: PatientResolver | None = None,
-        insurance: InsuranceRegistration | None = None,
-        scheduling: Scheduling | None = None,
-        staff_tasks: StaffTasks | None = None,
-        call_control: CallControl | None = None,
-    ) -> None:
-        patients = PatientTools(resolver, insurance, scheduling)
-        coverage = InsuranceTools(insurance)
-        office_knowledge = KnowledgeTools(knowledge)
-        tools = SchedulingTools(scheduling).tools if scheduling else []
-        if office.staff_tasks_enabled:
-            tools.append(StaffTaskTools(staff_tasks).save_staff_task)
-        if call_control:
-            tools.append(CallControlTools(call_control))
-        tools.extend(
-            [
-                patients.add_patient,
-                coverage.check_insurance,
-                patients.resolve_patient,
-                office_knowledge.search_office_knowledge,
-                coverage.update_insurance,
-            ]
-        )
-        self._practice_name = office.greeting_name
-        self._greeting = greeting(office.greeting_name, datetime.now(EASTERN))
+    def __init__(self, owners: Owners) -> None:
+        tools, capabilities = offer(owners)
+        self._practice_name = owners.office.greeting_name
+        self._greeting = greeting(owners.office.greeting_name, datetime.now(EASTERN))
         chat_ctx = llm.ChatContext.empty()
         chat_ctx.add_message(role="developer", content=self._greeting)
         super().__init__(
             tools=tools,
-            instructions=load_prompt("speaker"),
+            instructions=speaker_instructions(capabilities),
             chat_ctx=chat_ctx,
         )
 

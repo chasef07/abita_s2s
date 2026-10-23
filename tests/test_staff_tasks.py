@@ -18,6 +18,7 @@ from abita_s2s.integrations.product import Product
 from abita_s2s.integrations.patient_middleware import Failure, Receipt
 from abita_s2s.offices import get_office_profile
 from abita_s2s.staff_tasks import StaffTasks, _same_patient
+from abita_s2s.tools.registry import Owners
 
 CONFIG = Config(
     "offline",
@@ -110,10 +111,12 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             resolver = PatientResolver(state, middleware)
             owner = StaffTasks(state, resolver, Product(client, config))
             agent = AbitaAgent(
-                get_office_profile(state.call.called_office_key),
-                AsyncMock(),
-                resolver,
-                staff_tasks=owner,
+                Owners(
+                    get_office_profile(state.call.called_office_key),
+                    AsyncMock(),
+                    resolver=resolver,
+                    staff_tasks=owner,
+                )
             )
             async with AgentSession(llm=Model(), userdata=state) as session:
                 with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):

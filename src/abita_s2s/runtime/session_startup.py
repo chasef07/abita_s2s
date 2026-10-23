@@ -32,6 +32,7 @@ from abita_s2s.scheduling.appointments import Scheduling
 from abita_s2s.integrations.scheduling_http import SchedulingHTTP
 from abita_s2s.staff_tasks import StaffTasks
 from abita_s2s.state import CallContext, CallState
+from abita_s2s.tools.registry import Owners
 
 logger = logging.getLogger(__name__)
 SIP_WAIT_SECONDS = 20
@@ -189,28 +190,19 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         )
 
     client = httpx.AsyncClient()
-    insurance: InsuranceRegistration | None = None
-    scheduling: Scheduling | None = None
-    staff_tasks: StaffTasks | None = None
-
-    resolver = None
+    owners: Owners | None = None
     sip_api = None
-    control = None
     cleanup_task = None
     drain_task = None
     state = CallState(call=call)
 
     async def drain():
-        owners = [
-            o
-            for o in (resolver, scheduling, insurance, staff_tasks, control)
-            if o is not None
-        ]
-        for owner in owners:
-            owner.close_admission()
+        writers = owners.writers() if owners else []
+        for writer in writers:
+            writer.close_admission()
         async with asyncio.timeout(CLEANUP_SECONDS):
             await _gather_raising(
-                *(o.aclose() for o in owners),
+                *(writer.aclose() for writer in writers),
                 cancelled="An accepted mutation was cancelled during shutdown",
             )
 
@@ -281,33 +273,25 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             simulation=simulation is not None,
             backend=model.backend,
         )
+        owners = Owners(
+            office,
+            OfficeKnowledge(product),
+            resolver=resolver,
+            scheduling=Scheduling(state, SchedulingHTTP(client, config)),
+            insurance=InsuranceRegistration(
+                state, resolver, RegistrationMiddleware(client, config)
+            ),
+            staff_tasks=StaffTasks(state, resolver, product),
+            call_control=control,
+        )
         check_in_on_silence(
             session,
             model.backend,
             control,
             lambda: model.watchdog.hand_off_held(),
         )
-
         resolver.start_phone_lookup()
-        insurance = InsuranceRegistration(
-            state, resolver, RegistrationMiddleware(client, config)
-        )
-        scheduling = Scheduling(state, SchedulingHTTP(client, config))
-        staff_tasks = StaffTasks(state, resolver, product)
-        await start_session(
-            session,
-            ctx,
-            room_options,
-            AbitaAgent(
-                office,
-                OfficeKnowledge(product),
-                resolver,
-                insurance=insurance,
-                scheduling=scheduling,
-                staff_tasks=staff_tasks,
-                call_control=control,
-            ),
-        )
+        await start_session(session, ctx, room_options, AbitaAgent(owners))
         if state.reporter:
             state.reporter.started = True
     except BaseException as error:
