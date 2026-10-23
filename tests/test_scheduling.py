@@ -16,6 +16,7 @@ from livekit.agents.llm.utils import build_strict_openai_schema
 from test_patient_resolution import CONFIG, call_state, receipt
 
 from abita_s2s.agent import AbitaAgent
+from abita_s2s.tools.registry import Owners
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance_state import AcceptedInsurance
 from abita_s2s.integrations.patient_middleware import (
@@ -663,7 +664,9 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         )
         resolver = PatientResolver(owner.state, AsyncMock())
         self.addAsyncCleanup(resolver.aclose)
-        agent = AbitaAgent(SPRING_HILL, None, resolver, scheduling=owner)
+        agent = AbitaAgent(
+            Owners(SPRING_HILL, None, resolver=resolver, scheduling=owner)
+        )
         resolve_patient = ToolContext(agent.tools).function_tools["resolve_patient"]
         context = SimpleNamespace(
             userdata=owner.state, function_call=SimpleNamespace(call_id="resolution")
@@ -1977,7 +1980,9 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     owner.state, PatientMiddleware(owner.http._client, CONFIG)
                 )
                 self.addAsyncCleanup(resolver.aclose)
-                agent = AbitaAgent(SPRING_HILL, None, resolver, scheduling=owner)
+                agent = AbitaAgent(
+                    Owners(SPRING_HILL, None, resolver=resolver, scheduling=owner)
+                )
                 resolve_patient = ToolContext(agent.tools).function_tools[
                     "resolve_patient"
                 ]
@@ -2546,7 +2551,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     def test_schema_has_no_patient_ids_or_tokens(self):
         owner, _ = self.owner([])
-        for tool in SchedulingTools(owner).tools:
+        for tool in llm.find_function_tools(SchedulingTools(owner)):
             schema = build_strict_openai_schema(tool)
             serialized = json.dumps(schema)
             self.assertNotIn("hospitalName", serialized)
@@ -2643,7 +2648,7 @@ class SchedulingSessionTests(unittest.IsolatedAsyncioTestCase):
     async def test_patient_correction_rejects_previous_slot_through_session(self):
         owner, requests = self.owner([inventory()])
         model = SchedulingModel()
-        agent = AbitaAgent(SPRING_HILL, None, scheduling=owner)
+        agent = AbitaAgent(Owners(SPRING_HILL, None, scheduling=owner))
         async with AgentSession(llm=model, userdata=owner.state) as session:
             with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
                 await session.start(agent=agent)
@@ -2671,7 +2676,7 @@ class SchedulingSessionTests(unittest.IsolatedAsyncioTestCase):
         )
         verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
         model = SchedulingModel()
-        agent = AbitaAgent(SPRING_HILL, None, scheduling=owner)
+        agent = AbitaAgent(Owners(SPRING_HILL, None, scheduling=owner))
         async with AgentSession(llm=model, userdata=owner.state) as session:
             with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
                 await session.start(agent=agent)

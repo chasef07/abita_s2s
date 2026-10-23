@@ -13,6 +13,7 @@ from abita_s2s.agent import AbitaAgent
 from abita_s2s.identity import PatientResolver
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.offices import SPRING_HILL
+from abita_s2s.tools.registry import Owners
 
 
 class PatientModel(llm.LLM):
@@ -73,7 +74,7 @@ class PatientSessionTests(unittest.IsolatedAsyncioTestCase):
             resolver = PatientResolver(state, PatientMiddleware(client, CONFIG))
             self.addAsyncCleanup(resolver.aclose)
             model = PatientModel()
-            agent = AbitaAgent(SPRING_HILL, None, resolver)
+            agent = AbitaAgent(Owners(SPRING_HILL, None, resolver=resolver))
             async with AgentSession(llm=model, userdata=state) as session:
                 with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
                     await session.start(agent=agent)

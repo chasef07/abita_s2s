@@ -83,7 +83,12 @@ To add a capability:
    layers share them.
 3. Add a tool in `tools/` that checks `bound(owner, context)`, speaks any announcement
    with `say_only()`, and returns the owner's answer.
-4. Register the tool in `agent.py` and build the owner in `runtime/session_startup.py`.
+4. Add one `Entry` for the tool to `TOOLS` in `tools/registry.py`. Build a new owner in
+   `runtime/session_startup.py` and give it a field on `Owners`. Shutdown drains every
+   owner that has `close_admission()` and `aclose()`.
+5. Name the tool's capability in the entry. If it is new, add its line to the
+   `Backend tools:` list in `prompts/speaker.md`. `tests/test_prompt_contract.py` fails
+   until prompts and tool descriptions name only registered tools and real headings.
 
 ## Decisions
 

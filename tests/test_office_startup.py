@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, PropertyMock, patch
 import httpx
 
 from abita_s2s.agent import AbitaAgent
+from abita_s2s.tools.registry import Owners
 from abita_s2s.config import Config
 from abita_s2s.integrations.patient_middleware import NotFound
 from abita_s2s.offices import (
@@ -125,7 +126,7 @@ class OfficeRoutingTests(unittest.TestCase):
 
 class GreetingTests(unittest.IsolatedAsyncioTestCase):
     async def test_greeting_seeds_startup_history_and_is_spoken_once(self):
-        agent = AbitaAgent(SPRING_HILL, None)
+        agent = AbitaAgent(Owners(SPRING_HILL, None))
         seeded = [
             item
             for item in agent.chat_ctx.items
@@ -257,11 +258,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                 sip_api.assert_called_once_with(failover=False)
         args = session.start.call_args.kwargs
         args["userdata"] = session_type.call_args.kwargs["userdata"]
-        args["dependencies"] = SimpleNamespace(
-            knowledge=agent_factory.call_args.args[1],
-            resolver=agent_factory.call_args.args[2],
-            **agent_factory.call_args.kwargs,
-        )
+        args["dependencies"] = agent_factory.call_args.args[0]
         return ctx, args
 
     async def test_named_deployment_sandboxes_call_control(self):

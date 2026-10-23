@@ -16,6 +16,7 @@ from abita_s2s.integrations.product import Product
 from abita_s2s.knowledge import OfficeKnowledge
 from abita_s2s.offices import OFFICES, SPRING_HILL
 from abita_s2s.state import CallContext, CallState
+from abita_s2s.tools.registry import Owners
 
 CONFIG = Config(
     "offline",
@@ -65,7 +66,7 @@ class KnowledgeTests(unittest.IsolatedAsyncioTestCase):
         knowledge = self.knowledge(handler)
         for office in OFFICES:
             with self.subTest(office=office.key):
-                agent = AbitaAgent(SPRING_HILL, knowledge)
+                agent = AbitaAgent(Owners(SPRING_HILL, knowledge))
                 search = ToolContext(agent.tools).function_tools[
                     "search_office_knowledge"
                 ]

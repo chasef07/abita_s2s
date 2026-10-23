@@ -17,15 +17,6 @@ class SchedulingTools:
     def __init__(self, scheduling: Scheduling) -> None:
         self._scheduling = scheduling
 
-    @property
-    def tools(self):
-        return [
-            self.list_available_appointments,
-            self.book_appointment,
-            self.cancel_appointment,
-            self.reschedule_appointment,
-        ]
-
     @function_tool
     async def list_available_appointments(
         self,

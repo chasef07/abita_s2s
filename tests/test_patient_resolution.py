@@ -21,6 +21,7 @@ from abita_s2s.name_matcher import phone_name_matches
 from abita_s2s.offices import SPRING_HILL
 from abita_s2s.staff_tasks import _same_patient
 from abita_s2s.state import CallContext, CallState
+from abita_s2s.tools.registry import Owners
 
 DOB = "01/02/1980"
 SAME_PATIENT = (
@@ -514,7 +515,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_tool_schema_and_cross_call_guard(self):
         r, calls = self.resolver([])
-        agent = AbitaAgent(SPRING_HILL, None, r)
+        agent = AbitaAgent(Owners(SPRING_HILL, None, resolver=r))
         resolve_patient = ToolContext(agent.tools).function_tools["resolve_patient"]
         schema = build_strict_openai_schema(resolve_patient)["function"]
         self.assertEqual(set(schema["parameters"]["properties"]), {"firstName", "dob"})
