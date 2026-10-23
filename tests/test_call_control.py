@@ -14,6 +14,7 @@ from livekit.agents import AgentSession, llm
 from test_patient_resolution import call_state, receipt
 
 from abita_s2s.agent import AbitaAgent
+from abita_s2s.budgets import ANNOUNCEMENT
 from abita_s2s.call_control import CallControl
 from abita_s2s.tools.call_control import CallControlTools
 from abita_s2s.config import Config, HandoffConfig, load_config
@@ -225,7 +226,9 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.Event().wait()
 
         ctx = SimpleNamespace(disallow_interruptions=Mock(), wait_for_playout=hang)
-        with patch("abita_s2s.call_control.ANNOUNCEMENT_SECONDS", 0.01):
+        with patch(
+            "abita_s2s.call_control.ANNOUNCEMENT", replace(ANNOUNCEMENT, seconds=0.01)
+        ):
             result = await self.tools.transfer_call(ctx)
         self.assertTrue(result.startswith("accepted: "), result)
         self.assertEqual(self.events, ["refer"])

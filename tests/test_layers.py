@@ -10,6 +10,7 @@ TYPE_CHECKING = ("TYPE_CHECKING", "typing.TYPE_CHECKING")
 
 LAYERS = {
     "foundation": (
+        "budgets",
         "config",
         "insurance_contract",
         "insurance_state",

@@ -7,20 +7,17 @@ import sys
 from dotenv import load_dotenv
 from livekit.agents import AgentServer, JobContext, JobProcess, cli
 
+from abita_s2s.budgets import PROCESS_KILL
 from abita_s2s.config import agent_name, load_config
 from abita_s2s.release import identity
 from abita_s2s.runtime.google_cloud_tracing import (
     register_trace_flush,
     setup_google_cloud_tracing,
 )
-from abita_s2s.runtime.session_startup import (
-    SHUTDOWN_PROCESS_SECONDS,
-    finish_voice_call,
-    start_voice_call,
-)
+from abita_s2s.runtime.session_startup import finish_voice_call, start_voice_call
 
 load_dotenv(".env.local", override=False)
-server = AgentServer(shutdown_process_timeout=SHUTDOWN_PROCESS_SECONDS)
+server = AgentServer(shutdown_process_timeout=PROCESS_KILL.seconds)
 
 
 def prewarm(proc: JobProcess) -> None:
