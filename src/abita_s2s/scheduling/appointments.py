@@ -473,7 +473,7 @@ class Scheduling:
                     and saved.offered.selection == offered.selection
                     and not self._cancelled(p.patientId, saved.booked.id)
                 ):
-                    return saved.result
+                    return self._replay(p, saved)
         if not insurance_ready(self.state):
             self._offers.invalidate()
             return reply(
