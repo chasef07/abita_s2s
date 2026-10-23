@@ -44,6 +44,8 @@ jobs:
         run: docker build -t abita-s2s:release .
       - if: github.event_name == 'workflow_dispatch'
         run: docker run --rm --network none --entrypoint /app/.venv/bin/python abita-s2s:release -m abita_s2s.release
+      - if: github.event_name == 'workflow_dispatch'
+        run: docker run --rm --network none --entrypoint /app/.venv/bin/python abita-s2s:release -c 'from abita_s2s.main import server; assert server._agent_name == "abita-s2s", server._agent_name'
       - run: uv run --no-sync python scripts/publish_release.py dist
         env:
           GH_TOKEN: ${{ github.token }}
