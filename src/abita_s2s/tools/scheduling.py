@@ -170,16 +170,7 @@ class SchedulingTools:
         Confirm the old appointment and read back the new date, time and provider before readBack=true.
         Reuse known visit and referral details; ask only for missing information.
         Books first, then cancels the old visit. Report partial success and never repeat an uncertain booking.
-
-        Args:
-            referringDoctor: New patients: reuse a supplied answer or ask "Did a doctor
-                refer you?" and get the name; "none" if not referred. Existing patients:
-                "none" without asking. Never narrate "none".
-            referringDoctorPhone: If referred, ask once for the doctor's phone and
-                address together; the office needs them to request clinical notes.
-                Say any referral note can go to eligibility@abitaeye.com. Use null for
-                what the caller does not know; do not ask again.
-            referringDoctorAddress: The referring doctor's office address.
+        Pass referral arguments as book_appointment describes.
         """
         if not bound(self._scheduling, context):
             return UNAVAILABLE
