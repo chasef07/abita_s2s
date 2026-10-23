@@ -20,10 +20,13 @@ from abita_s2s.offices import (
 )
 from abita_s2s.results import reply
 from abita_s2s.integrations.scheduling_http import (
+    Booking,
+    Cancellation,
     RescheduleReceipt,
     SchedulingFailure,
     SchedulingHTTP,
     Slot,
+    SlotSearch,
     WriteReceipt,
 )
 from abita_s2s.state import CallState
@@ -294,8 +297,11 @@ class Scheduling:
         if selected is None:
             self._invalidate()
             return reply("needs_input", office_choice)
-        if visit not in ("medical", "routine_vision") or not insurance_ready(
-            self.state
+        p = self.state.patient.active
+        if (
+            visit not in ("medical", "routine_vision")
+            or p is None
+            or not insurance_ready(self.state)
         ):
             self._invalidate()
             return reply(
@@ -322,15 +328,14 @@ class Scheduling:
         if self._search and not self._search.task.done():
             pending = self._search
         else:
-            p = self.state.patient.active
-            body = {
-                "office": selected,
-                "startDate": first.isoformat(),
-                "patientId": p.patientId,
-                "visitType": visit,
-                "dob": p.dob,
-            }
-            task = asyncio.create_task(self._load(body, key, self._generation))
+            search = SlotSearch(
+                office=selected,
+                startDate=first.isoformat(),
+                patientId=p.patientId,
+                visitType=visit,
+                dob=p.dob,
+            )
+            task = asyncio.create_task(self._load(search, key, self._generation))
             pending = self._search = PendingRead(task)
             self._read_tasks.add(task)
             task.add_done_callback(self._read_tasks.discard)
@@ -344,8 +349,8 @@ class Scheduling:
                 if self._search is pending:
                     self._invalidate()
 
-    async def _load(self, body, key, generation):
-        result = await self.http.availability(body)
+    async def _load(self, search, key, generation):
+        result = await self.http.availability(search)
         if generation != self._generation or key.context != self._context():
             return reply(
                 "stale",
@@ -391,7 +396,7 @@ class Scheduling:
             count = self._failures.get(key, (0, False))[0] + 1
             self._failures[key] = (count, retry)
             if expired and count < 2:
-                return await self._load(body, key, generation)
+                return await self._load(search, key, generation)
             return reply(
                 "availability_failed",
                 "blocked: Availability could not be verified; this does not mean no openings.",
@@ -608,7 +613,7 @@ class Scheduling:
             )
         )
         result = await self.http.cancel(
-            {"patientId": p.patientId, "cancellationToken": old.cancellationToken}
+            Cancellation(patientId=p.patientId, cancellationToken=old.cancellationToken)
         )
         outcome = self._cancel_result(result, old.id)
         self._report(
@@ -718,23 +723,20 @@ class Scheduling:
             if p.patientId in self.state.insurance.registrations
             else "established"
         )
-        body = {
-            "patientId": p.patientId,
-            "patientName": p.name,
-            "dob": p.dob,
-            "bookingToken": slot.bookingToken,
-            "visitCategory": offered.visit,
-            "patientStatus": status,
-            "appointmentReason": reason.strip(),
-            "visitReason": reason.strip(),
-            "referringDoctor": referrer.strip(),
-        }
-        if referrer_phone := (referrer_phone or "").strip():
-            body["referringDoctorPhone"] = referrer_phone
-        if referrer_address := (referrer_address or "").strip():
-            body["referringDoctorAddress"] = referrer_address
-        if old:
-            body["rescheduleToken"] = old.rescheduleToken
+        booking = Booking(
+            patientId=p.patientId,
+            patientName=p.name,
+            dob=p.dob,
+            bookingToken=slot.bookingToken,
+            visitCategory=offered.visit,
+            patientStatus=status,
+            appointmentReason=reason.strip(),
+            visitReason=reason.strip(),
+            referringDoctor=referrer.strip(),
+            referringDoctorPhone=(referrer_phone or "").strip() or None,
+            referringDoctorAddress=(referrer_address or "").strip() or None,
+            rescheduleToken=old.rescheduleToken if old else None,
+        )
         self._invalidate()
         self._receipts[receipt_key] = MutationReceipt(
             self._write_failure(
@@ -743,7 +745,7 @@ class Scheduling:
         )
         reschedule = None
         if old:
-            reschedule = await self.http.reschedule(body)
+            reschedule = await self.http.reschedule(booking)
             if (
                 not isinstance(reschedule, RescheduleReceipt)
                 or reschedule.booking is None
@@ -777,7 +779,7 @@ class Scheduling:
                 return outcome
             result = reschedule.booking
         else:
-            result = await self.http.book(body)
+            result = await self.http.book(booking)
         outcome = self._book_result(result, description)
         if not old:
             self._report(

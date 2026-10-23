@@ -22,6 +22,9 @@ from abita_s2s.records import Record
 from abita_s2s.results import reply
 from abita_s2s.integrations.registration_middleware import (
     CreationReceipt,
+    DecisionRequest,
+    InsuranceChange,
+    NewPatient,
     RegistrationMiddleware,
     UpdatedReceipt,
     WriteFailure,
@@ -130,11 +133,15 @@ class InsuranceRegistration:
         revision, active, absence = patient.revision, patient.active, patient.absence
         office = self.state.call.called_office_key
         decision = await self._middleware.check(
-            office,
-            plan.strip(),
-            coverage_type,
-            active.dob if active else "",
-            offered.plan_ids if offered else (),
+            DecisionRequest(
+                office=office,
+                plan=plan.strip(),
+                coverageType=coverage_type,
+                dob=active.dob if active else "",
+                offeredPlanIds=list(offered.plan_ids)
+                if offered and offered.plan_ids
+                else None,
+            )
         )
         if (
             patient.revision != revision
@@ -271,35 +278,32 @@ class InsuranceRegistration:
                 + (f"; email {r.email}" if r.email else "")
                 + f". {coverage} Is all of that correct?",
             )
-        payload = {
-            k: getattr(r, k)
-            for k in (
-                "firstName",
-                "lastName",
-                "dob",
-                "street",
-                "city",
-                "state",
-                "zip",
-                "sex",
-            )
-        }
-        payload.update(
+        request = NewPatient(
+            firstName=r.firstName,
+            lastName=r.lastName,
+            dob=r.dob,
+            street=r.street,
+            city=r.city,
+            state=r.state,
+            zip=r.zip,
+            sex=r.sex,
             phone=digits,
             aptSuite=r.aptSuite or "",
             insurance=checked.decision.canonicalPlan,
             subscriberName=r.subscriberName or f"{r.firstName} {r.lastName}",
             subscriberNum="self pay" if self_pay else r.insuranceMemberId,
+            insurancePlanId=checked.decision.planId or None,
+            email=r.email or None,
+            coverageType=(
+                "routine_vision"
+                if checked.decision.coverageType == "routine_vision"
+                else None
+            ),
+            office=checked.office_key,
         )
-        if checked.decision.planId:
-            payload["insurancePlanId"] = checked.decision.planId
-        if r.email:
-            payload["email"] = r.email
-        if checked.decision.coverageType == "routine_vision":
-            payload["coverageType"] = "routine_vision"
 
         async def create():
-            result = await self._middleware.create(checked.office_key, payload)
+            result = await self._middleware.create(request)
             if isinstance(result, WriteFailure):
                 if result.status == "uncertain":
                     self.state.insurance.write_uncertain = True
@@ -405,16 +409,17 @@ class InsuranceRegistration:
                 break
 
         async def update():
-            payload = {
-                "patientId": active.patientId,
-                "dob": active.dob,
-                "insurance": checked.decision.canonicalPlan,
-                "coverageType": checked.decision.coverageType,
-                "subscriberNum": member_id,
-            }
-            if checked.decision.planId:
-                payload["insurancePlanId"] = checked.decision.planId
-            result = await self._middleware.update(checked.office_key, payload)
+            result = await self._middleware.update(
+                InsuranceChange(
+                    patientId=active.patientId,
+                    dob=active.dob,
+                    insurance=checked.decision.canonicalPlan,
+                    coverageType=checked.decision.coverageType,
+                    subscriberNum=member_id,
+                    insurancePlanId=checked.decision.planId or None,
+                    office=checked.office_key,
+                )
+            )
             if isinstance(result, WriteFailure):
                 if result.status == "failed":
                     answer = reply(

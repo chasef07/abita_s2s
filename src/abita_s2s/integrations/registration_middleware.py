@@ -1,12 +1,12 @@
 """One attempt per chart/insurance write; ambiguous responses are never retried."""
 
-import asyncio
-from typing import Literal
+from typing import Annotated, Literal
 
-import httpx
+from pydantic import BeforeValidator, Field, TypeAdapter
 
-from abita_s2s.insurance_contract import InsuranceDecision
-from abita_s2s.integrations.middleware import Middleware
+from abita_s2s.insurance_contract import CoverageType, InsuranceDecision
+from abita_s2s.integrations.middleware import Middleware, OfficeKey
+from abita_s2s.integrations.transport import Fault, Reply, Request
 from abita_s2s.offices import same_office
 from abita_s2s.records import Record, Text
 
@@ -27,103 +27,147 @@ class UpdatedReceipt(Record):
     newInsurance: Text
 
 
+MutationOutcome = Literal[
+    "rejected",
+    "reconciled_failure",
+    "indeterminate_write",
+    "validation_failed",
+    "unavailable",
+    "failed",
+    "reconciled_success",
+]
+NOT_WRITTEN: tuple[MutationOutcome, ...] = (
+    "validation_failed",
+    "rejected",
+    "reconciled_failure",
+    "unavailable",
+    "failed",
+)
+
+
+class Rejection(Record):
+    status: Literal["error"]
+    outcome: Annotated[
+        MutationOutcome | None, BeforeValidator(lambda value: value or None)
+    ] = None
+    message: str = ""
+
+    @property
+    def reason(self) -> str:
+        return self.message or self.outcome or "backend_failure"
+
+
+class UpdateRejection(Rejection):
+    effect: Literal["no_effect", "partial", "uncertain"]
+
+
 class WriteFailure(Record):
     status: Literal["failed", "partial", "uncertain"]
     reason: str
 
 
+CREATED = TypeAdapter(
+    Annotated[CreationReceipt | Rejection, Field(discriminator="status")]
+)
+UPDATED = TypeAdapter(
+    Annotated[UpdatedReceipt | UpdateRejection, Field(discriminator="status")]
+)
+DECISION = TypeAdapter(InsuranceDecision)
+
+
+class DecisionRequest(Request):
+    office: OfficeKey
+    plan: str
+    coverageType: CoverageType
+    dob: str
+    offeredPlanIds: list[str] | None = None
+
+
+class NewPatient(Request):
+    firstName: str
+    lastName: str
+    dob: str
+    street: str
+    city: str
+    state: str
+    zip: str
+    sex: Literal["male", "female"]
+    phone: str
+    aptSuite: str
+    insurance: str
+    subscriberName: str
+    subscriberNum: str
+    insurancePlanId: str | None = None
+    email: str | None = None
+    coverageType: CoverageType | None = None
+    office: OfficeKey
+
+
+class InsuranceChange(Request):
+    patientId: str
+    dob: str
+    insurance: str
+    coverageType: CoverageType
+    subscriberNum: str
+    insurancePlanId: str | None = None
+    office: OfficeKey
+
+
 class RegistrationMiddleware(Middleware):
-    async def check(
-        self,
-        office: str,
-        plan: str,
-        coverage: str,
-        dob: str = "",
-        offered_plan_ids: tuple[str, ...] = (),
-    ) -> InsuranceDecision | None:
-        if not self._configured:
+    async def check(self, request: DecisionRequest) -> InsuranceDecision | None:
+        reply = await self._post("/api/insurance/decision", request, DECISION)
+        if isinstance(reply, str) or not reply.ok or reply.body is None:
             return None
-        try:
-            async with asyncio.timeout(self._deadline):
-                body = {
-                    "office": office,
-                    "plan": plan,
-                    "coverageType": coverage,
-                    "dob": dob,
-                }
-                if offered_plan_ids:
-                    body["offeredPlanIds"] = list(offered_plan_ids)
-                response = await self._send("/api/insurance/decision", body)
-                response.raise_for_status()
-                decision = InsuranceDecision.model_validate(response.json())
-                if (
-                    not same_office(decision.officeId, office)
-                    or decision.coverageType != coverage
-                ):
-                    return None
-                return decision
-        except (httpx.HTTPError, TimeoutError, ValueError):
+        decision = reply.body
+        if (
+            not same_office(decision.officeId, request.office)
+            or decision.coverageType != request.coverageType
+        ):
             return None
+        return decision
 
-    async def create(
-        self, office: str, payload: dict
-    ) -> CreationReceipt | WriteFailure:
-        return await self._write("/api/add-patient", office, payload, CreationReceipt)
+    async def create(self, request: NewPatient) -> CreationReceipt | WriteFailure:
+        reply = await self._post("/api/add-patient", request, CREATED)
+        return self._receipt(request, reply)
 
-    async def update(self, office: str, payload: dict) -> UpdatedReceipt | WriteFailure:
-        return await self._write(
-            "/api/patient/update-insurance", office, payload, UpdatedReceipt
-        )
+    async def update(self, request: InsuranceChange) -> UpdatedReceipt | WriteFailure:
+        reply = await self._post("/api/patient/update-insurance", request, UPDATED)
+        return self._receipt(request, reply)
 
-    async def _write(self, path, office, payload, receipt):
-        if not self._configured:
+    @staticmethod
+    def _receipt[R: CreationReceipt | UpdatedReceipt](
+        request: NewPatient | InsuranceChange,
+        reply: Reply[R | Rejection] | Fault,
+    ) -> R | WriteFailure:
+        if reply == "not_configured":
             return WriteFailure(status="failed", reason="not_configured")
-        try:
-            async with asyncio.timeout(self._deadline):
-                response = await self._send(path, {**payload, "office": office})
-            body = response.json()
-            failed = isinstance(body, dict) and body.get("status") == "error"
-            reason = failed and (
-                body.get("message") or body.get("outcome") or "backend_failure"
-            )
-            if receipt is UpdatedReceipt and failed:
-                effect = body.get("effect")
-                return WriteFailure(
-                    status="failed"
-                    if effect == "no_effect"
-                    else "partial"
-                    if effect == "partial"
-                    else "uncertain",
-                    reason=reason,
-                )
-            if not response.is_success:
-                return WriteFailure(status="uncertain", reason="http_failure")
-            if failed:
-                safe = receipt is CreationReceipt and body.get("outcome") in (
-                    "validation_failed",
-                    "rejected",
-                    "reconciled_failure",
-                    "unavailable",
-                    "failed",
-                )
-                return WriteFailure(
-                    status="failed" if safe else "uncertain", reason=reason
-                )
-            result = receipt.model_validate(body)
-            decision = result.insuranceDecision
-            if decision is not None and (
-                not same_office(decision.officeId, office)
-                or decision.coverageType != payload.get("coverageType", "medical")
-                or decision.canonicalPlan != payload["insurance"]
-                or (
-                    decision.planId
-                    and "insurancePlanId" in payload
-                    and decision.planId != payload["insurancePlanId"]
-                )
-            ):
-                return WriteFailure(
-                    status="uncertain", reason="mismatched_insurance_decision"
-                )
-            return result
-        except (httpx.HTTPError, TimeoutError, ValueError):
+        if isinstance(reply, str) or reply.body is None:
             return WriteFailure(status="uncertain", reason="unverified_write")
+        body = reply.body
+        if isinstance(body, UpdateRejection):
+            return WriteFailure(
+                status="failed" if body.effect == "no_effect" else body.effect,
+                reason=body.reason,
+            )
+        if not reply.ok:
+            return WriteFailure(status="uncertain", reason="http_failure")
+        if isinstance(body, Rejection):
+            return WriteFailure(
+                status="failed" if body.outcome in NOT_WRITTEN else "uncertain",
+                reason=body.reason,
+            )
+        decision = body.insuranceDecision
+        if decision is not None and (
+            not same_office(decision.officeId, request.office)
+            or decision.coverageType != (request.coverageType or "medical")
+            or decision.canonicalPlan != request.insurance
+            or (
+                decision.planId
+                and request.insurancePlanId is not None
+                and decision.planId != request.insurancePlanId
+            )
+        ):
+            return WriteFailure(
+                status="uncertain", reason="mismatched_insurance_decision"
+            )
+        return body

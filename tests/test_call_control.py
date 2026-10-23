@@ -16,9 +16,10 @@ from test_patient_resolution import call_state, receipt
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.call_control import CallControl
 from abita_s2s.tools.call_control import CallControlTools
-from abita_s2s.config import HandoffConfig, load_config
+from abita_s2s.config import Config, HandoffConfig, load_config
 from abita_s2s.handoff import HandoffAdmission
 from abita_s2s.integrations.patient_middleware import Receipt
+from abita_s2s.integrations.product import Product
 from abita_s2s.offices import SPRING_HILL, get_office_profile
 from abita_s2s.runtime.silence import BackendResponses
 
@@ -90,11 +91,16 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
                 ) as client:
                     admission = HandoffAdmission(
                         state,
-                        client,
-                        HandoffConfig(
-                            "https://product.test/v1/handoffs",
-                            "offline",
-                            "00000000-0000-4000-8000-000000000001",
+                        Product(
+                            client,
+                            Config(
+                                "offline",
+                                handoff=HandoffConfig(
+                                    "https://product.test/v1/handoffs",
+                                    "offline",
+                                    "00000000-0000-4000-8000-000000000001",
+                                ),
+                            ),
                         ),
                     )
                     target = await admission.resolve()
@@ -139,7 +145,11 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         )
         self.addAsyncCleanup(self.client.aclose)
         self.control = CallControl(
-            self.state, self.client, self.room, self.sip, backend=BackendResponses()
+            self.state,
+            Product(self.client, Config("offline")),
+            self.room,
+            self.sip,
+            backend=BackendResponses(),
         )
         self.tools = CallControlTools(self.control)
         self.model = Model()
@@ -357,10 +367,8 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             requests.append(json.loads(request.content))
             return httpx.Response(409)
 
-        self.control.admission.client = httpx.AsyncClient(
-            transport=httpx.MockTransport(handler)
-        )
-        self.addAsyncCleanup(self.control.admission.client.aclose)
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.aclose)
         with patch.dict(
             "os.environ",
             {
@@ -370,7 +378,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
                 "ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET": "offline",
             },
         ):
-            self.control.admission.config = load_config().handoff
+            self.control.admission.product = Product(client, load_config())
             self.assertEqual(
                 (await self.run_tool("transfer_call")).split(":", 1)[0], "ambiguous"
             )
@@ -404,10 +412,8 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
                 },
             )
 
-        self.control.admission.client = httpx.AsyncClient(
-            transport=httpx.MockTransport(handler)
-        )
-        self.addAsyncCleanup(self.control.admission.client.aclose)
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.aclose)
         with patch.dict(
             "os.environ",
             {
@@ -417,7 +423,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
                 "ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET": "offline",
             },
         ):
-            self.control.admission.config = load_config().handoff
+            self.control.admission.product = Product(client, load_config())
             first = await self.run_tool("transfer_call")
             self.assertEqual(first.split(":", 1)[0], "failed")
             self.assertIn("once more", first)
@@ -443,23 +449,28 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_partial_admission_and_invalid_destination_block_refer(self):
         self.state.call = replace(self.state.call, called_office_key="spring-hill")
-        for response in (
-            httpx.Response(503),
-            httpx.Response(
-                201,
-                json={
-                    "expiresAt": (datetime.now(UTC) + timedelta(minutes=2)).isoformat(),
-                    "id": "bad",
-                    "sipDestination": "tel:+15555555555",
-                },
+        for response, cause in (
+            (httpx.Response(503), "http_503"),
+            (
+                httpx.Response(
+                    201,
+                    json={
+                        "expiresAt": (
+                            datetime.now(UTC) + timedelta(minutes=2)
+                        ).isoformat(),
+                        "id": "bad",
+                        "sipDestination": "tel:+15555555555",
+                    },
+                ),
+                "invalid_response",
             ),
         ):
             self.control.status = "idle"
             self.control.attempts = 0
-            self.control.admission.client = httpx.AsyncClient(
+            client = httpx.AsyncClient(
                 transport=httpx.MockTransport(lambda request, reply=response: reply)
             )
-            self.addAsyncCleanup(self.control.admission.client.aclose)
+            self.addAsyncCleanup(client.aclose)
             with patch.dict(
                 "os.environ",
                 {
@@ -469,10 +480,15 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
                     "ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET": "offline",
                 },
             ):
-                self.control.admission.config = load_config().handoff
-                self.assertEqual(
-                    (await self.run_tool("transfer_call")).split(":", 1)[0], "ambiguous"
-                )
+                self.control.admission.product = Product(client, load_config())
+                with self.assertLogs("abita_s2s.call_control", "WARNING") as logs:
+                    self.assertEqual(
+                        (await self.run_tool("transfer_call")).split(":", 1)[0],
+                        "ambiguous",
+                    )
+            self.assertIn(
+                f"phase=admitting cause=AdmissionUnconfirmed:{cause}", logs.output[-1]
+            )
             self.sip.transfer_sip_participant.assert_not_awaited()
 
     async def test_toolset_close_stops_new_transfers(self):
@@ -543,10 +559,8 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
                 },
             )
 
-        self.control.admission.client = httpx.AsyncClient(
-            transport=httpx.MockTransport(handler)
-        )
-        self.addAsyncCleanup(self.control.admission.client.aclose)
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(client.aclose)
         with patch.dict(
             "os.environ",
             {
@@ -557,7 +571,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             },
             clear=True,
         ):
-            self.control.admission.config = load_config().handoff
+            self.control.admission.product = Product(client, load_config())
             self.assertEqual(
                 (await self.run_tool("transfer_call")).split(":", 1)[0], "accepted"
             )
@@ -574,13 +588,13 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_invalid_admission_config_is_retryable_without_writes(self):
         self.state.call = replace(self.state.call, called_office_key="spring-hill")
-        self.control.admission.client.post = AsyncMock()
+        self.client.post = AsyncMock()
         with patch.dict(
             "os.environ",
             {"OPENAI_API_KEY": "offline"},
             clear=True,
         ):
-            self.control.admission.config = load_config().handoff
+            self.control.admission.product = Product(self.client, load_config())
             first = await self.run_tool("transfer_call")
             self.assertEqual(first.split(":", 1)[0], "failed")
             self.assertIn("once more", first)
@@ -589,14 +603,12 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 (await self.run_tool("transfer_call")).split(":", 1)[0], "blocked"
             )
-        self.control.admission.client.post.assert_not_awaited()
+        self.client.post.assert_not_awaited()
         self.sip.transfer_sip_participant.assert_not_awaited()
 
     async def test_cancel_during_admission_fences_transfer_and_end_call(self):
         self.state.call = replace(self.state.call, called_office_key="spring-hill")
-        self.control.admission.client.post = AsyncMock(
-            side_effect=asyncio.CancelledError()
-        )
+        self.client.post = AsyncMock(side_effect=asyncio.CancelledError())
         with patch.dict(
             "os.environ",
             {
@@ -607,7 +619,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             },
             clear=True,
         ):
-            self.control.admission.config = load_config().handoff
+            self.control.admission.product = Product(self.client, load_config())
             try:
                 await self.run_tool("transfer_call")
             except (IndexError, asyncio.CancelledError):
@@ -618,5 +630,5 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 (await self.run_tool("end_call")).split(":", 1)[0], "blocked"
             )
-        self.control.admission.client.post.assert_awaited_once()
+        self.client.post.assert_awaited_once()
         self.sip.transfer_sip_participant.assert_not_awaited()

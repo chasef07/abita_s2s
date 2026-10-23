@@ -12,6 +12,7 @@ from livekit.agents.llm.utils import build_strict_openai_schema
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.config import Config, load_config
+from abita_s2s.integrations.product import Product
 from abita_s2s.knowledge import OfficeKnowledge
 from abita_s2s.offices import OFFICES, SPRING_HILL
 from abita_s2s.state import CallContext, CallState
@@ -52,7 +53,7 @@ class KnowledgeTests(unittest.IsolatedAsyncioTestCase):
     def knowledge(self, handler, config=CONFIG):
         client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         self.addAsyncCleanup(client.aclose)
-        return OfficeKnowledge(client, config)
+        return OfficeKnowledge(Product(client, config))
 
     async def test_registered_tool_uses_call_office_and_sends_only_question(self):
         requests = []
@@ -198,7 +199,7 @@ class KnowledgeTests(unittest.IsolatedAsyncioTestCase):
                 cancelled.set()
 
         knowledge = self.knowledge(slow)
-        with patch("abita_s2s.knowledge.SEARCH_TIMEOUT", 0.01):
+        with patch("abita_s2s.integrations.product.SEARCH_TIMEOUT", 0.01):
             result = await knowledge.search("spring-hill", "Hours?")
         self.assertEqual(result["outcome"], "temporary_failure")
         self.assertTrue(cancelled.is_set())

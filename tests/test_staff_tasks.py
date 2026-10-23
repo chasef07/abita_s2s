@@ -14,6 +14,7 @@ from test_knowledge import call_state
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.config import Config, load_config
 from abita_s2s.identity import PatientResolver
+from abita_s2s.integrations.product import Product
 from abita_s2s.integrations.patient_middleware import Failure, Receipt
 from abita_s2s.offices import get_office_profile
 from abita_s2s.staff_tasks import StaffTasks, _same_patient
@@ -107,7 +108,7 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
         ) as client:
             middleware = AsyncMock()
             resolver = PatientResolver(state, middleware)
-            owner = StaffTasks(state, resolver, client, config)
+            owner = StaffTasks(state, resolver, Product(client, config))
             agent = AbitaAgent(
                 get_office_profile(state.call.called_office_key),
                 AsyncMock(),

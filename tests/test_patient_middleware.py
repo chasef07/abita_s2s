@@ -11,6 +11,7 @@ from abita_s2s.integrations.patient_middleware import (
     Failure,
     PatientMiddleware,
     Receipt,
+    ResolveRequest,
 )
 from abita_s2s.offices import OFFICES
 
@@ -27,7 +28,9 @@ class PatientMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             middleware = PatientMiddleware(client, CONFIG)
             for office in OFFICES:
                 self.assertIsInstance(
-                    await middleware.resolve(office.key, {"phone": "+15555550101"}),
+                    await middleware.resolve(
+                        ResolveRequest(phone="+15555550101", office=office.key)
+                    ),
                     Receipt,
                 )
                 request = requests[-1]
@@ -62,7 +65,7 @@ class PatientMiddlewareTests(unittest.IsolatedAsyncioTestCase):
                 transport=httpx.MockTransport(handler)
             ) as client:
                 result = await PatientMiddleware(client, CONFIG).resolve(
-                    "spring-hill", {"phone": "+15555550101"}
+                    ResolveRequest(phone="+15555550101", office="spring-hill")
                 )
                 self.assertIsInstance(result, Failure)
                 self.assertEqual(len(requests), count)
@@ -79,7 +82,9 @@ class PatientMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             self.assertIsInstance(
-                await PatientMiddleware(client, CONFIG).resolve("spring-hill", {}),
+                await PatientMiddleware(client, CONFIG).resolve(
+                    ResolveRequest(office="spring-hill")
+                ),
                 Receipt,
             )
         self.assertEqual(count, 2)
@@ -89,7 +94,9 @@ class PatientMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             raise httpx.DecodingError("bad body", request=request)
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            result = await PatientMiddleware(client, CONFIG).resolve("spring-hill", {})
+            result = await PatientMiddleware(client, CONFIG).resolve(
+                ResolveRequest(office="spring-hill")
+            )
         self.assertEqual(result, Failure(reason="network_error"))
 
     async def test_total_deadline_cancels_transport(self):
@@ -103,7 +110,7 @@ class PatientMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             result = await PatientMiddleware(client, CONFIG, deadline=0.01).resolve(
-                "spring-hill", {}
+                ResolveRequest(office="spring-hill")
             )
         self.assertEqual(result.reason, "timeout")
         self.assertTrue(cancelled.is_set())
@@ -114,7 +121,7 @@ class PatientMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             result = await PatientMiddleware(client, Config("offline")).resolve(
-                "spring-hill", {}
+                ResolveRequest(office="spring-hill")
             )
         self.assertEqual(result.reason, "not_configured")
 

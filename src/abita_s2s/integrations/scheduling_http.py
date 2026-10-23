@@ -1,20 +1,68 @@
 """Scheduling HTTP contracts. Writes are sent once and uncertainty stays explicit."""
 
-import asyncio
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-import httpx
 from pydantic import (
     AwareDatetime,
+    BeforeValidator,
     Field,
+    TypeAdapter,
     field_validator,
     model_validator,
 )
 
 from abita_s2s.insurance_contract import CoverageType
-from abita_s2s.integrations.middleware import Middleware
+from abita_s2s.integrations.middleware import Middleware, OfficeKey
+from abita_s2s.integrations.transport import Request
 from abita_s2s.records import Record, Text
+
+SchedulingOutcome = Literal[
+    "validation",
+    "invalid_booking_token",
+    "invalid_cancellation_token",
+    "invalid_reschedule_token",
+    "booking_token_required",
+    "appointment_type_unresolved",
+    "patient_context_mismatch",
+    "slot_unavailable",
+    "provider_conflict",
+    "provider_rejected",
+    "ownership_mismatch",
+    "write_failed",
+    "indeterminate_write",
+]
+Outcome = Annotated[
+    SchedulingOutcome | None, BeforeValidator(lambda value: value or None)
+]
+
+
+class SlotSearch(Request):
+    office: OfficeKey
+    startDate: str
+    patientId: str
+    visitType: CoverageType
+    dob: str
+
+
+class Booking(Request):
+    patientId: str
+    patientName: str
+    dob: str
+    bookingToken: str
+    visitCategory: CoverageType
+    patientStatus: Literal["new", "established"]
+    appointmentReason: str
+    visitReason: str
+    referringDoctor: str
+    referringDoctorPhone: str | None = None
+    referringDoctorAddress: str | None = None
+    rescheduleToken: str | None = None
+
+
+class Cancellation(Request):
+    patientId: str
+    cancellationToken: str
 
 
 class Slot(Record):
@@ -79,8 +127,8 @@ class Inventory(Record):
 
 
 class WriteReceipt(Record):
-    status: str
-    outcome: str | None = None
+    status: Literal["booked", "cancelled", "error"]
+    outcome: Outcome = None
     appointmentId: int | None = Field(default=None, gt=0)
     appointmentTypeId: int | None = Field(default=None, gt=0)
     rescheduleToken: str | None = None
@@ -106,7 +154,7 @@ class WriteReceipt(Record):
 
 class RescheduleReceipt(Record):
     status: Literal["completed", "partial", "failed", "uncertain"]
-    outcome: str | None = None
+    outcome: Outcome = None
     booking: WriteReceipt | None = None
     cancellation: WriteReceipt | None = None
 
@@ -139,37 +187,46 @@ class SchedulingFailure(Record):
     uncertain: bool = False
 
 
+INVENTORY = TypeAdapter(Inventory)
+WRITE = TypeAdapter(WriteReceipt)
+RESCHEDULE = TypeAdapter(RescheduleReceipt)
+
+
 class SchedulingHTTP(Middleware):
-    async def availability(self, body: dict) -> Inventory | SchedulingFailure:
-        return await self._post("/api/scheduler/slots", body, Inventory, write=False)
-
-    async def book(self, body: dict) -> WriteReceipt | SchedulingFailure:
-        return await self._post("/api/appointment/book", body, WriteReceipt, write=True)
-
-    async def reschedule(self, body: dict) -> RescheduleReceipt | SchedulingFailure:
-        return await self._post(
-            "/api/appointment/reschedule", body, RescheduleReceipt, write=True
+    async def availability(self, request: SlotSearch) -> Inventory | SchedulingFailure:
+        return await self._exchange(
+            "/api/scheduler/slots", request, INVENTORY, write=False
         )
 
-    async def cancel(self, body: dict) -> WriteReceipt | SchedulingFailure:
-        return await self._post(
-            "/api/appointment/cancel", body, WriteReceipt, write=True
+    async def book(self, request: Booking) -> WriteReceipt | SchedulingFailure:
+        return await self._exchange("/api/appointment/book", request, WRITE, write=True)
+
+    async def reschedule(
+        self, request: Booking
+    ) -> RescheduleReceipt | SchedulingFailure:
+        return await self._exchange(
+            "/api/appointment/reschedule", request, RESCHEDULE, write=True
         )
 
-    async def _post(self, path, body, record, *, write):
-        if not self._configured:
+    async def cancel(self, request: Cancellation) -> WriteReceipt | SchedulingFailure:
+        return await self._exchange(
+            "/api/appointment/cancel", request, WRITE, write=True
+        )
+
+    async def _exchange[R: Inventory | WriteReceipt | RescheduleReceipt](
+        self, path: str, request: Request, record: TypeAdapter[R], *, write: bool
+    ) -> R | SchedulingFailure:
+        reply = await self._post(path, request, record)
+        if reply == "not_configured":
             return SchedulingFailure(reason="not_configured")
-        try:
-            async with asyncio.timeout(self._deadline):
-                response = await self._send(path, body)
-            if not response.is_success:
-                if not write:
-                    result = record.model_validate(response.json())
-                    if result.status == "error":
-                        return result
-                return SchedulingFailure(reason="http_error", uncertain=write)
-            return record.model_validate(response.json())
-        except (httpx.HTTPError, TimeoutError):
+        if isinstance(reply, str):
             return SchedulingFailure(reason="transport_error", uncertain=write)
-        except ValueError:
+        if not reply.ok:
+            if not write and reply.body is None:
+                return SchedulingFailure(reason="invalid_response")
+            if not write and reply.body and reply.body.status == "error":
+                return reply.body
+            return SchedulingFailure(reason="http_error", uncertain=write)
+        if reply.body is None:
             return SchedulingFailure(reason="invalid_response", uncertain=write)
+        return reply.body

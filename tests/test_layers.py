@@ -52,10 +52,13 @@ FORBIDDEN = {
         "livekit.agents",
     },
     "observability": {"integrations", "owners", "tools", "composition"},
-    "owners": {"observability", "tools", "composition", "livekit.agents"},
+    "owners": {"observability", "tools", "composition", "livekit.agents", "httpx"},
     "tools": {"integrations", "observability", "composition", "httpx"},
     "composition": set(),
 }
+
+
+FIXES = {"httpx": "send HTTP through an adapter in integrations/"}
 
 
 def layer_of(name: str) -> str | None:
@@ -101,6 +104,10 @@ class LayerTests(unittest.TestCase):
             forbidden = FORBIDDEN[layer]
             for module in runtime_imports(ast.parse(path.read_text()).body, package):
                 name = target(module)
-                if any(name == f or name.startswith(f + ".") for f in forbidden):
-                    violations.append(f"{'/'.join(parts)} ({layer}) imports {module}")
+                for f in forbidden:
+                    if name == f or name.startswith(f + "."):
+                        violations.append(
+                            f"{'/'.join(parts)} ({layer}) imports {module}"
+                            + (f"; {FIXES[f]}" if f in FIXES else "")
+                        )
         self.assertEqual(violations, [])
