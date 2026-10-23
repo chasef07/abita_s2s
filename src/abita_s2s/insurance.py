@@ -448,14 +448,12 @@ class InsuranceRegistration:
                 outcome = "written"
                 if active.patientId in self.state.insurance.registrations:
                     self.state.insurance.registrations[active.patientId] = "created"
-                updated = active.model_copy(
-                    update={
-                        "insuranceCarrier": result.newInsurance,
-                        "insuranceDecision": result.insuranceDecision
-                        or checked.decision,
-                    }
-                )
-                if self._resolver.refresh_insurance(active, updated, checked):
+                if self._resolver.refresh_insurance(
+                    active,
+                    result.newInsurance,
+                    result.insuranceDecision or checked.decision,
+                    checked,
+                ):
                     answer = reply(
                         "updated",
                         f"success: Updated insurance to {result.newInsurance}.",
