@@ -87,9 +87,11 @@ To add a capability:
 
 ## Decisions
 
-- **One writer per state.** `identity` owns the patient and `insurance` grants
-  acceptance. `identity` clears or rebinds acceptance only through `insurance_state`;
-  `scheduling` writes only the active chart's appointment fields.
+- **One writer per state.** Each `CallState` field has one owner module, listed in
+  [tests/test_state_ownership.py](tests/test_state_ownership.py). Only `PatientState`
+  methods change the patient, and each one decides whether the revision moves. `identity`
+  calls them, and `scheduling` calls only the two appointment methods. Acceptance is read
+  and written only through `insurance_state`.
 - **Writes are sent once.** Uncertain chart, insurance, and appointment writes are never
   retried; they block repeats for the rest of the call and go to staff.
 - **Config owns the environment.** Only `config.py` and call startup read environment
