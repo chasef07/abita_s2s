@@ -3,9 +3,11 @@
 import re
 import subprocess
 import unittest
+from itertools import takewhile
 from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
+RULE_TABLE = "| Rule | Enforced by |"
 WORKFLOWS = (
     ".github/workflows/ci.yml",
     ".github/workflows/publish.yml",
@@ -39,6 +41,15 @@ PINS = {
 
 def git(*args):
     return subprocess.check_output(["git", *args], cwd=ROOT, text=True)
+
+
+def rule_rows():
+    """Each AGENTS.md rule with the paths its "Enforced by" cell names."""
+    lines = (ROOT / "AGENTS.md").read_text().splitlines()
+    rows = lines[lines.index(RULE_TABLE) + 2 :]
+    for row in takewhile(lambda line: line.startswith("|"), rows):
+        rule, enforced_by = (cell.strip() for cell in row.strip("|").split("|"))
+        yield rule, re.findall(r"`([^`]+)`", enforced_by)
 
 
 class RepoConsistencyTests(unittest.TestCase):
@@ -85,3 +96,22 @@ class RepoConsistencyTests(unittest.TestCase):
         ]
         if found:
             self.fail("\n".join(["Scratch output stays untracked:", *found]))
+
+    def test_agents_md_rules_name_files_that_exist(self):
+        rows = list(rule_rows())
+        self.assertTrue(rows, f"AGENTS.md has no rows under {RULE_TABLE}")
+        found = []
+        for rule, paths in rows:
+            if not paths:
+                found.append(f"{rule!r} names no enforcing file")
+            found.extend(
+                f"{rule!r} names {path}, which does not exist"
+                for path in paths
+                if not (ROOT / path).exists()
+            )
+        if found:
+            self.fail(
+                "\n".join(
+                    ["Point each AGENTS.md rule at the file that enforces it:", *found]
+                )
+            )
