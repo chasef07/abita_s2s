@@ -1,4 +1,4 @@
-"""Shared tool helpers: call binding and caller announcements before external effects."""
+"""Shared tool helpers: call binding, and a caller announcement that only an owner may sequence."""
 
 from livekit.agents import RunContext
 

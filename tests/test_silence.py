@@ -1,6 +1,6 @@
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from livekit.agents import AgentSession, UserStateChangedEvent
 from livekit.plugins.openai.realtime import GPTLiveModel, GPTLiveSession
@@ -63,6 +63,20 @@ class SilenceCheckInTests(unittest.IsolatedAsyncioTestCase):
         self.user("away")
         self.reply.assert_called_once_with(instructions=STILL_WORKING)
         self.reset.assert_called_once_with()
+
+    def test_still_working_stops_after_three_lines_until_the_caller_speaks(self):
+        self.backend.record(backend_event("response.created"))
+        for _ in range(4):
+            self.user("away")
+        self.assertEqual(
+            self.reply.call_args_list,
+            [call(instructions=STILL_WORKING)] * 3 + [call(instructions=CHECK_IN)],
+        )
+        self.assertEqual(self.reset.call_count, 3)
+        self.reply.reset_mock()
+        self.user("speaking")
+        self.user("away")
+        self.reply.assert_called_once_with(instructions=STILL_WORKING)
 
     def test_failed_backend_response_tells_caller(self):
         for kind in ("response.failed", "response.incomplete"):

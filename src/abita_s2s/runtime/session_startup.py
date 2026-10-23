@@ -13,6 +13,7 @@ from livekit import api, rtc
 from livekit.agents import AgentSession, JobContext, room_io
 
 from abita_s2s.agent import AbitaAgent
+from abita_s2s.budgets import DRAIN, TRANSPORT_CLOSE
 from abita_s2s.call_control import CallControl
 from abita_s2s.config import load_config
 from abita_s2s.identity import PatientResolver
@@ -26,7 +27,7 @@ from abita_s2s.offices import (
     get_office_profile_by_phone,
 )
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
-from abita_s2s.runtime.reporting import FINISH_SECONDS, CallReporter
+from abita_s2s.runtime.reporting import CallReporter
 from abita_s2s.runtime.silence import check_in_on_silence
 from abita_s2s.scheduling.appointments import Scheduling
 from abita_s2s.integrations.scheduling_http import SchedulingHTTP
@@ -36,9 +37,6 @@ from abita_s2s.tools.registry import Owners
 
 logger = logging.getLogger(__name__)
 SIP_WAIT_SECONDS = 20
-CLEANUP_SECONDS = 50
-TRANSPORT_CLOSE_SECONDS = 5
-SHUTDOWN_PROCESS_SECONDS = FINISH_SECONDS + TRANSPORT_CLOSE_SECONDS + 5
 
 
 def _disconnect_signal():
@@ -200,7 +198,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         writers = owners.writers() if owners else []
         for writer in writers:
             writer.close_admission()
-        async with asyncio.timeout(CLEANUP_SECONDS):
+        async with asyncio.timeout(DRAIN.seconds):
             await _gather_raising(
                 *(writer.aclose() for writer in writers),
                 cancelled="An accepted mutation was cancelled during shutdown",
@@ -224,7 +222,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             else:
                 await drain_writes()
         finally:
-            async with asyncio.timeout(TRANSPORT_CLOSE_SECONDS):
+            async with asyncio.timeout(TRANSPORT_CLOSE.seconds):
                 await _gather_raising(
                     client.aclose(), *([sip_api.aclose()] if sip_api else [])
                 )
