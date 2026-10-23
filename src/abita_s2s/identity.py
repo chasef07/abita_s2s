@@ -7,6 +7,7 @@ from abita_s2s.insurance_state import (
     AcceptedInsurance,
     accepted_insurance,
     clear_acceptance,
+    clear_chartless_acceptance,
     rebind_acceptance,
 )
 from abita_s2s.integrations.patient_middleware import (
@@ -181,9 +182,7 @@ class PatientResolver:
         ):
             return await asyncio.shield(self._task)
         self._pending = (first_name, dob)
-        checked = self.state.insurance.accepted
-        if checked is not None and checked.patient_id is None:
-            clear_acceptance(self.state)
+        clear_chartless_acceptance(self.state)
         active = self.state.patient.active
         if active and not self._same_as_active(active, first_name, dob):
             self._previous_id = active.patientId

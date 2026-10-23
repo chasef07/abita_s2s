@@ -1,7 +1,6 @@
 """Insurance consumer contract. Acceptance is participation, never active benefits.
 
-InsuranceRegistration grants acceptance; every owner clears or rebinds it only
-through clear_acceptance and rebind_acceptance.
+Only the functions here read or write acceptance.
 """
 
 from dataclasses import dataclass, field, replace
@@ -83,10 +82,34 @@ def offered_plans(
     return offered
 
 
+def grant_acceptance(
+    state: "CallState",
+    decision: InsuranceDecision,
+    *,
+    office_key: str,
+    patient_revision: int,
+    patient_id: str | None,
+    absence: "PatientAbsence | None",
+) -> None:
+    """Store the decision as acceptance only if it accepts the plan, scoped to the
+    office and identity it was checked under."""
+    if decision.participation == "accepted":
+        state.insurance.accepted = AcceptedInsurance(
+            office_key, patient_revision, patient_id, absence, decision
+        )
+
+
 def clear_acceptance(state: "CallState") -> None:
     """Drop acceptance and fence any participation check still in flight."""
     state.insurance.accepted = None
     state.insurance.check_revision += 1
+
+
+def clear_chartless_acceptance(state: "CallState") -> None:
+    """Drop acceptance checked without a chart. A new resolution invalidates it."""
+    checked = state.insurance.accepted
+    if checked is not None and checked.patient_id is None:
+        clear_acceptance(state)
 
 
 def rebind_acceptance(

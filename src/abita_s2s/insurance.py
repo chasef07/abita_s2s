@@ -14,6 +14,7 @@ from abita_s2s.insurance_state import (
     OfferedPlans,
     accepted_insurance,
     clear_acceptance,
+    grant_acceptance,
     offered_plans,
 )
 from abita_s2s.integrations.patient_middleware import Receipt
@@ -163,14 +164,14 @@ class InsuranceRegistration:
                 coverage_type,
                 tuple(option.planId for option in decision.options),
             )
-        if decision.participation == "accepted":
-            self.state.insurance.accepted = AcceptedInsurance(
-                office,
-                revision,
-                active.patientId if active else None,
-                absence,
-                decision,
-            )
+        grant_acceptance(
+            self.state,
+            decision,
+            office_key=office,
+            patient_revision=revision,
+            patient_id=active.patientId if active else None,
+            absence=absence,
+        )
         return reply(decision.outcome, decision_answer(decision))
 
     def _write_blocker(self) -> dict | None:
