@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.3](https://github.com/chasef07/abita_s2s/compare/v0.20.2...v0.20.3) (2026-10-23)
+
+
+### Bug Fixes
+
+* **config:** register local workers under a developer agent name ([#207](https://github.com/chasef07/abita_s2s/issues/207)) ([6fab028](https://github.com/chasef07/abita_s2s/commit/6fab028502f0e1c746e579e7c3e00c6c7eb44585))
+
 ## [0.20.2](https://github.com/chasef07/abita_s2s/compare/v0.20.1...v0.20.2) (2026-10-22)
 
 
