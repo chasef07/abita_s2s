@@ -16,7 +16,10 @@ VERSION = r"(\d+(?:\.\d+)+)"
 PINS = {
     "uv": (
         ("Dockerfile", rf"astral-sh/uv:{VERSION}"),
-        *((path, rf"(?m)^\s+version: '{VERSION}'") for path in WORKFLOWS),
+        *(
+            (path, rf"astral-sh/setup-uv@.*\n\s+with:\n\s+version: '{VERSION}'")
+            for path in WORKFLOWS
+        ),
         ("pyproject.toml", rf"uv_build=={VERSION}"),
     ),
     "Python": (
@@ -44,7 +47,8 @@ class RepoConsistencyTests(unittest.TestCase):
             source_path, source_pattern = pins[0]
             source = re.search(source_pattern, (ROOT / source_path).read_text())
             if source is None:
-                self.fail(f"No {tool} pin in {source_path}")
+                found.append(f"{source_path}: no {tool} pin")
+                continue
             expected = source.group(1).split(".")
             for path, pattern in pins:
                 pinned = re.findall(pattern, (ROOT / path).read_text())
@@ -57,7 +61,8 @@ class RepoConsistencyTests(unittest.TestCase):
                             f"{path} pins {tool} {version}, "
                             f"but {source_path} pins {'.'.join(expected)}"
                         )
-        self.assertEqual(found, [], "Pin every file to the same version")
+        if found:
+            self.fail("\n".join(["Pin every file to the same version:", *found]))
 
     def test_tracked_files_match_no_gitignore_rule(self):
         listing = git(
@@ -77,4 +82,5 @@ class RepoConsistencyTests(unittest.TestCase):
             f"{path} matches {rule}; run git rm --cached {path}"
             for rule, path in (line.split("\t") for line in rules)
         ]
-        self.assertEqual(found, [], "Scratch output stays untracked")
+        if found:
+            self.fail("\n".join(["Scratch output stays untracked:", *found]))
