@@ -28,8 +28,6 @@ HOLLYWOOD_ROUTINE_OFFICE_FOLLOW_UP = "needs_input: Ask whether the caller wants 
 
 @dataclass(frozen=True)
 class OfficePromotion:
-    """A newer office offered once to callers booking one visit type."""
-
     visit: CoverageType
     office: str
     announcement: str
@@ -116,7 +114,6 @@ def same_office(office_id: str, key: str) -> bool:
 
 
 def e164(phone: str | None) -> E164 | None:
-    """A number with a leading + keeps its country code; ten bare digits are US."""
     text = (phone or "").strip()
     digits = re.sub(r"\D", "", text)
     if len(digits) == 10 and not text.startswith("+"):
