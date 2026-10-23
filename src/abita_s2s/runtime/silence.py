@@ -6,20 +6,11 @@ from livekit.agents import AgentSession, UserStateChangedEvent
 from livekit.plugins.openai.realtime import GPTLiveSession
 
 from abita_s2s.call_control import CallControl
+from abita_s2s.prompt import load_prompt
 
-CHECK_IN = (
-    "Briefly say you are still here, and ask whether the caller is still there "
-    "or needs anything else."
-)
-STILL_WORKING = (
-    "Tell the caller in one short sentence that you are still working on it. "
-    "Do not guess the result."
-)
-COULD_NOT_FINISH = (
-    "Tell the caller in one short sentence that you could not finish the rest "
-    "of that just now, without taking back anything a result already confirmed, "
-    "and ask whether they would like you to try again."
-)
+CHECK_IN = load_prompt("check_in")
+STILL_WORKING = load_prompt("still_working")
+COULD_NOT_FINISH = load_prompt("could_not_finish")
 FAILED = frozenset({"response.failed", "response.incomplete"})
 FINISHED = FAILED | {"response.completed", "response.cancelled"}
 

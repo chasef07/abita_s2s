@@ -5,9 +5,19 @@ from pathlib import Path
 from typing import Literal
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
+Prompt = Literal[
+    "speaker",
+    "thinker",
+    "call_started",
+    "greeting",
+    "check_in",
+    "still_working",
+    "could_not_finish",
+    "goodbye",
+]
 
 
-def load_prompt(name: Literal["speaker", "thinker"]) -> str:
+def load_prompt(name: Prompt) -> str:
     path = PROMPTS_DIR / f"{name}.md"
     content = path.read_text(encoding="utf-8").strip()
     if not content:
@@ -18,7 +28,12 @@ def load_prompt(name: Literal["speaker", "thinker"]) -> str:
 def thinker_instructions(started: datetime) -> str:
     """The thinker's rules plus the clinic-local call start, as the thinker sees them."""
     return (
-        load_prompt("thinker") + f"\n\nCall started: {started:%A, %Y-%m-%d %H:%M %Z} "
-        "(America/New_York). Use this clinic-local date "
-        "to interpret relative dates."
+        load_prompt("thinker")
+        + "\n\n"
+        + load_prompt("call_started").format(started=started)
     )
+
+
+def greeting(practice_name: str, now: datetime) -> str:
+    """The opening instructions, seeded into session.input and then asked for once, as GPT-Live advises."""
+    return load_prompt("greeting").format(practice_name=practice_name, now=now)

@@ -13,11 +13,11 @@ Each noun has one place in the tree and one job at runtime.
 
 | Noun | Place | Job |
 | --- | --- | --- |
-| **Tool** | `tools/<name>.py` | What the model can call. Binds to the call, delegates, formats the answer. |
+| **Tool** | `tools/<name>.py`, `tools/registry.py` | What the model can call. Binds to the call, delegates, formats the answer. The registry wires owners to tools. |
 | **Owner** | `<name>.py` (`identity`, `insurance`, `scheduling`, `staff_tasks`, `call_control`, `handoff`, `knowledge`) | Per-call state and its rules. The one writer of its slice of `CallState`. |
 | **Record** | `records.py`, `*_contract.py`, `state.py`, `results.py` | Typed shapes every layer shares: wire records, contracts, call state, tool results. |
 | **Integration** | `integrations/<name>.py` | Authenticated middleware HTTP: deadlines, retries, response validation. |
-| **Runtime** | `main.py`, `agent.py`, `runtime/` | Starts the call, wires owners to tools, reports and evaluates it, shuts down. |
+| **Runtime** | `main.py`, `agent.py`, `runtime/` | Starts the call, builds its owners, reports and evaluates it, shuts down. |
 
 ## Layers are visible in the tree
 
@@ -83,7 +83,14 @@ To add a capability:
    layers share them.
 3. Add a tool in `tools/` that checks `bound(owner, context)`, speaks any announcement
    with `say_only()`, and returns the owner's answer.
-4. Register the tool in `agent.py` and build the owner in `runtime/session_startup.py`.
+4. Add one `Entry` for the tool to `TOOLS` in `tools/registry.py`. Build a new owner in
+   `runtime/session_startup.py` and give it a field on `Owners`. If it admits writes, add
+   it to `Owners.writers()`, the list shutdown closes and drains.
+5. Name the tool's capability in the entry. If it is new, add its line to the
+   `Backend tools:` list in `prompts/speaker.md`. `tests/test_prompt_contract.py` fails
+   until prompts and tool descriptions name only registered tools, and until every
+   heading reference names a real heading. It finds references written as "the X
+   section", "the X policy", "the x instructions above", or "continue with X".
 
 ## Decisions
 

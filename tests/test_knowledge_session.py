@@ -13,6 +13,7 @@ from abita_s2s.agent import AbitaAgent
 from abita_s2s.integrations.product import Product
 from abita_s2s.knowledge import OfficeKnowledge
 from abita_s2s.offices import SPRING_HILL
+from abita_s2s.tools.registry import Owners
 
 
 class KnowledgeModel(llm.LLM):
@@ -74,7 +75,7 @@ class KnowledgeSessionTests(unittest.IsolatedAsyncioTestCase):
                 ) as client:
                     model = KnowledgeModel()
                     agent = AbitaAgent(
-                        SPRING_HILL, OfficeKnowledge(Product(client, CONFIG))
+                        Owners(SPRING_HILL, OfficeKnowledge(Product(client, CONFIG)))
                     )
                     async with AgentSession(
                         llm=model, userdata=call_state()

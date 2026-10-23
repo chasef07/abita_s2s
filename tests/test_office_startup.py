@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, PropertyMock, patch
 import httpx
 
 from abita_s2s.agent import AbitaAgent
+from abita_s2s.tools.registry import Owners
 from abita_s2s.config import Config
 from abita_s2s.integrations.patient_middleware import NotFound
 from abita_s2s.offices import (
@@ -125,7 +126,7 @@ class OfficeRoutingTests(unittest.TestCase):
 
 class GreetingTests(unittest.IsolatedAsyncioTestCase):
     async def test_greeting_seeds_startup_history_and_is_spoken_once(self):
-        agent = AbitaAgent(SPRING_HILL, None)
+        agent = AbitaAgent(Owners(SPRING_HILL, None))
         seeded = [
             item
             for item in agent.chat_ctx.items
@@ -257,11 +258,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                 sip_api.assert_called_once_with(failover=False)
         args = session.start.call_args.kwargs
         args["userdata"] = session_type.call_args.kwargs["userdata"]
-        args["dependencies"] = SimpleNamespace(
-            knowledge=agent_factory.call_args.args[1],
-            resolver=agent_factory.call_args.args[2],
-            **agent_factory.call_args.kwargs,
-        )
+        args["dependencies"] = agent_factory.call_args.args[0]
         return ctx, args
 
     async def test_named_deployment_sandboxes_call_control(self):
@@ -430,6 +427,19 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                     await shutdown
         self.assertTrue(client.is_closed)
         self._cleanups.pop()
+
+    async def test_shutdown_closes_and_drains_call_control(self):
+        ctx, args = await self.run_startup(
+            True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"}
+        )
+        control = args["dependencies"].call_control
+        with (
+            patch.object(control, "close_admission") as close_admission,
+            patch.object(control, "aclose", new=AsyncMock()) as aclose,
+        ):
+            await ctx.add_shutdown_callback.call_args_list[0].args[0]()
+        close_admission.assert_called_once_with()
+        aclose.assert_awaited_once_with()
 
     async def test_product_closeout_waits_for_accepted_write_and_keeps_native_report(
         self,
