@@ -91,7 +91,7 @@ class PatientResolver:
     ) -> bool:
         """Repeating the name that verified this chart, even fuzzily, keeps it active."""
         if name and self._verified_as == (active.patientId, exact_name(name)):
-            name = None
+            return same_patient(None, dob, active.name, active.dob, names_match)
         return same_patient(name, dob, active.name, active.dob, names_match)
 
     def _begin_lookup(self) -> object:
