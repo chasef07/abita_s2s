@@ -63,16 +63,37 @@ class ModelConfigTests(unittest.TestCase):
 
 
 class CallModelTests(unittest.IsolatedAsyncioTestCase):
-    async def test_each_session_is_traced_and_feeds_the_backend_and_watchdog(self):
+    async def asyncSetUp(self):
         with patch.object(GPTLiveSession, "_main_task", idle):
-            model = CallModel(api_key="offline")
-            live = model.session()
-        self.addAsyncCleanup(model.aclose)
-        self.addAsyncCleanup(live.aclose)
-        self.assertIsInstance(live, ObservedGPTLiveSession)
-        sent = patch.object(live, "send_event").start()
+            self.model = CallModel(api_key="offline")
+            self.live = self.model.session()
+        self.addAsyncCleanup(self.model.aclose)
+        self.addAsyncCleanup(self.live.aclose)
+        self.sent = patch.object(self.live, "send_event").start()
         self.addCleanup(patch.stopall)
-        for event in (
+
+    def receive(self, *events):
+        for event in events:
+            self.live.emit("openai_server_event_received", event)
+            self.live._handle_event(event)
+
+    async def test_each_session_is_traced(self):
+        self.assertIsInstance(self.live, ObservedGPTLiveSession)
+
+    async def test_an_undelegated_caller_turn_is_handed_off_once(self):
+        self.receive(
+            {"type": "session.input_transcript.delta", "delta": " Book it please."}
+        )
+        self.assertTrue(self.model.watchdog.hand_off_held())
+        item, create = (call.args[0] for call in self.sent.call_args_list)
+        self.assertIn(
+            "The caller said: Book it please.\n",
+            item["item"]["content"][0]["text"],
+        )
+        self.assertEqual(create["type"], "response.create")
+
+    async def test_a_tool_call_awaiting_its_output_holds_the_hand_off(self):
+        self.receive(
             {"type": "session.input_transcript.delta", "delta": " Book it please."},
             {
                 "type": "response.event",
@@ -98,10 +119,8 @@ class CallModelTests(unittest.IsolatedAsyncioTestCase):
                 "delegation_id": "d1",
                 "event": {"type": "response.completed"},
             },
-        ):
-            live.emit("openai_server_event_received", event)
-            live._handle_event(event)
-        self.assertTrue(model.backend.caller_spoke_since_request)
-        self.assertEqual(model.backend.running, set())
-        self.assertFalse(model.watchdog.hand_off_held())
-        sent.assert_not_called()
+        )
+        self.assertTrue(self.model.backend.caller_spoke_since_request)
+        self.assertEqual(self.model.backend.running, set())
+        self.assertFalse(self.model.watchdog.hand_off_held())
+        self.sent.assert_not_called()
