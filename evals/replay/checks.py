@@ -39,18 +39,22 @@ CLAIM = re.compile(
     r"|\bI(?:'m| am) (checking|looking|pulling|searching|transferring|connecting|"
     r"booking|scheduling|cancell?ing|rescheduling|noting|sending|putting|adding|"
     r"registering|verifying|confirming)"
-    r"|\bI(?:'ll| will) (check|look|pull|search|transfer|connect|book|schedule|"
-    r"cancel|reschedule|note|send|put you|add|register|verify|confirm)"
+    r"|\bI(?:'ll| will) (check|look|see|find out|pull|search|transfer|connect|book|"
+    r"schedule|cancel|reschedule|note|send|put you|add|register|verify|confirm|"
+    r"get (her|him|them|someone))"
     r"|\b(transferring|connecting) you|\bbooking (that|it|this|you)"
-    r"|\b(d[ée]jame|perm[ií]tame) (revisar|verificar|ver|buscar|confirmar|consultar|"
-    r"transferir|comunicar)"
+    r"|\bchecking (your|on|the|that|this|if|whether|who)"
+    r"|\b(d[ée]j[ae]me|perm[ií]t[ae]me) (revisar|verificar|ver|buscar|confirmar|"
+    r"consultar|transferir|comunicar)"
     r"|\b(estoy|voy a) (revisando|verificando|buscando|consultando|transfiriendo|"
     r"comunicando|agendando|revisar|verificar|buscar|consultar|transferir|"
-    r"comunicar|agendar)"
+    r"comunicar|agendar|ver)"
     r"|\b(le|lo|la) (transfiero|comunico)",
     re.IGNORECASE,
 )
-TRANSFER = re.compile(r"transf|connect|comunic", re.IGNORECASE)
+TRANSFER = re.compile(
+    r"transf|connect|comunic|get (her|him|them|someone)", re.IGNORECASE
+)
 LEAVING = frozenset({"transfer_call", "end_call"})
 SENTENCE = re.compile(r"[^.!?]+[.!?]*")
 

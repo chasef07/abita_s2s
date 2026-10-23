@@ -50,6 +50,15 @@ class ChecksTests(unittest.TestCase):
             "narrated an unstarted action: 'One moment, let me check.'",
         )
 
+    def test_flags_the_availability_checks_153_found(self):
+        for said in (
+            "One moment, I'll see if someone is available.",
+            "One moment, checking your file.",
+            "Déjeme revisar si está disponible.",
+        ):
+            with self.subTest(said):
+                self.assertIsNotNone(no_unstarted_action()([ASKS, Agent(said)]))
+
     def test_accepts_a_check_the_backend_starts(self):
         events = [ASKS, Agent("Let me check."), *search(), Agent("We're at 100.")]
         self.assertIsNone(no_unstarted_action()(events))
