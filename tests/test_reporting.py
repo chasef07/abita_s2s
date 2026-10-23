@@ -13,6 +13,7 @@ from livekit.agents.voice.events import CloseEvent, CloseReason
 from livekit.agents.voice.report import SessionReport
 from test_patient_resolution import CONFIG, call_state
 
+from abita_s2s.budgets import CLOSEOUT, FINISH, RETRY_PAUSE
 from abita_s2s.config import load_config
 from abita_s2s.observability.judges import JURORS
 from abita_s2s.observability.call_labels import INTENT_CRITERIA, OUTCOME_CRITERIA
@@ -55,7 +56,9 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         openrouter_key=None,
     ):
         self.requests = []
-        pause = patch("abita_s2s.runtime.reporting.RETRY_PAUSE_SECONDS", 0)
+        pause = patch(
+            "abita_s2s.runtime.reporting.RETRY_PAUSE", replace(RETRY_PAUSE, seconds=0)
+        )
         pause.start()
         self.addCleanup(pause.stop)
         if evaluate is not None:
@@ -508,8 +511,10 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         reporter.started = True
         reporter.appointment(OUTCOME)
         with (
-            patch("abita_s2s.runtime.reporting.FINISH_SECONDS", 0.5),
-            patch("abita_s2s.runtime.reporting.CLOSEOUT_SECONDS", 0.3),
+            patch("abita_s2s.runtime.reporting.FINISH", replace(FINISH, seconds=0.5)),
+            patch(
+                "abita_s2s.runtime.reporting.CLOSEOUT", replace(CLOSEOUT, seconds=0.3)
+            ),
             self.assertLogs("abita_s2s.runtime.reporting", "ERROR"),
         ):
             await asyncio.wait_for(reporter.finish(lambda: REPORT), 1)

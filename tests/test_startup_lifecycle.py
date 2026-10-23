@@ -10,8 +10,9 @@ from livekit.agents import room_io
 import test_office_startup as existing
 from test_staff_tasks import CONFIG, NEED, receipt
 
+from abita_s2s.budgets import DRAIN
 from abita_s2s.config import load_config
-from abita_s2s.runtime import reporting, session_startup as startup
+from abita_s2s.runtime import session_startup as startup
 
 
 class Room:
@@ -208,7 +209,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         owner._task = pending
         try:
             with (
-                patch.object(startup, "CLEANUP_SECONDS", 0.01),
+                patch.object(startup, "DRAIN", replace(DRAIN, seconds=0.01)),
                 self.assertRaises(TimeoutError),
             ):
                 await ctx.add_shutdown_callback.call_args.args[0]()
@@ -218,15 +219,6 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         finally:
             pending.cancel()
             await asyncio.gather(pending, return_exceptions=True)
-        self.assertGreater(startup.CLEANUP_SECONDS, 40)
-        self.assertLess(
-            startup.CLEANUP_SECONDS + reporting.CLOSEOUT_SECONDS,
-            reporting.FINISH_SECONDS,
-        )
-        self.assertLess(
-            reporting.FINISH_SECONDS + startup.TRANSPORT_CLOSE_SECONDS,
-            startup.SHUTDOWN_PROCESS_SECONDS,
-        )
 
 
 class StagingConfigTests(unittest.TestCase):

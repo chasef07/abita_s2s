@@ -7,13 +7,13 @@ from collections.abc import Awaitable, Callable
 from google.protobuf.duration_pb2 import Duration
 from livekit import api, rtc
 
+from abita_s2s.budgets import ANNOUNCEMENT, SIP_RINGING, SIP_TRANSFER, TRANSFER
 from abita_s2s.handoff import AdmissionRejected, AdmissionUnconfirmed, HandoffAdmission
 from abita_s2s.integrations.product import Product
 from abita_s2s.state import CallState
 
 logger = logging.getLogger(__name__)
 AMBIGUOUS = "ambiguous: Transfer may be in progress. Do not retry or end the call."
-ANNOUNCEMENT_SECONDS = 10
 TRANSFERRING = ("pending", "accepted", "ambiguous")
 
 
@@ -92,7 +92,7 @@ class CallControl:
         return await asyncio.shield(self._transfer_task)
 
     async def _transfer(self, hold, announce):
-        deadline = asyncio.timeout(40)
+        deadline = asyncio.timeout(TRANSFER.seconds)
         try:
             async with deadline:
                 return await self._perform_transfer(hold, announce)
@@ -106,7 +106,7 @@ class CallControl:
 
     async def _announce(self, announce) -> None:
         try:
-            async with asyncio.timeout(ANNOUNCEMENT_SECONDS):
+            async with asyncio.timeout(ANNOUNCEMENT.seconds):
                 spoken = await announce()
         except Exception as error:
             logger.warning(
@@ -149,9 +149,9 @@ class CallControl:
                     transfer_to=target.destination,
                     headers=target.headers,
                     play_dialtone=True,
-                    ringing_timeout=Duration(seconds=20),
+                    ringing_timeout=Duration(seconds=round(SIP_RINGING.seconds)),
                 ),
-                timeout=30,
+                timeout=SIP_TRANSFER.seconds,
             )
             if response.status == api.STS_TRANSFER_SUCCESSFUL:
                 self.status = "accepted"
