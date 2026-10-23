@@ -41,7 +41,7 @@ CLAIM = re.compile(
     r"registering|verifying|confirming)"
     r"|\bI(?:'ll| will) (check|look|see|find out|pull|search|transfer|connect|book|"
     r"schedule|cancel|reschedule|note|send|put you|add|register|verify|confirm|"
-    r"get (her|him|them|someone))"
+    r"get (her|him|them|someone)(?=[.,!]|$| on the| for you))"
     r"|\b(transferring|connecting) you|\bbooking (that|it|this|you)"
     r"|\bchecking (your|on|the|that|this|if|whether|who)"
     r"|\b(d[ée]j[ae]me|perm[ií]t[ae]me) (revisar|verificar|ver|buscar|confirmar|"
@@ -52,15 +52,13 @@ CLAIM = re.compile(
     r"|\b(le|lo|la) (transfiero|comunico)",
     re.IGNORECASE,
 )
-TRANSFER = re.compile(
-    r"transf|connect|comunic|get (her|him|them|someone)", re.IGNORECASE
-)
+TRANSFER = re.compile(r"transf|connect|comunic|get (her|him|them|someone)", re.I)
 LEAVING = frozenset({"transfer_call", "end_call"})
 SENTENCE = re.compile(r"[^.!?]+[.!?]*")
 
 
 def _window(events: Transcript, at: int) -> tuple[int, int]:
-    """The index range around ``at`` from the caller line before it to the caller line after it."""
+    """The index range around ``at`` from the caller line before it, or the call start, to the next caller line."""
     heard = [i for i, e in enumerate(events) if isinstance(e, Caller)]
     start = max((i for i in heard if i <= at), default=0)
     end = min((i for i in heard if i > at), default=len(events))
@@ -91,16 +89,14 @@ def _after_first_caller(events: Transcript) -> list[tuple[int, Agent]]:
 
 
 def no_unstarted_action() -> Check:
-    """Every action the agent says it is doing has a tool behind it before the caller speaks again (#153).
-
-    A question ("Would you like me to transfer you?") offers an action and claims nothing.
-    """
+    """Every action the agent says it is doing has a tool behind it before the caller speaks again (#153)."""
 
     def check(events: Transcript) -> str | None:
         for i, said in _after_first_caller(events):
             for sentence in SENTENCE.findall(said.text):
                 claim = CLAIM.search(sentence)
-                if claim is None or sentence.rstrip().endswith("?"):
+                offers = sentence.rstrip().endswith("?")
+                if claim is None or offers:
                     continue
                 transfer = TRANSFER.search(claim.group(0)) is not None
                 if not _started(events, i, transfer):
@@ -127,7 +123,7 @@ def delegates(tool: str, turn: int) -> Check:
 
 
 def grounded(tool: str, pattern: str, what: str) -> Check:
-    """The agent says nothing matching ``pattern`` before the first ``tool`` call."""
+    """After the greeting, the agent says nothing matching ``pattern`` before the first ``tool`` call."""
     found = re.compile(pattern, re.IGNORECASE)
 
     def check(events: Transcript) -> str | None:
@@ -144,7 +140,6 @@ def grounded(tool: str, pattern: str, what: str) -> Check:
 
 
 def never_says(pattern: str, what: str) -> Check:
-    """The agent never says anything matching ``pattern`` once the caller has spoken."""
     found = re.compile(pattern, re.IGNORECASE)
 
     def check(events: Transcript) -> str | None:

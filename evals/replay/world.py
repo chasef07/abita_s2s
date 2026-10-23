@@ -60,7 +60,7 @@ PATIENT = {
 
 
 def config(api_key: str) -> Config:
-    """The agent's configuration with only the model key real; every service URL points here."""
+    """Agent settings with only the model key real. Service URLs point at this backend, and handoff and reporting stay unset."""
     return Config(
         openai_api_key=api_key,
         knowledge_url=KNOWLEDGE_URL,
@@ -139,7 +139,7 @@ ROUTES: dict[str, Callable[[httpx.Request, dict], dict]] = {
 
 
 class World:
-    """Answers every backend request from ``ROUTES`` and records any request it has no route for."""
+    """Answers backend requests from ``ROUTES`` and records each request with no route."""
 
     def __init__(self) -> None:
         self.unrouted: list[str] = []

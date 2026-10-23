@@ -1,4 +1,4 @@
-"""The fixed caller scripts, each with the checks its call must pass; they mirror #153, #173 and three LiveKit suites."""
+"""The fixed caller scripts and the checks each call must pass."""
 
 from dataclasses import dataclass
 
@@ -19,7 +19,8 @@ OPEN_OR_CLOSED = r"\b(we're|we are|estamos) (open|closed|not open|abiertos|cerra
 AGREES = r"\b(yes|yeah|yep|correct|exactly|that's right|sí|así es|correcto)\b"
 ACCEPTS = (
     AGREES
-    + r"|\b(we )?(accept|take)s? (it|that|ambetter|aetna)|\bin network\b|\baceptamos\b"
+    + r"|(?<!whether )(?<!if )\bwe (do )?(accept|take) (it|that|ambetter|aetna)"
+    + r"|\b(is|are) accepted\b|\bin network\b|(?<!si )\baceptamos\b"
 )
 APPOINTMENT = r"\b(november|noviembre|12th|twelfth|10:30|ten thirty)\b"
 INVENTED_PARKING = (
@@ -40,7 +41,7 @@ PROMISED_CALLBACK = (
 
 @dataclass(frozen=True)
 class Scenario:
-    """One scripted call: each turn is what the caller says, breath by breath, after the agent goes quiet."""
+    """One scripted call; each turn holds the caller's breaths, spoken back to back."""
 
     name: str
     mirrors: str

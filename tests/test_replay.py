@@ -28,7 +28,7 @@ from evals.replay.checks import (
     grounded,
     no_unstarted_action,
 )
-from evals.replay.scenarios import SCENARIOS
+from evals.replay.scenarios import ACCEPTS, SCENARIOS
 from evals.replay.world import World, config
 
 ROOT = Path(__file__).parents[1]
@@ -58,6 +58,19 @@ class ChecksTests(unittest.TestCase):
         ):
             with self.subTest(said):
                 self.assertIsNotNone(no_unstarted_action()([ASKS, Agent(said)]))
+
+    def test_setting_up_a_patient_is_not_a_transfer_claim(self):
+        events = [ASKS, Agent("Okay. I'll get him set up. Could you spell his name?")]
+        self.assertIsNone(no_unstarted_action()(events))
+
+    def test_asking_whether_a_plan_is_taken_is_not_acceptance(self):
+        check = grounded("check_insurance", ACCEPTS, "plan acceptance")
+        asking = Agent("Let me check whether we take that plan.")
+        self.assertIsNone(check([ASKS, asking, Call("check_insurance", {}, "i1")]))
+        accepting = Agent("Yes, we take Aetna.")
+        self.assertIsNotNone(
+            check([ASKS, accepting, Call("check_insurance", {}, "i1")])
+        )
 
     def test_accepts_a_check_the_backend_starts(self):
         events = [ASKS, Agent("Let me check."), *search(), Agent("We're at 100.")]

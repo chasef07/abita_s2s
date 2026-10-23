@@ -5,8 +5,9 @@ From the repository root, with OPENAI_API_KEY set and nothing else:
     uv run --no-sync python -m evals.replay
 
 The caller speaks synthesized audio, because GPT-Live answers only what it hears; typed
-input reaches it as a note, not as the caller. Owners run on ``world.World``, so no request
-leaves this process except to api.openai.com. No LiveKit server, room, or worker is used.
+input reaches it as a note, not as the caller. Owners run on the backend in world.py, so no
+request leaves this process except to api.openai.com. No LiveKit server, room, or worker
+is used.
 """
 
 import argparse
@@ -59,8 +60,6 @@ SPEECH_VOICE = "alloy"
 
 
 class Budget:
-    """Model calls this run has made: caller lines synthesized, voice sessions, and thinker responses."""
-
     def __init__(self, limit: int) -> None:
         self.limit = limit
         self.calls = 0
@@ -70,6 +69,10 @@ class Budget:
         self.calls += 1
         if self.calls > self.limit:
             self.exceeded.set()
+
+    def record(self, event: dict) -> None:
+        if event.get("event", {}).get("type") == "response.created":
+            self.spend()
 
 
 class CallerAudio(AudioInput):
@@ -95,7 +98,7 @@ class CallerAudio(AudioInput):
 
 
 class Activity:
-    """When GPT-Live last spoke, heard the caller, or ran the thinker; it also counts thinker responses.
+    """When GPT-Live last spoke, heard the caller, or ran the thinker.
 
     LiveKit's agent state is no help here: GPT-Live streams audio without pause, so the
     state stays ``speaking`` after the words end.
@@ -109,13 +112,9 @@ class Activity:
         }
     )
 
-    def __init__(self, budget: Budget) -> None:
+    def __init__(self) -> None:
         self.at = time.monotonic()
         self.reacted = 0.0
-        self._budget = budget
-
-    def follow(self, live: GPTLiveSession) -> None:
-        live.on("openai_server_event_received", self.record)
 
     def record(self, event: dict) -> None:
         kind = event.get("type")
@@ -123,8 +122,6 @@ class Activity:
             self.at = self.reacted = time.monotonic()
         elif kind == "session.input_transcript.delta":
             self.at = time.monotonic()
-        if event.get("event", {}).get("type") == "response.created":
-            self._budget.spend()
 
 
 @dataclass
@@ -141,12 +138,7 @@ class Result:
 async def settle(
     model: CallModel, activity: Activity, closed: asyncio.Event, since: float
 ) -> bool:
-    """Wait for the agent's turn to end; False when it runs past TURN_SECONDS.
-
-    The turn ends when the call ends, when the agent has not reacted since ``since``
-    within REACTION_SECONDS, or when it reacted and then went QUIET_SECONDS with no
-    speech and no backend work.
-    """
+    """Wait for the agent's turn to end; False when it runs past TURN_SECONDS."""
     start = time.monotonic()
     activity.at = max(activity.at, start)
     while (now := time.monotonic()) - start < TURN_SECONDS:
@@ -166,7 +158,6 @@ async def settle(
 def transcript(
     history: llm.ChatContext, heard: list[tuple[float, Caller]]
 ) -> list[Event]:
-    """The call in time order: the caller's lines as played, and the agent's speech, tool calls, and results."""
     timed: list[tuple[float, Event]] = list(heard)
     for item in history.items:
         if isinstance(item, llm.ChatMessage) and item.role == "assistant":
@@ -199,7 +190,6 @@ async def drain(owners: Owners) -> list[str]:
 async def play(
     scenario: Scenario, voice: dict[str, bytes], budget: Budget, api_key: str
 ) -> Result:
-    """Run one scripted call against fixture owners and judge it."""
     began = time.monotonic()
     world = World()
     settings = config(api_key)
@@ -237,7 +227,7 @@ async def play(
     )
     caller = CallerAudio()
     session.input.audio = caller
-    activity = Activity(budget)
+    activity = Activity()
     closed = asyncio.Event()
     session.on("close", lambda _: closed.set())
     check_in_on_silence(
@@ -254,7 +244,8 @@ async def play(
             live = agent.duplex_session
             if not isinstance(live, GPTLiveSession):
                 raise TypeError("the replay drives GPT-Live only")
-            activity.follow(live)
+            live.on("openai_server_event_received", activity.record)
+            live.on("openai_server_event_received", budget.record)
             if not await settle(model, activity, closed, time.monotonic()):
                 failures.append(
                     f"the greeting did not settle within {TURN_SECONDS:.0f} s"
@@ -327,7 +318,7 @@ async def synthesize(lines: set[str], api_key: str, budget: Budget) -> dict[str,
 async def replay(
     scenarios: list[Scenario], api_key: str, budget: Budget, concurrency: int
 ) -> list[Result] | None:
-    """Every scenario's result, or None when the run reached the model-call limit and stopped."""
+    """Every scenario's result, or None once the run passes its model-call limit."""
     voice = await synthesize(
         {line for s in scenarios for turn in s.turns for line in turn}, api_key, budget
     )
@@ -353,7 +344,6 @@ def cell(text: str) -> str:
 
 
 def report(results: list[Result], budget: Budget, seconds: float) -> str:
-    """The verdict table and the run's model spend, as Markdown."""
     rows = [
         "| Scenario | Mirrors | Verdict | Why |",
         "| --- | --- | --- | --- |",
@@ -381,7 +371,11 @@ def report(results: list[Result], budget: Budget, seconds: float) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(prog="python -m evals.replay", description=__doc__)
+    parser = argparse.ArgumentParser(
+        prog="python -m evals.replay",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--only", nargs="+", choices=[s.name for s in SCENARIOS])
     parser.add_argument("--concurrency", type=int, default=len(SCENARIOS))
     parser.add_argument("--max-calls", type=int, default=200)
