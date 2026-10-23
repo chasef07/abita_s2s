@@ -363,7 +363,6 @@ class Scheduling:
 
     def _settle(
         self,
-        patient: Receipt,
         captured: SchedulingContext,
         key: WriteKey,
         outcome: WriteOutcome,
@@ -377,7 +376,7 @@ class Scheduling:
             and write_effect(outcome).spends_target
             and self._context() == captured
         ):
-            self._appointments_stale(patient)
+            self.state.patient.mark_appointments_stale()
         self._ledger.record(key, outcome, receipt)
 
     async def _cancel(
@@ -395,7 +394,7 @@ class Scheduling:
         if old is None:
             return reply("needs_input", CHOOSE_LOADED_APPOINTMENT)
         if not old.cancellationToken:
-            self._appointments_stale(p)
+            self.state.patient.mark_appointments_stale()
             return reply(
                 "needs_input",
                 "needs_input: Reload appointments to obtain cancellation authorization, then reconfirm the exact appointment.",
@@ -420,7 +419,6 @@ class Scheduling:
         )
         cancelled_id = old.id if outcome == "written" else None
         self._settle(
-            p,
             captured,
             key,
             outcome,
@@ -491,7 +489,7 @@ class Scheduling:
                 f"needs_input: Load {old.visitType} availability to match the existing appointment.",
             )
         if old and not old.rescheduleToken:
-            self._appointments_stale(p)
+            self.state.patient.mark_appointments_stale()
             return reply(
                 "needs_input",
                 "needs_input: Reload appointments to obtain reschedule authorization, then reconfirm the move.",
@@ -556,7 +554,6 @@ class Scheduling:
             slot=slot,
         )
         self._settle(
-            p,
             captured,
             key,
             outcome,
@@ -590,7 +587,7 @@ class Scheduling:
                 old=old,
                 slot=slot,
             )
-            self._settle(p, captured, key, outcome, MutationReceipt(answer), target=old)
+            self._settle(captured, key, outcome, MutationReceipt(answer), target=old)
             return answer
         cancelled = outcome == "written"
         self._report(
@@ -608,7 +605,7 @@ class Scheduling:
             cancelled_id=old.id if cancelled else None,
             offered=offered,
         )
-        self._settle(p, captured, key, outcome, receipt, target=old)
+        self._settle(captured, key, outcome, receipt, target=old)
         if cancelled:
             self._ledger.record(
                 WriteKey(p.patientId, "reschedule", new.id), outcome, receipt
@@ -721,12 +718,6 @@ class Scheduling:
         )
         reporter.appointment(evidence, call_id=call_id)
 
-    def _appointments_stale(self, patient: Receipt) -> None:
-        """Revoke loaded appointment authority until the patient is reloaded."""
-        self.state.patient.active = patient.model_copy(
-            update={"appointmentsStatus": "error"}
-        )
-
     def _reconcile_receipts(self):
         """Apply confirmed receipt effects after writes and patient reloads."""
         patient = self.state.patient.active
@@ -743,15 +734,7 @@ class Scheduling:
             booked = receipt.booked
             if booked and booked.id not in cancelled and booked.id not in appointments:
                 appointments[booked.id] = booked
-        if list(appointments.values()) != patient.appointments:
-            self.state.patient.active = patient.model_copy(
-                update={
-                    "appointments": list(appointments.values()),
-                    "appointmentsStatus": patient.appointmentsStatus
-                    if patient.appointmentsStatus == "error"
-                    else ("found" if appointments else "none"),
-                }
-            )
+        self.state.patient.update_appointments(list(appointments.values()))
 
     def _finish_change(self, result: dict, captured: SchedulingContext) -> dict:
         if self._context() != captured:

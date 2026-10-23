@@ -5,11 +5,35 @@ from unittest.mock import AsyncMock, Mock
 from test_patient_resolution import call_state, receipt
 
 from abita_s2s.identity import PatientResolver
-from abita_s2s.integrations.patient_middleware import NotFound, Receipt
-from abita_s2s.state import CallState, CandidateLookup
+from abita_s2s.integrations.patient_middleware import Appointment, NotFound, Receipt
+from abita_s2s.state import CallState, CandidateLookup, PatientAbsence, PatientState
 
 
 class CallStateTests(unittest.IsolatedAsyncioTestCase):
+    def test_only_a_new_chart_or_insurance_starts_a_new_revision(self):
+        patient = PatientState()
+        jane = Receipt.model_validate(receipt())
+        patient.record_absence(PatientAbsence("Jane", "01/02/1980", "spring-hill"))
+        patient.activate(jane)
+        self.assertEqual((patient.revision, patient.absence), (1, None))
+        patient.activate(jane.model_copy(update={"insuranceCarrier": "Reloaded"}))
+        patient.mark_appointments_stale()
+        booked = Appointment.model_validate(
+            {"id": 7, "date": "11/02/2026", "time": "9:00 AM"}
+        )
+        patient.update_appointments([booked])
+        self.assertEqual(patient.revision, 1)
+        self.assertEqual(patient.active.appointments, [booked])
+        self.assertEqual(patient.active.appointmentsStatus, "error")
+        patient.update_insurance("Other Plan", jane.insuranceDecision)
+        self.assertEqual(patient.revision, 2)
+        patient.activate(Receipt.model_validate(receipt("chart-john", "John")))
+        self.assertEqual(patient.revision, 3)
+        patient.deactivate()
+        self.assertEqual((patient.revision, patient.active), (4, None))
+        with self.assertRaises(RuntimeError):
+            patient.mark_appointments_stale()
+
     def resolver(self):
         resolver = PatientResolver(call_state(), Mock())
         self.addAsyncCleanup(resolver.aclose)

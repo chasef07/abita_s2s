@@ -14,6 +14,7 @@ from abita_s2s.insurance_state import (
     OfferedPlans,
     accepted_insurance,
     clear_acceptance,
+    grant_acceptance,
     offered_plans,
 )
 from abita_s2s.integrations.patient_middleware import Receipt
@@ -163,14 +164,14 @@ class InsuranceRegistration:
                 coverage_type,
                 tuple(option.planId for option in decision.options),
             )
-        if decision.participation == "accepted":
-            self.state.insurance.accepted = AcceptedInsurance(
-                office,
-                revision,
-                active.patientId if active else None,
-                absence,
-                decision,
-            )
+        grant_acceptance(
+            self.state,
+            decision,
+            office_key=office,
+            patient_revision=revision,
+            patient_id=active.patientId if active else None,
+            absence=absence,
+        )
         return reply(decision.outcome, decision_answer(decision))
 
     def _write_blocker(self) -> dict | None:
@@ -448,14 +449,12 @@ class InsuranceRegistration:
                 outcome = "written"
                 if active.patientId in self.state.insurance.registrations:
                     self.state.insurance.registrations[active.patientId] = "created"
-                updated = active.model_copy(
-                    update={
-                        "insuranceCarrier": result.newInsurance,
-                        "insuranceDecision": result.insuranceDecision
-                        or checked.decision,
-                    }
-                )
-                if self._resolver.refresh_insurance(active, updated, checked):
+                if self._resolver.refresh_insurance(
+                    active,
+                    result.newInsurance,
+                    result.insuranceDecision or checked.decision,
+                    checked,
+                ):
                     answer = reply(
                         "updated",
                         f"success: Updated insurance to {result.newInsurance}.",
