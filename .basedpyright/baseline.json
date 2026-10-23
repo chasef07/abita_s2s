@@ -84,42 +84,10 @@
         ],
         "./src/abita_s2s/observability/evaluation.py": [
             {
-                "code": "reportOperatorIssue",
-                "range": {
-                    "startColumn": 46,
-                    "endColumn": 67,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportOptionalOperand",
-                "range": {
-                    "startColumn": 51,
-                    "endColumn": 56,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportReturnType",
-                "range": {
-                    "startColumn": 11,
-                    "endColumn": 16,
-                    "lineCount": 1
-                }
-            },
-            {
                 "code": "reportPossiblyUnboundVariable",
                 "range": {
                     "startColumn": 42,
                     "endColumn": 50,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportArgumentType",
-                "range": {
-                    "startColumn": 53,
-                    "endColumn": 58,
                     "lineCount": 1
                 }
             }
@@ -128,24 +96,24 @@
             {
                 "code": "reportAttributeAccessIssue",
                 "range": {
-                    "startColumn": 17,
-                    "endColumn": 21,
+                    "startColumn": 72,
+                    "endColumn": 76,
                     "lineCount": 1
                 }
             },
             {
                 "code": "reportAttributeAccessIssue",
                 "range": {
-                    "startColumn": 17,
-                    "endColumn": 21,
+                    "startColumn": 72,
+                    "endColumn": 76,
                     "lineCount": 1
                 }
             },
             {
                 "code": "reportAttributeAccessIssue",
                 "range": {
-                    "startColumn": 17,
-                    "endColumn": 21,
+                    "startColumn": 72,
+                    "endColumn": 76,
                     "lineCount": 1
                 }
             }

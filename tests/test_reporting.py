@@ -225,9 +225,9 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                         "probabilities": {"1": 0.5, "2": 0.5},
                     }
                     if question["type"] == "score"
-                    else {"type": "noul", "noul": 0.5 + index / 100}
+                    else {"type": "noul", "noul": 0.5}
                 )
-                for index, (name, question) in enumerate(payload["questions"].items())
+                for name, question in payload["questions"].items()
                 if name != "emergency_policy_followed"
             }
             return httpx.Response(200, json={"answers": answers})
@@ -286,6 +286,57 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotIn("private body", json.dumps(closeout))
 
+    async def test_recorded_appointment_write_opens_the_date_check(self):
+        for evidence, asked in (
+            (OUTCOME, True),
+            ({**OUTCOME, "bookingResult": {"status": "rejected"}}, False),
+            (None, False),
+        ):
+            history = llm.ChatContext()
+            history.add_message(role="user", content="Book Wednesday at ten.")
+            history.items.extend(
+                [
+                    llm.FunctionCall(
+                        call_id="book-1", name="book_appointment", arguments="{}"
+                    ),
+                    llm.FunctionCallOutput(
+                        call_id="book-1",
+                        name="book_appointment",
+                        output="Your visit is set for Wednesday at ten.",
+                        is_error=False,
+                    ),
+                ]
+            )
+            report = {**REPORT, "chat_history": history.to_dict()}
+            reporter = self.reporter(openrouter_key="offline")
+            reporter.started = True
+            if evidence:
+                reporter.appointment(evidence)
+            asked_questions = []
+
+            def respond(request):
+                payload = json.loads(request.content)
+                asked_questions.extend(payload["questions"])
+                return httpx.Response(200, json={"answers": {}})
+
+            client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+            with (
+                self.subTest(evidence=evidence),
+                patch(
+                    "abita_s2s.observability.evaluation.httpx.AsyncClient",
+                    return_value=client,
+                ),
+                self.assertLogs("abita_s2s.observability.evaluation", "ERROR"),
+            ):
+                await reporter.finish(lambda: report)
+            self.assertEqual("appointment_datetime_correct" in asked_questions, asked)
+            evaluation = self.requests[-1]["closeoutPayload"]["evaluation"]
+            if not asked:
+                self.assertEqual(
+                    evaluation["results"]["appointment_datetime_correct"]["status"],
+                    "unknown",
+                )
+
     async def test_classification_receives_drained_receipts_and_reaches_closeout(self):
         history = llm.ChatContext()
         history.add_message(role="user", content="Please save this for staff.")
@@ -334,6 +385,69 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             closeout["evaluation"]["classification"]["outcome"], "resolved"
         )
+
+    async def finish_with_non_finite_answer(self, sender):
+        history = llm.ChatContext()
+        history.add_message(role="user", content="Please save this for staff.")
+        report = {**REPORT, "chat_history": history.to_dict()}
+        reporter = self.reporter(openrouter_key="offline")
+        reporter.started = True
+
+        def respond(request):
+            payload = json.loads(request.content)
+            if "intent" in payload["questions"]:
+                answers = {
+                    "intent": choice(INTENT_CRITERIA, "records_or_forms"),
+                    "outcome": choice(OUTCOME_CRITERIA, "resolved"),
+                }
+                poisoned = sender == "labeler" and "intent"
+            else:
+                answers = {
+                    name: (
+                        {"type": "score", "score": 2, "probabilities": {"2": 1}}
+                        if question["type"] == "score"
+                        else {"type": "noul", "noul": 0.8}
+                    )
+                    for name, question in payload["questions"].items()
+                }
+                poisoned = sender == payload["model"] and "office_question_answered"
+            if poisoned:
+                answers[poisoned] = {"type": "noul", "noul": float("nan")}
+            return httpx.Response(
+                200, content=json.dumps({"answers": answers}).encode()
+            )
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        with patch(
+            "abita_s2s.observability.evaluation.httpx.AsyncClient", return_value=client
+        ):
+            await reporter.finish(lambda: report)
+        closeout = self.requests[-1]
+        self.assertEqual(closeout["kind"], "CLOSEOUT")
+        json.dumps(closeout, allow_nan=False)
+        return closeout["closeoutPayload"]["evaluation"]
+
+    async def test_non_finite_labeler_answer_invalidates_classification_not_closeout(
+        self,
+    ):
+        evaluation = await self.finish_with_non_finite_answer("labeler")
+        self.assertEqual(
+            evaluation["classification"],
+            {
+                "version": "call-labels-v1",
+                "model": "typesafe/jev-1.14",
+                "status": "incomplete",
+                "reason": "classification_response_invalid",
+            },
+        )
+
+    async def test_non_finite_juror_answer_invalidates_that_juror_not_closeout(self):
+        with self.assertLogs("abita_s2s.observability.evaluation", "ERROR"):
+            evaluation = await self.finish_with_non_finite_answer(JURORS[1])
+        for name in ("office_question_answered", "expressed_sentiment"):
+            self.assertEqual(
+                evaluation["results"][name]["errors"], {JURORS[1]: "ValueError"}
+            )
 
     async def test_missing_report_closeout_has_skipped_classification(self):
         reporter = self.reporter()
