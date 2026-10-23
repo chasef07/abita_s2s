@@ -93,9 +93,20 @@ def action_tools() -> dict[str, llm.FunctionTool]:
 class ActionSpeechTests(unittest.IsolatedAsyncioTestCase):
     async def test_action_tools_reach_their_owner_before_any_speech(self):
         tools, state = action_tools()
-        self.assertGreaterEqual(
+        self.assertEqual(
             set(tools),
-            {"book_appointment", "transfer_call", "end_call", "update_insurance"},
+            {
+                "book_appointment",
+                "cancel_appointment",
+                "reschedule_appointment",
+                "save_staff_task",
+                "transfer_call",
+                "end_call",
+                "add_patient",
+                "update_insurance",
+            },
+            "every tool that writes or moves the call sets action=True "
+            "on its Entry in tools/registry.py",
         )
         context = SimpleNamespace(
             userdata=state,
