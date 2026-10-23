@@ -3,7 +3,7 @@
 import hashlib
 import json
 from datetime import UTC, datetime
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal, NamedTuple, Self
 from uuid import UUID
 
 import httpx
@@ -156,6 +156,13 @@ class HandoffGrant(Record):
         return self
 
 
+class Refusal(NamedTuple):
+    """No grant; `rejected` definitely did not write, `unconfirmed` may have."""
+
+    outcome: Literal["not_configured", "rejected", "unconfirmed"]
+    cause: str
+
+
 STAFF_TASK_RECEIPT = TypeAdapter(StaffTaskReceipt)
 KNOWLEDGE_RESULT = TypeAdapter(KnowledgeResult)
 HANDOFF_GRANT = TypeAdapter(HandoffGrant)
@@ -183,6 +190,7 @@ class Product:
                 self._config.product_secret,
                 task,
                 STAFF_TASK_RECEIPT,
+                STAFF_TASK_TIMEOUT,
                 STAFF_TASK_TIMEOUT,
             )
             if reply == "not_configured":
@@ -213,6 +221,7 @@ class Product:
             KnowledgeQuery(query=query),
             KNOWLEDGE_RESULT,
             SEARCH_TIMEOUT,
+            SEARCH_TIMEOUT,
             {"X-Office-Key": office_key},
         )
         if isinstance(reply, str):
@@ -225,11 +234,11 @@ class Product:
 
     async def admit(
         self, office_key: str, source_call_id: str, caller_phone: str
-    ) -> HandoffGrant | Literal["not_configured", "rejected", "unconfirmed"]:
+    ) -> HandoffGrant | Refusal:
         """Admit one handoff; a definite 4xx is the only failure known not to write."""
         handoff = self._config.handoff
         if handoff is None:
-            return "not_configured"
+            return Refusal("not_configured", "not_configured")
         request = HandoffRequest(
             practiceId=handoff.practice_id,
             officeKey=office_key,
@@ -239,16 +248,18 @@ class Product:
             ),
         )
         reply = await self._post(
-            handoff.url, handoff.secret, request, HANDOFF_GRANT, HANDOFF_TIMEOUT
+            handoff.url, handoff.secret, request, HANDOFF_GRANT, HANDOFF_TIMEOUT, None
         )
         if reply == "not_configured":
-            return "not_configured"
+            return Refusal("not_configured", "not_configured")
         if isinstance(reply, str):
-            return "unconfirmed"
+            return Refusal("unconfirmed", reply)
         if 400 <= reply.code < 500 and reply.code not in (408, 409):
-            return "rejected"
-        if not reply.ok or reply.body is None:
-            return "unconfirmed"
+            return Refusal("rejected", f"http_{reply.code}")
+        if not reply.ok:
+            return Refusal("unconfirmed", f"http_{reply.code}")
+        if reply.body is None:
+            return Refusal("unconfirmed", "invalid_response")
         return reply.body
 
     async def _post[T](
@@ -257,7 +268,8 @@ class Product:
         secret: str | None,
         request: Request,
         reply: TypeAdapter[T],
-        deadline: float,
+        timeout: float,
+        cap: float | None,
         headers: dict[str, str] | None = None,
     ) -> Reply[T] | Fault:
         if not url or not secret:
@@ -268,5 +280,6 @@ class Product:
             {"Authorization": f"Bearer {secret}", **(headers or {})},
             request,
             reply,
-            deadline,
+            timeout,
+            cap,
         )

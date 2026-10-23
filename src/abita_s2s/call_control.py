@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable
 from google.protobuf.duration_pb2 import Duration
 from livekit import api, rtc
 
-from abita_s2s.handoff import AdmissionRejected, HandoffAdmission
+from abita_s2s.handoff import AdmissionRejected, AdmissionUnconfirmed, HandoffAdmission
 from abita_s2s.integrations.product import Product
 from abita_s2s.state import CallState
 
@@ -164,8 +164,12 @@ class CallControl:
             self.status = self._retry_status() if phase == "preparing" else "ambiguous"
             raise
         except Exception as error:
+            admission = isinstance(error, (AdmissionRejected, AdmissionUnconfirmed))
             logger.warning(
-                "Transfer incomplete phase=%s cause=%s", phase, type(error).__name__
+                "Transfer incomplete phase=%s cause=%s%s",
+                phase,
+                type(error).__name__,
+                f":{error}" if admission else "",
             )
             if phase == "preparing" or (
                 phase == "admitting" and isinstance(error, AdmissionRejected)

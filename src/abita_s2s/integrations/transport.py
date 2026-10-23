@@ -39,18 +39,20 @@ async def post[T](
     headers: dict[str, str],
     request: Request,
     reply: TypeAdapter[T],
-    deadline: float,
+    timeout: float,
+    cap: float | None,
 ) -> Reply[T] | Fault:
+    """`timeout` bounds each connect, write and read; `cap` bounds the whole exchange."""
     try:
-        async with asyncio.timeout(deadline):
+        async with asyncio.timeout(cap):
             response = await client.post(
                 url,
                 headers=headers,
                 json=request.model_dump(exclude_none=True),
-                timeout=deadline,
+                timeout=timeout,
                 follow_redirects=False,
             )
-    except TimeoutError:
+    except (TimeoutError, httpx.TimeoutException):
         return "timeout"
     except httpx.HTTPError:
         return "network"

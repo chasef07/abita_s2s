@@ -41,4 +41,5 @@ class Middleware:
             request,
             reply,
             self._deadline,
+            self._deadline,
         )

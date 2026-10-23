@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 
-from abita_s2s.integrations.product import Product
+from abita_s2s.integrations.product import Product, Refusal
 from abita_s2s.offices import get_office_profile, get_product_office_key
 from abita_s2s.state import CallState
 
@@ -47,10 +47,8 @@ class HandoffAdmission:
             call.call_id,
             call.caller_phone or "",
         )
-        if grant == "not_configured":
-            raise AdmissionRejected("Handoff configuration is incomplete")
-        if grant == "rejected":
-            raise AdmissionRejected("Handoff admission rejected")
-        if grant == "unconfirmed":
-            raise AdmissionUnconfirmed("Handoff admission is unconfirmed")
+        if isinstance(grant, Refusal):
+            if grant.outcome == "unconfirmed":
+                raise AdmissionUnconfirmed(grant.cause)
+            raise AdmissionRejected(grant.cause)
         return HandoffTarget(grant.sipDestination, {}, admitted=True)

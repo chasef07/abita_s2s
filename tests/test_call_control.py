@@ -449,15 +449,20 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_partial_admission_and_invalid_destination_block_refer(self):
         self.state.call = replace(self.state.call, called_office_key="spring-hill")
-        for response in (
-            httpx.Response(503),
-            httpx.Response(
-                201,
-                json={
-                    "expiresAt": (datetime.now(UTC) + timedelta(minutes=2)).isoformat(),
-                    "id": "bad",
-                    "sipDestination": "tel:+15555555555",
-                },
+        for response, cause in (
+            (httpx.Response(503), "http_503"),
+            (
+                httpx.Response(
+                    201,
+                    json={
+                        "expiresAt": (
+                            datetime.now(UTC) + timedelta(minutes=2)
+                        ).isoformat(),
+                        "id": "bad",
+                        "sipDestination": "tel:+15555555555",
+                    },
+                ),
+                "invalid_response",
             ),
         ):
             self.control.status = "idle"
@@ -476,9 +481,14 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
                 },
             ):
                 self.control.admission.product = Product(client, load_config())
-                self.assertEqual(
-                    (await self.run_tool("transfer_call")).split(":", 1)[0], "ambiguous"
-                )
+                with self.assertLogs("abita_s2s.call_control", "WARNING") as logs:
+                    self.assertEqual(
+                        (await self.run_tool("transfer_call")).split(":", 1)[0],
+                        "ambiguous",
+                    )
+            self.assertIn(
+                f"phase=admitting cause=AdmissionUnconfirmed:{cause}", logs.output[-1]
+            )
             self.sip.transfer_sip_participant.assert_not_awaited()
 
     async def test_toolset_close_stops_new_transfers(self):
