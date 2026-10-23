@@ -25,6 +25,7 @@ from abita_s2s.name_matcher import (
     names_match,
     parse_dob,
     phone_name_matches,
+    same_patient,
 )
 from abita_s2s.results import reply
 from abita_s2s.state import (
@@ -51,12 +52,6 @@ def failed() -> dict:
 def superseded() -> dict:
     return reply(
         "superseded", "blocked: Patient details changed; use the latest resolution."
-    )
-
-
-def _matches(record: Receipt, name: str, dob: str | None, matcher=names_match) -> bool:
-    return any(matcher(name, n) for n in first_names(record.name)) and (
-        not dob or dob_matches(dob, record.dob)
     )
 
 
@@ -95,12 +90,9 @@ class PatientResolver:
         self, active: Receipt, name: str | None, dob: str | None
     ) -> bool:
         """Repeating the name that verified this chart, even fuzzily, keeps it active."""
-        named = (
-            not name
-            or self._verified_as == (active.patientId, exact_name(name))
-            or any(names_match(name, n) for n in first_names(active.name))
-        )
-        return named and (not dob or dob_matches(dob, active.dob))
+        if name and self._verified_as == (active.patientId, exact_name(name)):
+            name = None
+        return same_patient(name, dob, active.name, active.dob, names_match)
 
     def _begin_lookup(self) -> object:
         self._token = object()
@@ -318,7 +310,7 @@ class PatientResolver:
         if (
             not isinstance(receipt, Receipt)
             or receipt.patientId != candidate.patientId
-            or not _matches(receipt, name, dob, matcher)
+            or not same_patient(name, dob, receipt.name, receipt.dob, matcher)
         ):
             return failed()
         previous = self.state.patient.active

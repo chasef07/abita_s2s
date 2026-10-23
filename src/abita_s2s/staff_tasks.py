@@ -14,12 +14,7 @@ from abita_s2s.integrations.product import (
     StaffTaskReceipt,
     Urgency,
 )
-from abita_s2s.name_matcher import (
-    dob_matches,
-    first_names,
-    names_match,
-    phone_name_matches,
-)
+from abita_s2s.name_matcher import names_match, phone_name_matches, same_patient
 from abita_s2s.offices import e164, get_office_profile, get_product_office_key
 from abita_s2s.results import reply
 from abita_s2s.state import CallState
@@ -43,13 +38,12 @@ def _same_patient(old: dict | None, new: dict | None) -> bool:
     if "id" not in new:
         return old.items() <= new.items()
     name = old.get("name")
-    return (
-        bool(name)
-        and any(
-            names_match(name, n) or phone_name_matches(name, n)
-            for n in first_names(new["name"])
-        )
-        and (not old.get("dob") or dob_matches(old["dob"], new["dob"]))
+    return bool(name) and same_patient(
+        name,
+        old.get("dob"),
+        new["name"],
+        new["dob"],
+        lambda said, chart: names_match(said, chart) or phone_name_matches(said, chart),
     )
 
 
