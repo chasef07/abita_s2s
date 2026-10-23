@@ -428,6 +428,19 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(client.is_closed)
         self._cleanups.pop()
 
+    async def test_shutdown_closes_and_drains_call_control(self):
+        ctx, args = await self.run_startup(
+            True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"}
+        )
+        control = args["dependencies"].call_control
+        with (
+            patch.object(control, "close_admission") as close_admission,
+            patch.object(control, "aclose", new=AsyncMock()) as aclose,
+        ):
+            await ctx.add_shutdown_callback.call_args_list[0].args[0]()
+        close_admission.assert_called_once_with()
+        aclose.assert_awaited_once_with()
+
     async def test_product_closeout_waits_for_accepted_write_and_keeps_native_report(
         self,
     ):

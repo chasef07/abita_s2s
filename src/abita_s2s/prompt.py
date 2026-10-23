@@ -1,12 +1,10 @@
 """Load version-controlled instructions shipped with the agent package."""
 
-from collections.abc import Collection
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
-BACKEND_TOOLS = "Backend tools:\n"
 Prompt = Literal[
     "speaker",
     "thinker",
@@ -25,18 +23,6 @@ def load_prompt(name: Prompt) -> str:
     if not content:
         raise ValueError(f"Prompt file is empty: {path}")
     return content
-
-
-def speaker_instructions(capabilities: Collection[str]) -> str:
-    """The speaker's rules, with its backend tools list cut to the capabilities this call offers."""
-    head, tail = load_prompt("speaker").split(BACKEND_TOOLS, 1)
-    listed, rest = tail.split("\n\n", 1)
-    offered = [
-        line
-        for line in listed.splitlines()
-        if line.removeprefix("- ").split(":", 1)[0] in capabilities
-    ]
-    return head + BACKEND_TOOLS + "\n".join(offered) + "\n\n" + rest
 
 
 def thinker_instructions(started: datetime) -> str:
