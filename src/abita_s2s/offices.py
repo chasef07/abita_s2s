@@ -122,13 +122,17 @@ def e164(phone: str | None) -> E164 | None:
     return E164(number) if re.fullmatch(r"\+[1-9][0-9]{7,14}", number) else None
 
 
+def us_trunk_number(phone: str | None) -> E164 | None:
+    return e164((phone or "").replace("+", ""))
+
+
 def get_office_profile_by_phone(phone: str) -> OfficeProfile:
     for office in OFFICES:
-        if e164(phone) in office.trunk_numbers:
+        if us_trunk_number(phone) in office.trunk_numbers:
             return office
     raise ValueError("Missing or unsupported SIP trunk phone number")
 
 
 def get_product_office_key(phone: str) -> str:
     office = get_office_profile_by_phone(phone)
-    return office.product_keys.get(e164(phone) or "", office.key)
+    return office.product_keys.get(us_trunk_number(phone) or "", office.key)

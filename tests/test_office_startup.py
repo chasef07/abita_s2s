@@ -16,10 +16,12 @@ from abita_s2s.config import Config
 from abita_s2s.integrations.patient_middleware import NotFound
 from abita_s2s.offices import (
     OFFICES,
+    SHARED_SCHEDULING_OFFICES,
     SPRING_HILL,
     e164,
     get_office_profile,
     get_office_profile_by_phone,
+    get_product_office_key,
 )
 from abita_s2s.runtime.session_startup import (
     finish_voice_call,
@@ -101,6 +103,24 @@ class OfficeRoutingTests(unittest.TestCase):
         for demo in ("+14843989071", "+18027878312", "+13207388132"):
             with self.assertRaises(ValueError):
                 get_office_profile_by_phone(demo)
+
+    def test_trunk_spelled_as_plus_ten_digits_routes_like_its_us_number(self):
+        for office in OFFICES:
+            for number in office.trunk_numbers:
+                spelling = "+" + number.removeprefix("+1")
+                with self.subTest(spelling=spelling):
+                    self.assertIs(get_office_profile_by_phone(spelling), office)
+                    self.assertEqual(
+                        get_product_office_key(spelling),
+                        get_product_office_key(number),
+                    )
+        self.assertEqual(get_product_office_key("+7864657479"), "sweetwater-optical")
+
+    def test_offices_with_shared_scheduling_are_the_shared_scheduling_offices(self):
+        self.assertEqual(
+            {o.key for o in OFFICES if o.scheduling_offices},
+            set(SHARED_SCHEDULING_OFFICES),
+        )
 
 
 class GreetingTests(unittest.IsolatedAsyncioTestCase):
