@@ -10,11 +10,11 @@ from livekit.agents import llm
 from livekit.agents.llm.utils import build_legacy_openai_schema
 
 from abita_s2s.offices import SPRING_HILL
-from abita_s2s.prompt import BACKEND_TOOLS, PROMPTS_DIR, load_prompt
-from abita_s2s.prompt import speaker_instructions
+from abita_s2s.prompt import PROMPTS_DIR, load_prompt
 from abita_s2s.tools.registry import TOOLS, Capability, Owners, offer
 
 REGISTRY = "tools/registry.py TOOLS"
+BACKEND_TOOLS = "Backend tools:\n"
 EVERY_OWNER = Owners(
     SPRING_HILL,
     Mock(),
@@ -27,19 +27,22 @@ EVERY_OWNER = Owners(
 PLACEHOLDER = re.compile(r"\{[^{}]*\}")
 BACKTICKED = re.compile(r"`([A-Za-z_]\w*)[^`]*`")
 SNAKE_CASE = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
+JSON_LITERALS = {"null", "true", "false"}
 HEADING = re.compile(r"^#+ (.+?)\s*$", re.M)
 SECTION_REFERENCE = re.compile(
-    r"(?<=[a-z,;] )([A-Z][\w/-]*(?: [\w/-]+)*? (?:policy|rules|section))\b"
+    r"\bthe ([A-Z][\w/-]*(?: [\w/-]+){0,4}?) section\b"
+    r"|\bthe ([A-Z][\w/-]*(?: [\w/-]+){0,4}? policy)\b"
+    r"|\bthe ([\w/-]+(?: [\w/-]+){0,3}?) instructions (?:above|below)\b"
+    r"|\bcontinue with ([A-Z][\w/-]*(?: [a-z][\w/-]*){0,4})"
 )
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 RULE_WORDS = 5
 
 
 def schemas() -> dict[str, dict]:
-    tools, _ = offer(EVERY_OWNER)
     return {
         name: build_legacy_openai_schema(tool, internally_tagged=True)
-        for name, tool in llm.ToolContext(tools).function_tools.items()
+        for name, tool in llm.ToolContext(offer(EVERY_OWNER)).function_tools.items()
         if isinstance(tool, llm.FunctionTool)
     }
 
@@ -83,21 +86,49 @@ def flat(text: str) -> str:
     return " ".join(PLACEHOLDER.sub(" ", text).split())
 
 
+def named_tools(text: str) -> set[str]:
+    text = PLACEHOLDER.sub(" ", text)
+    return (
+        set(BACKTICKED.findall(text)) | set(SNAKE_CASE.findall(text))
+    ) - JSON_LITERALS
+
+
+def section_references(text: str) -> list[str]:
+    """Headings the text points at: the X section, the X policy, the x instructions above, continue with X."""
+    return [
+        next(group for group in match.groups() if group)
+        for match in SECTION_REFERENCE.finditer(flat(text))
+    ]
+
+
 class PromptContractTests(unittest.TestCase):
     def test_every_registry_entry_builds_when_every_owner_is_present(self):
-        tools, _ = offer(EVERY_OWNER)
-        self.assertEqual(len(tools), len(TOOLS))
+        self.assertEqual(len(offer(EVERY_OWNER)), len(TOOLS))
+
+    def test_detectors_find_tool_names_and_heading_references(self):
+        self.assertEqual(named_tools("Set `dob: null`, `null`, or `true`."), {"dob"})
+        self.assertEqual(
+            section_references(
+                "Follow the Transfer policy, then the Insurance section. "
+                "Use the availability instructions above and continue with "
+                "New patient intake, reusing it. Explain the Medicare rules briefly."
+            ),
+            [
+                "Transfer policy",
+                "Insurance",
+                "availability",
+                "New patient intake",
+            ],
+        )
 
     def test_prompts_and_descriptions_name_only_registered_tools(self):
         known = vocabulary()
         found = []
         for surface, text in surfaces().items():
-            text = PLACEHOLDER.sub(" ", text)
-            named = set(BACKTICKED.findall(text)) | set(SNAKE_CASE.findall(text))
             found += [
                 f"{surface} names `{word}`, which no tool in {REGISTRY} offers "
                 "as a tool name, argument or value"
-                for word in sorted(named - known)
+                for word in sorted(named_tools(text) - known)
             ]
         self.assertEqual(found, [])
 
@@ -113,9 +144,10 @@ class PromptContractTests(unittest.TestCase):
         )
         found = []
         for surface, text in texts.items():
-            for reference in SECTION_REFERENCE.findall(flat(text)):
+            for reference in section_references(text):
                 if not any(
-                    reference == heading or reference.startswith(heading + " ")
+                    reference.lower() == heading.lower()
+                    or reference.lower().startswith(heading.lower() + " ")
                     for heading in headings
                 ):
                     found.append(
@@ -143,15 +175,16 @@ class PromptContractTests(unittest.TestCase):
             line.removeprefix("- ").split(":", 1)[0]
             for line in tail.split("\n\n", 1)[0].splitlines()
         ]
-        self.assertEqual(sorted(listed), sorted(get_args(Capability)))
-        backed = {capability for entry in TOOLS for capability in entry.capabilities}
-        self.assertEqual(backed, set(get_args(Capability)))
-
-    def test_speaker_lists_only_the_capabilities_a_call_offers(self):
         self.assertEqual(
-            speaker_instructions(get_args(Capability)), load_prompt("speaker")
+            sorted(listed),
+            sorted(get_args(Capability)),
+            msg="prompts/speaker.md Backend tools lines must match Capability in "
+            "tools/registry.py; add or remove the line or the Capability value",
         )
-        _, capabilities = offer(Owners(SPRING_HILL, Mock(), call_control=Mock()))
-        speaker = speaker_instructions(capabilities)
-        self.assertNotIn("- Appointments:", speaker)
-        self.assertIn("- Call completion: end the call.", speaker)
+        backed = {capability for entry in TOOLS for capability in entry.capabilities}
+        self.assertEqual(
+            backed,
+            set(get_args(Capability)),
+            msg=f"every Capability needs an Entry in {REGISTRY} that backs it; "
+            "add the Entry or drop the Capability and its speaker.md line",
+        )

@@ -1,8 +1,8 @@
 """Every model-facing tool: how one call builds it, when the call offers it, and the speaker capability it backs."""
 
 from collections.abc import Callable
-from dataclasses import KW_ONLY, dataclass, fields
-from typing import Literal, Protocol, runtime_checkable
+from dataclasses import KW_ONLY, dataclass
+from typing import Literal, Protocol
 
 from livekit.agents import llm
 
@@ -30,7 +30,6 @@ Capability = Literal[
 ]
 
 
-@runtime_checkable
 class Writer(Protocol):
     def close_admission(self) -> None: ...
 
@@ -51,11 +50,17 @@ class Owners:
     call_control: CallControl | None = None
 
     def writers(self) -> list[Writer]:
-        """Every owner that admits writes, in field order, which shutdown closes and drains."""
+        """Every owner that admits writes, which shutdown closes and drains in this order."""
         return [
             owner
-            for field in fields(self)
-            if isinstance(owner := getattr(self, field.name), Writer)
+            for owner in (
+                self.resolver,
+                self.scheduling,
+                self.insurance,
+                self.staff_tasks,
+                self.call_control,
+            )
+            if owner is not None
         ]
 
 
@@ -125,14 +130,6 @@ TOOLS: tuple[Entry, ...] = (
 )
 
 
-def offer(
-    owners: Owners,
-) -> tuple[list[llm.Tool | llm.Toolset], set[Capability]]:
-    """The tools this call offers, in registry order, and the speaker capabilities they back."""
-    tools: list[llm.Tool | llm.Toolset] = []
-    capabilities: set[Capability] = set()
-    for entry in TOOLS:
-        if (tool := entry.build(owners)) is not None:
-            tools.append(tool)
-            capabilities.update(entry.capabilities)
-    return tools, capabilities
+def offer(owners: Owners) -> list[llm.Tool | llm.Toolset]:
+    """The tools this call offers, in registry order."""
+    return [tool for entry in TOOLS if (tool := entry.build(owners)) is not None]
