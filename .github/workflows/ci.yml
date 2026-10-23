@@ -54,3 +54,4 @@ jobs:
           test "$(docker image inspect abita-s2s:verify --format '{{.Config.User}}')" = '10001'
           docker run --rm --network none --entrypoint /app/.venv/bin/python abita-s2s:verify -m abita_s2s.release
           docker run --rm --network none --entrypoint /app/.venv/bin/abita-s2s abita-s2s:verify start --help
+          docker run --rm --network none --entrypoint /app/.venv/bin/python abita-s2s:verify -c 'from abita_s2s.main import server; assert server._agent_name == "abita-s2s", server._agent_name'

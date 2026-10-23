@@ -7,7 +7,7 @@ import sys
 from dotenv import load_dotenv
 from livekit.agents import AgentServer, JobContext, JobProcess, cli
 
-from abita_s2s.config import load_config
+from abita_s2s.config import agent_name, load_config
 from abita_s2s.release import identity
 from abita_s2s.runtime.google_cloud_tracing import (
     register_trace_flush,
@@ -31,7 +31,7 @@ def prewarm(proc: JobProcess) -> None:
 server.setup_fnc = prewarm
 
 
-@server.rtc_session(agent_name="abita-s2s", on_session_end=finish_voice_call)
+@server.rtc_session(agent_name=agent_name(), on_session_end=finish_voice_call)
 async def entrypoint(ctx: JobContext) -> None:
     register_trace_flush(ctx)
     await start_voice_call(ctx, simulation=ctx.simulation_context())
