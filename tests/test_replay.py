@@ -12,7 +12,7 @@ from abita_s2s.integrations.patient_middleware import (
     Receipt,
     ResolveRequest,
 )
-from abita_s2s.integrations.product import Product
+from abita_s2s.integrations.product import KnowledgeResult, Product
 from abita_s2s.integrations.registration_middleware import (
     DecisionRequest,
     RegistrationMiddleware,
@@ -146,11 +146,16 @@ class WorldTests(unittest.IsolatedAsyncioTestCase):
                     dob="",
                 )
             )
-            knowledge = await Product(client, settings).search("spring-hill", "hours")
+            product = Product(client, settings)
+            hours = await product.search("spring-hill", "Monday office hours")
+            parking = await product.search("spring-hill", "Is there parking?")
         self.assertIsInstance(found, Receipt)
         self.assertIsInstance(missing, NotFound)
         self.assertIsInstance(decision, InsuranceDecision)
-        self.assertNotIsInstance(knowledge, str)
+        self.assertIsInstance(hours, KnowledgeResult)
+        self.assertIsInstance(parking, KnowledgeResult)
+        self.assertEqual([p.title for p in hours.passages], ["Hours"])
+        self.assertEqual(parking.outcome, "no_relevant_information")
         self.assertEqual(world.unrouted, [])
 
     async def test_records_a_request_it_has_no_route_for(self):

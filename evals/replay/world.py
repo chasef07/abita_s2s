@@ -14,6 +14,17 @@ KNOWLEDGE_URL = PRODUCT + "/v1/knowledge"
 TASKS_URL = PRODUCT + "/v1/tasks"
 CALLER_PHONE = "+13525550147"
 
+TOPICS = {
+    "Hours": re.compile(
+        r"hour|open|clos|time|today|tomorrow|day|weekend|horario|abre|cierra", re.I
+    ),
+    "Location": re.compile(
+        r"address|locat|where|direction|street|dirección|dónde", re.I
+    ),
+    "New patients": re.compile(
+        r"bring|new patient|first visit|document|paperwork", re.I
+    ),
+}
 OFFICE_FACTS = {
     "spring-hill": {
         "Hours": "Monday 9 AM to 4 PM. Tuesday through Friday 8 AM to 5 PM. "
@@ -60,9 +71,14 @@ def config(api_key: str) -> Config:
     )
 
 
-def _knowledge(request: httpx.Request, _body: dict) -> dict:
-    facts = OFFICE_FACTS.get(request.headers["X-Office-Key"])
-    if facts is None:
+def _knowledge(request: httpx.Request, body: dict) -> dict:
+    """The office's passages whose topic the query names, as Product's search returns only relevant ones."""
+    facts = {
+        title: text
+        for title, text in OFFICE_FACTS.get(request.headers["X-Office-Key"], {}).items()
+        if TOPICS[title].search(body["query"])
+    }
+    if not facts:
         return {"outcome": "no_relevant_information", "passages": []}
     return {
         "outcome": "found",
