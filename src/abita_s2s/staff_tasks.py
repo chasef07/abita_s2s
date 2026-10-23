@@ -1,7 +1,6 @@
 """Editable per-call staff requests, delivered once at call closeout."""
 
 import asyncio
-import re
 from dataclasses import dataclass
 from typing import Literal, get_args
 from uuid import uuid4
@@ -14,20 +13,15 @@ from abita_s2s.integrations.product import (
     StaffTaskReceipt,
     Urgency,
 )
-from abita_s2s.name_matcher import (
-    dob_matches,
-    first_names,
-    names_match,
-    phone_name_matches,
+from abita_s2s.name_matcher import names_match, phone_name_matches, same_patient
+from abita_s2s.offices import (
+    e164,
+    get_office_profile,
+    get_product_office_key,
+    us_trunk_number,
 )
-from abita_s2s.offices import e164, get_office_profile, get_product_office_key
 from abita_s2s.results import reply
 from abita_s2s.state import CallState
-
-
-def _phone(value: str | None) -> str:
-    phone = e164(value or "")
-    return phone if re.fullmatch(r"\+[1-9][0-9]{7,14}", phone) else ""
 
 
 def _same_patient(old: dict | None, new: dict | None) -> bool:
@@ -43,13 +37,12 @@ def _same_patient(old: dict | None, new: dict | None) -> bool:
     if "id" not in new:
         return old.items() <= new.items()
     name = old.get("name")
-    return (
-        bool(name)
-        and any(
-            names_match(name, n) or phone_name_matches(name, n)
-            for n in first_names(new["name"])
-        )
-        and (not old.get("dob") or dob_matches(old["dob"], new["dob"]))
+    return bool(name) and same_patient(
+        name,
+        old.get("dob"),
+        new["name"],
+        new["dob"],
+        lambda said, chart: names_match(said, chart) or phone_name_matches(said, chart),
     )
 
 
@@ -190,7 +183,7 @@ class StaffTasks:
             raise ValueError(
                 "No request was sent. Use a supported urgency, a summary up to 240 characters and details up to 2500 characters. Preserve essential intake and missing details."
             )
-        phone = _phone(call.caller_phone)
+        phone = e164(call.caller_phone)
         if not phone or not 1 <= len(call.call_id) <= 255:
             raise ValueError(
                 "A valid caller contact and call identity are required. No request was sent; offer office help."
@@ -202,7 +195,7 @@ class StaffTasks:
             raise ValueError(
                 "Patient details exceed the delivery contract. No request was sent."
             )
-        inbound = _phone(call.called_number)
+        inbound = us_trunk_number(call.called_number)
         other_trunk = bool(call.called_number) and inbound != office.trunk_numbers[0]
         if other_trunk and inbound not in office.trunk_numbers:
             raise ValueError(

@@ -19,6 +19,7 @@ from abita_s2s.insurance_state import (
 )
 from abita_s2s.integrations.patient_middleware import Receipt
 from abita_s2s.name_matcher import dob_matches, exact_name, parse_dob
+from abita_s2s.offices import e164
 from abita_s2s.records import Record
 from abita_s2s.results import reply
 from abita_s2s.integrations.registration_middleware import (
@@ -252,13 +253,12 @@ class InsuranceRegistration:
                 "needs_callback",
                 "needs_input: Confirm the inbound number is a good callback number, or ask for a callback number for the patient.",
             )
-        digits = re.sub(r"\D", "", phone)
-        if len(digits) == 11 and digits.startswith("1"):
-            digits = digits[1:]
-        if len(digits) != 10:
+        callback = e164(phone)
+        if callback is None or not callback.startswith("+1") or len(callback) != 12:
             return reply(
                 "needs_callback", "needs_input: Ask for a valid callback phone number."
             )
+        digits = callback[2:]
         if (
             not all((r.firstName, r.lastName, r.street, r.city, r.state, r.zip))
             or not parse_dob(r.dob)

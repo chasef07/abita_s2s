@@ -25,15 +25,16 @@ from abita_s2s.integrations.patient_middleware import (
 from abita_s2s.state import CandidateLookup
 from insurance_fixtures import decision
 from abita_s2s.insurance_contract import InsuranceDecision
-from abita_s2s.offices import SPRING_HILL, get_office_profile
+from abita_s2s.offices import (
+    HOLLYWOOD_ROUTINE_OFFICE_CHOICE,
+    HOLLYWOOD_ROUTINE_OFFICE_FOLLOW_UP,
+    SPRING_HILL,
+    get_office_profile,
+)
 from abita_s2s.tools.scheduling import SchedulingTools
 from abita_s2s.scheduling.answers import BookOutcome, CancelOutcome, MoveOutcome
 from abita_s2s.scheduling.appointments import Scheduling
-from abita_s2s.scheduling.availability import (
-    HOLLYWOOD_ROUTINE_OFFICE_CHOICE,
-    HOLLYWOOD_ROUTINE_OFFICE_FOLLOW_UP,
-    SHARED_OFFICE_CHOICE,
-)
+from abita_s2s.scheduling.availability import SHARED_OFFICE_CHOICE
 from abita_s2s.integrations.scheduling_http import (
     RescheduleReceipt,
     SchedulingFailure,

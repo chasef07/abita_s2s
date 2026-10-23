@@ -325,12 +325,24 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             await owner.aclose()
             self.assertNotIn("patient", requests[0])
 
+    async def test_international_caller_number_is_sent_as_given(self):
+        state = call_state()
+        state.call = replace(state.call, caller_phone="+4741234567")
+        async with self.setup_session(state=state) as (_, _, _, owner, requests, _):
+            self.assertEqual(owner.save(**NEED)["outcome"], "saved")
+            await owner.aclose()
+            self.assertEqual(requests[0]["callerPhone"], "+4741234567")
+
     async def test_sweetwater_preserves_inbound_number_and_product_location(self):
         office = get_office_profile("sweetwater")
-        for phone in office.trunk_numbers:
-            with self.subTest(phone=phone):
+        for phone, spelling in (
+            (number, spelling)
+            for number in office.trunk_numbers
+            for spelling in (number, "+" + number.removeprefix("+1"))
+        ):
+            with self.subTest(spelling=spelling):
                 state = call_state(office)
-                state.call = replace(state.call, called_number=phone)
+                state.call = replace(state.call, called_number=spelling)
                 async with self.setup_session(state=state) as (
                     _,
                     _,

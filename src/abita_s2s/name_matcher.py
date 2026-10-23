@@ -2,6 +2,7 @@
 
 import re
 import unicodedata
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 
 from metaphone import doublemetaphone
@@ -77,3 +78,16 @@ def first_names(name: str) -> list[str]:
     )
     parts = re.findall(r"[A-Za-z]+", value)
     return [parts[0], " ".join(parts if "," in name else parts[:-1])] if parts else []
+
+
+def same_patient(
+    name: str | None,
+    dob: str | None,
+    chart_name: str,
+    chart_dob: str,
+    matcher: Callable[[str, str], bool],
+) -> bool:
+    """A caller's first name and DOB fit this chart; a detail not given is not checked."""
+    return (not name or any(matcher(name, n) for n in first_names(chart_name))) and (
+        not dob or dob_matches(dob, chart_dob)
+    )
