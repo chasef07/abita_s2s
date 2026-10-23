@@ -1,5 +1,6 @@
 """Collector configuration, export fanout and process/job lifetime boundaries."""
 
+import logging
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -19,6 +20,24 @@ ENV = {
     "GOOGLE_CLOUD_TRACE_ENDPOINT": "https://collector.example/v1/traces",
     "GOOGLE_CLOUD_TRACE_TOKEN": "private-token",
 }
+
+
+def collector(status, **headers):
+    def send(request, **kwargs):
+        response = requests.Response()
+        response.status_code = status
+        response.reason = "PATIENT"
+        response.headers.update(headers)
+        response._content = b"private-token PATIENT"
+        response.request = request
+        response.url = request.url
+        return response
+
+    return send
+
+
+def unreachable(request, **kwargs):
+    raise requests.RequestException("private-token PATIENT")
 
 
 class GoogleCloudTracingTests(unittest.TestCase):
@@ -133,7 +152,7 @@ class GoogleCloudTracingTests(unittest.TestCase):
                 set_tracer_provider(original)
                 provider.shutdown()
 
-    def test_collector_transport_redacts_failures_and_refuses_redirects(self):
+    def test_collector_transport_redacts_failures(self):
         with _CollectorSession() as session:
             for error in (
                 requests.ConnectionError,
@@ -149,18 +168,34 @@ class GoogleCloudTracingTests(unittest.TestCase):
                         session.request("POST", ENV["GOOGLE_CLOUD_TRACE_ENDPOINT"])
                     self.assertNotIn("private-token", str(caught.exception))
                     self.assertNotIn("PATIENT", str(caught.exception))
-            response = requests.Response()
-            response.status_code = 302
-            response.reason = "PATIENT"
-            response._content = b"private-token"
-            with patch.object(
-                requests.Session, "request", return_value=response
-            ) as post:
-                result = session.request("POST", ENV["GOOGLE_CLOUD_TRACE_ENDPOINT"])
-                self.assertFalse(post.call_args.kwargs["allow_redirects"])
-                self.assertEqual(result.status_code, 400)
-                self.assertEqual(result.content, b"")
-                self.assertNotIn("PATIENT", result.reason)
+
+    def test_exporter_reports_collector_failures_without_token_or_content(self):
+        for name, outcome in (
+            ("unreachable", unreachable),
+            ("rejected", collector(400)),
+            ("redirected", collector(302, Location="https://elsewhere.example/")),
+        ):
+            with self.subTest(name):
+                with patch(
+                    "abita_s2s.runtime.google_cloud_tracing.set_tracer_provider"
+                ) as install:
+                    processor = setup_google_cloud_tracing(ENV)
+                provider = install.call_args.args[0]
+                self.addCleanup(provider.shutdown)
+                with (
+                    patch.object(
+                        requests.adapters.HTTPAdapter, "send", side_effect=outcome
+                    ) as send,
+                    self.assertLogs("opentelemetry", "WARNING") as logs,
+                ):
+                    provider.get_tracer("test").start_span("llm_request").end()
+                    processor.force_flush()
+                self.assertEqual(send.call_count, 1)
+                reported = "\n".join(
+                    logging.Formatter().format(record) for record in logs.records
+                )
+                self.assertNotIn("private-token", reported)
+                self.assertNotIn("PATIENT", reported)
 
 
 class TraceLifetimeTests(unittest.IsolatedAsyncioTestCase):

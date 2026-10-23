@@ -19,8 +19,7 @@ from livekit.plugins.openai.realtime.gpt_live_model import DEFAULT_BACKEND_MODEL
 from opentelemetry import trace
 from opentelemetry.util.types import AttributeValue
 
-from abita_s2s.runtime.delegation_watchdog import DelegationWatchdog
-from abita_s2s.runtime.silence import BackendResponses
+from abita_s2s.runtime.silence import FINISHED
 
 logger = logging.getLogger(__name__)
 
@@ -256,9 +255,20 @@ class BackendResponseTrace:
     output: list[dict[str, Any]] = field(default_factory=list)
     has_tool_calls: bool = False
 
-    def finish(self, error: str | None = None) -> None:
-        """Export the response once its terminal event arrives or the connection ends."""
-        reason = "error" if error else "tool_call" if self.has_tool_calls else "stop"
+    def finish(self, error: str | None = None, cancelled: bool = False) -> None:
+        """Export the response once its terminal event arrives or the connection ends.
+
+        A cancelled response is the caller barging in, not a failure.
+        """
+        reason = (
+            "error"
+            if error
+            else "cancelled"
+            if cancelled
+            else "tool_call"
+            if self.has_tool_calls
+            else "stop"
+        )
         gen_ai.set_response_attributes(self.span, finish_reasons=[reason])
         gen_ai.set_content_attributes(self.span, output_messages=self.output)
         if error:
@@ -272,18 +282,6 @@ class ObservedGPTLiveSession(GPTLiveSession):
         super().__init__(model)
         self._backend_traces: dict[str | None, BackendResponseTrace] = {}
         self._protocol_trace = ProtocolTrace()
-
-    @property
-    def backend_busy(self) -> bool:
-        """Whether a backend response, tool call, or continuation is still outstanding.
-
-        Running responses come from our own tracker, which also clears cancelled ones.
-        """
-        return bool(
-            self._live_model.backend.running
-            or self._backend_open_calls
-            or self._backend_response_pending
-        )
 
     async def _run_ws(self, ws_conn) -> None:
         try:
@@ -386,11 +384,7 @@ class ObservedGPTLiveSession(GPTLiveSession):
             ]
             if parts:
                 current.output.append({"role": "assistant", "parts": parts})
-        if event.type in (
-            "response.completed",
-            "response.failed",
-            "response.incomplete",
-        ):
+        if event.type in FINISHED:
             self._backend_traces.pop(d_id)
             failure = None
             if event.type == "response.failed":
@@ -400,7 +394,7 @@ class ObservedGPTLiveSession(GPTLiveSession):
             elif event.type == "response.incomplete":
                 details = (response and response.incomplete_details) or {}
                 failure = details.get("reason") or event.type
-            current.finish(failure)
+            current.finish(failure, cancelled=event.type == "response.cancelled")
 
     def _handle_response_event(self, envelope) -> None:
         """Tracing never costs the backend a dispatch: a dropped call stalls the delegation.
@@ -427,17 +421,3 @@ class ObservedGPTLiveSession(GPTLiveSession):
                 current.output.extend(
                     gen_ai.to_output_messages(function_calls=accepted)
                 )
-
-
-class ObservedGPTLiveModel(GPTLiveModel):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.backend = BackendResponses()
-
-    def session(self) -> GPTLiveSession:
-        live = ObservedGPTLiveSession(self)
-        live.on("openai_server_event_received", self.backend.record)
-        live.on("input_speech_started", self.backend.caller_turn)
-        self.watchdog = DelegationWatchdog(live, self.backend)
-        live.on("openai_server_event_received", self.watchdog.record)
-        return live

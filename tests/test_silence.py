@@ -3,9 +3,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from livekit.agents import AgentSession, UserStateChangedEvent
-from livekit.plugins.openai.realtime import GPTLiveSession
+from livekit.plugins.openai.realtime import GPTLiveModel, GPTLiveSession
 
-from abita_s2s.runtime.observability import ObservedGPTLiveModel
 from abita_s2s.runtime.silence import (
     CHECK_IN,
     COULD_NOT_FINISH,
@@ -13,6 +12,11 @@ from abita_s2s.runtime.silence import (
     BackendResponses,
     check_in_on_silence,
 )
+
+
+async def idle(session):
+    async for _ in session._msg_ch:
+        pass
 
 
 def backend_event(kind, delegation_id="d1"):
@@ -26,7 +30,7 @@ def backend_event(kind, delegation_id="d1"):
 class SilenceCheckInTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.backend = BackendResponses()
-        self.session = AgentSession(llm=ObservedGPTLiveModel(api_key="offline"))
+        self.session = AgentSession(llm=GPTLiveModel(api_key="offline"))
         self.control = SimpleNamespace(leaving=False)
         self.handed_off = False
         check_in_on_silence(
@@ -119,13 +123,53 @@ class BackendResponsesTests(unittest.TestCase):
         backend.record({"type": "session.started"})
         self.assertEqual(backend.running, set())
 
-    def test_model_feeds_server_events_from_its_live_session(self):
-        with patch.object(GPTLiveSession, "__init__", lambda self, model: None):
-            model = ObservedGPTLiveModel(api_key="offline")
-            with patch.object(GPTLiveSession, "on") as on:
-                model.session()
-        on.assert_any_call("openai_server_event_received", model.backend.record)
-        on.assert_any_call("input_speech_started", model.backend.caller_turn)
+
+class BackendBusyTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        with patch.object(GPTLiveSession, "_main_task", idle):
+            model = GPTLiveModel(api_key="offline")
+            self.live = GPTLiveSession(model)
+        self.addAsyncCleanup(model.aclose)
+        self.addAsyncCleanup(self.live.aclose)
+        self.backend = BackendResponses()
+        self.backend.follow(self.live)
+
+    def receive(self, event):
+        self.live.emit("openai_server_event_received", event)
+        self.live._handle_event(event)
+
+    def test_unanswered_tool_calls_keep_the_backend_busy_after_the_response(self):
+        self.assertFalse(self.backend.busy)
+        self.receive(backend_event("response.created"))
+        self.assertEqual((self.backend.running, self.backend.busy), ({"d1"}, True))
+        self.receive(
+            {
+                "type": "response.event",
+                "delegation_id": "d1",
+                "event": {
+                    "type": "response.output_item.done",
+                    "item": {
+                        "type": "function_call",
+                        "status": "completed",
+                        "call_id": "c1",
+                        "name": "lookup",
+                        "arguments": "{}",
+                    },
+                },
+            }
+        )
+        self.receive(backend_event("response.completed"))
+        self.assertEqual((self.backend.running, self.backend.busy), (set(), True))
+
+    def test_cancelled_response_frees_the_backend(self):
+        self.receive(backend_event("response.created"))
+        self.receive(backend_event("response.cancelled"))
+        self.assertFalse(self.backend.busy)
+
+    def test_caller_speech_counts_as_a_turn(self):
+        self.backend.request_started()
+        self.receive({"type": "session.input_transcript.delta", "delta": " Hi"})
+        self.assertTrue(self.backend.caller_spoke_since_request)
 
 
 if __name__ == "__main__":

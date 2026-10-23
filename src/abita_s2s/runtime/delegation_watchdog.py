@@ -31,7 +31,7 @@ class DelegationWatchdog:
 
     def record(self, event: dict) -> None:
         kind = event.get("type")
-        if kind == "session.input_transcript.delta" and not self._live.backend_busy:
+        if kind == "session.input_transcript.delta" and not self._backend.busy:
             self._caller.append(event.get("delta") or "")
             self._arm()
         elif kind == "session.output_transcript.delta" and self._caller:
@@ -68,7 +68,7 @@ class DelegationWatchdog:
         voice = "".join(self._voice).strip()
         self._reset()
         words = re.sub(r"[^\w\s-]", "", caller.lower()).strip()
-        if len(words) < 2 or words in BACKCHANNELS or self._live.backend_busy:
+        if len(words) < 2 or words in BACKCHANNELS or self._backend.busy:
             return False
         logger.warning(
             "delegation_watchdog_handoff caller_chars=%d answered=%s",

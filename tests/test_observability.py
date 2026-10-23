@@ -8,13 +8,13 @@ from unittest.mock import AsyncMock, patch
 from livekit.agents import APIConnectionError
 from livekit.agents.telemetry import gen_ai
 from livekit.agents.telemetry.pii import filter_attributes
-from livekit.plugins.openai.realtime import GPTLiveSession
+from livekit.plugins.openai.realtime import GPTLiveModel, GPTLiveSession
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from abita_s2s.runtime.observability import ObservedGPTLiveModel, ProtocolTrace
+from abita_s2s.runtime.observability import ObservedGPTLiveSession, ProtocolTrace
 
 
 def backend(delegation, inner):
@@ -93,13 +93,13 @@ class TraceCase(unittest.IsolatedAsyncioTestCase):
         capture = gen_ai.capture_content_enabled()
         self.addCleanup(gen_ai.set_capture_content, capture)
         gen_ai.set_capture_content(True)
-        self.model = ObservedGPTLiveModel(
+        self.model = GPTLiveModel(
             api_key="offline",
             responses_options={"model": "gpt-6-luna", "instructions": "PRIVATE prompt"},
         )
         with self.tracer.start_as_current_span("agent_session") as parent:
             self.parent = parent
-            self.session = self.model.session()
+            self.session = ObservedGPTLiveSession(self.model)
         self.session._handle_event(
             {"type": "session.started", "session": {"id": "live_test"}}
         )
@@ -266,6 +266,19 @@ class BackendResponseTraceTests(TraceCase):
                 )
                 self.assertFalse(span.status.is_ok)
                 self.assertNotIn("PROVIDER DETAIL", str(dict(span.attributes)))
+
+    async def test_cancelled_response_finishes_its_trace_without_an_error(self):
+        self.receive(
+            backend("d1", {"type": "response.created", "response": {"id": "r1"}}),
+            backend("d1", {"type": "response.cancelled", "response": {"id": "r1"}}),
+        )
+        (span,) = self.spans("llm_request")
+        self.assertEqual(
+            span.attributes["gen_ai.response.finish_reasons"], ("cancelled",)
+        )
+        self.assertNotIn("error.type", span.attributes)
+        self.assertNotEqual(span.status.status_code, trace.StatusCode.ERROR)
+        self.assertFalse(self.session._backend_traces)
 
     async def test_connection_end_finishes_unfinished_responses_and_speech(self):
         self.receive(
@@ -562,11 +575,3 @@ class ProtocolTraceTests(TraceCase):
                 "received", {"type": "response.event", "event": "PRIVATE"}
             )
         self.assertNotIn("PRIVATE", str(logs.output))
-
-
-class UpstreamPortTests(unittest.TestCase):
-    def test_released_plugin_does_not_trace_yet(self):
-        self.assertFalse(
-            hasattr(GPTLiveSession, "_trace_response_event"),
-            "LiveKit now ships livekit/agents#7408; delete the port in runtime/observability.py",
-        )
