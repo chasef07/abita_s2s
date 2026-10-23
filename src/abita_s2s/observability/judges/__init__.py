@@ -26,7 +26,10 @@ GATES = {name: judge.skip for name, judge in JUDGES.items() if hasattr(judge, "s
 
 DEFINITIONS_HASH = hashlib.sha256(
     b"".join(
-        name.encode() + b"\0" + Path(judge.__file__).read_bytes() + b"\0"
+        name.encode()
+        + b"\0"
+        + Path(judge.__file__).read_bytes().replace(b"\r\n", b"\n")
+        + b"\0"
         for name, judge in JUDGES.items()
     )
 ).hexdigest()[:12]

@@ -13,7 +13,7 @@ import httpx
 from livekit.agents import ChatContext
 from livekit.agents.llm import AgentConfigUpdate, FunctionCall, FunctionCallOutput
 
-from abita_s2s.observability.decisions import parse
+from abita_s2s.observability.decisions import parse, read_answers
 from abita_s2s.observability.evaluation import (
     EVALUATOR_VERSION,
     PUBLISHED_VERSIONS,
@@ -25,6 +25,26 @@ from abita_s2s.prompt import load_prompt
 
 NOT_ASKED = ("knowledge_available",)
 SOURCE = Path(__file__).parents[1] / "src"
+
+
+def scratch_version(edit):
+    with tempfile.TemporaryDirectory() as scratch:
+        package = Path(scratch) / "abita_s2s"
+        shutil.copytree(SOURCE / "abita_s2s", package)
+        edit(package / "observability" / "judges")
+        return subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from abita_s2s.observability.evaluation import EVALUATOR_VERSION;"
+                "print(EVALUATOR_VERSION)",
+            ],
+            cwd=scratch,
+            env={"PYTHONPATH": scratch},
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
 
 
 def confirmed(*outcomes):
@@ -175,7 +195,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             {"type": "noul", "noul": 0.8},
             *(
                 {"type": "score", "score": value, "probabilities": {"2": 1}}
-                for value in (-1, 5, True, "2", float("nan"), float("inf"))
+                for value in (-1, 5, True, "2")
             ),
             *(
                 {"type": "score", "score": 2, "probabilities": probabilities}
@@ -184,7 +204,6 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                     {},
                     {"2": True},
                     {"2": -1},
-                    {"2": float("nan")},
                     {"2": 0.9},
                     {"2": 1, "5": 0},
                 )
@@ -529,7 +548,6 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             {"type": "boolean", "probability": 0.9},
             {"type": "noul", "noul": True},
             {"type": "noul", "noul": 1.5},
-            {"type": "noul", "noul": float("nan")},
             {"type": "noul"},
         ]:
 
@@ -665,6 +683,18 @@ class DecisionsAnswerTests(unittest.TestCase):
             with self.subTest(answer=answer), self.assertRaises(ValueError):
                 parse(self.sentiment, answer)
 
+    def test_response_over_one_megabyte_is_rejected(self):
+        body = b'{"answers": {}}'
+        at_cap = body + b" " * (1024 * 1024 - len(body))
+        self.assertEqual(read_answers(at_cap), {})
+        with self.assertRaises(ValueError):
+            read_answers(at_cap + b" ")
+
+    def test_non_finite_constants_are_rejected(self):
+        for constant in (b"NaN", b"Infinity", b"-Infinity"):
+            with self.subTest(constant=constant), self.assertRaises(ValueError):
+                read_answers(b'{"answers": {"x": ' + constant + b"}}")
+
 
 class EvaluatorVersionTests(unittest.TestCase):
     def test_current_judge_definitions_have_a_published_version(self):
@@ -679,25 +709,19 @@ class EvaluatorVersionTests(unittest.TestCase):
         self.assertEqual(EVALUATOR_VERSION, PUBLISHED_VERSIONS[DEFINITIONS_HASH])
 
     def test_editing_one_judge_question_changes_the_version(self):
-        with tempfile.TemporaryDirectory() as scratch:
-            package = Path(scratch) / "abita_s2s"
-            shutil.copytree(SOURCE / "abita_s2s", package)
-            judge = package / "observability" / "judges" / "call_ended_correctly.py"
+        def reword(judges):
+            judge = judges / "call_ended_correctly.py"
             text = judge.read_text()
             judge.write_text(text.replace("Did the agent wait", "Did the agent pause"))
             self.assertNotEqual(judge.read_text(), text)
-            version = subprocess.run(
-                [
-                    sys.executable,
-                    "-c",
-                    "from abita_s2s.observability.evaluation import EVALUATOR_VERSION;"
-                    "print(EVALUATOR_VERSION)",
-                ],
-                cwd=scratch,
-                env={"PYTHONPATH": scratch},
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout.strip()
+
+        version = scratch_version(reword)
         self.assertTrue(version)
         self.assertNotEqual(version, EVALUATOR_VERSION)
+
+    def test_line_endings_do_not_change_the_version(self):
+        def crlf(judges):
+            for judge in judges.glob("*.py"):
+                judge.write_bytes(judge.read_bytes().replace(b"\n", b"\r\n"))
+
+        self.assertEqual(scratch_version(crlf), EVALUATOR_VERSION)
