@@ -4,131 +4,31 @@ A Python LiveKit worker for Abita's voice receptionist. One job owns one call: o
 `AgentSession`, one `CallState`, and one shared HTTP client. GPT-Live handles speech and
 turn-taking; its delegated thinker calls the application tools.
 
-**Agent-friendly means a correct edit to one file preserves the whole app's invariants.**
-The design below exists so that an edit in the right folder cannot break a rule elsewhere.
+## Code layout
 
-## Five nouns organize the app
+Tools in `tools/` are what the model calls. Each tool hands off to an owner module that
+holds one slice of the call's state, and owners send HTTP requests through
+`integrations/`. `runtime/` starts the call, reports it, and shuts it down.
+[tests/test_layers.py](tests/test_layers.py) assigns every module a layer and lists the
+imports each layer may make.
 
-Each noun has one place in the tree and one job at runtime.
-
-| Noun | Place | Job |
-| --- | --- | --- |
-| **Tool** | `tools/<name>.py`, `tools/registry.py` | What the model can call. Binds to the call, delegates, formats the answer. The registry wires owners to tools. |
-| **Owner** | `<name>.py` (`identity`, `insurance`, `scheduling`, `staff_tasks`, `call_control`, `handoff`, `knowledge`) | Per-call state and its rules. The one writer of its slice of `CallState`. |
-| **Record** | `records.py`, `*_contract.py`, `state.py`, `results.py` | Typed shapes every layer shares: wire records, contracts, call state, tool results. |
-| **Integration** | `integrations/<name>.py` | Authenticated middleware HTTP: deadlines, retries, response validation. |
-| **Runtime** | `main.py`, `agent.py`, `runtime/` | Starts the call, builds its owners, reports and evaluates it, shuts down. |
-
-## Layers are visible in the tree
-
-A module's folder tells you where it sits and which imports are legal.
-
-```mermaid
-flowchart LR
-  subgraph model["Model-facing"]
-    tools["tools/<br/>thin tools"]
-  end
-  subgraph call["Per-call owners"]
-    owners["identity · insurance · scheduling<br/>staff_tasks · call_control · handoff · knowledge"]
-  end
-  subgraph edge["Shared edge"]
-    records["records · contracts · state · results<br/>offices · config"]
-  end
-  subgraph io["Outside the process"]
-    integrations["integrations/<br/>middleware HTTP"]
-    middleware[("Go middleware<br/>charts, insurance, scheduling")]
-  end
-  runtime["runtime/ · agent · main<br/>composition"] --> tools
-  runtime --> owners
-  tools --> owners
-  owners --> integrations
-  owners --> records
-  integrations --> records
-  integrations --> middleware
-```
-
-| Layer | May import | Must not import |
-| --- | --- | --- |
-| Foundation (records, contracts, state, offices, config) | the standard library and pydantic | integrations, owners, tools, runtime, `livekit.agents` |
-| Integrations | foundation | owners, tools, runtime, `livekit.agents` |
-| Owners | foundation, integrations, other owners | tools, runtime, `livekit.agents` |
-| Tools | owners, foundation, `livekit.agents` | integrations, runtime, `httpx` |
-| Observability | foundation, LiveKit transcripts | integrations, owners, tools, runtime |
-| Composition (runtime, agent, main) | anything | nothing |
-
-[tests/test_layers.py](tests/test_layers.py) assigns every module a layer and fails on an
-import that points the wrong way.
-
-## Feature blueprint
-
-A feature is a vertical slice. Transport, durable state, and the model's view each live
-in their named owner.
-
-```mermaid
-flowchart LR
-  tool["<b>Tool</b><br/>tools/scheduling.py<br/>bind · format"]
-  owner["<b>Owner</b><br/>scheduling.py<br/>state · fences · receipts"]
-  record["<b>Record</b><br/>scheduling_http records<br/>typed results + failures"]
-  integration["<b>Integration</b><br/>integrations/scheduling_http.py<br/>deadline · validation"]
-  tool <--> owner <--> record <--> integration
-```
-
-**The tool never handles HTTP, retries, state writes, or call startup.**
-
-To add a capability:
-
-1. Add or extend an owner that holds the state and rules, and takes plain arguments
-   (`call_id=`, never a LiveKit `RunContext`).
-2. Put the wire records next to their integration, or in `records.py` when several
-   layers share them.
-3. Add a tool in `tools/` that checks `bound(owner, context)`, speaks any announcement
-   with `say_only()`, and returns the owner's answer.
-4. Add one `Entry` for the tool to `TOOLS` in `tools/registry.py`. Build a new owner in
-   `runtime/session_startup.py` and give it a field on `Owners`. If it admits writes, add
-   it to `Owners.writers()`, the list shutdown closes and drains.
-5. Name the tool's capability in the entry. If it is new, add its line to the
-   `Backend tools:` list in `prompts/speaker.md`. `tests/test_prompt_contract.py` fails
-   until prompts and tool descriptions name only registered tools, and until every
-   heading reference names a real heading. It finds references written as "the X
-   section", "the X policy", "the x instructions above", or "continue with X".
-
-## Decisions
-
-- **One writer per state.** Each `CallState` field has one owner module, listed in
-  [tests/test_state_ownership.py](tests/test_state_ownership.py). Only `PatientState`
-  methods change the patient, and each one decides whether the revision moves. `identity`
-  calls them, and `scheduling` calls only the two appointment methods. Acceptance is read
-  and written only through `insurance_state`.
-- **Writes are sent once.** Uncertain chart, insurance, and appointment writes are never
-  retried; they block repeats for the rest of the call and go to staff.
-- **Config owns the environment.** Only `config.py` and call startup read environment
-  variables. Named LiveKit deployments are sandboxes: no human transfers, no Product writes.
-- **Shutdown drains owners.** Startup closes admission on every owner, then waits for
-  accepted writes before closing transports and delivering the Product closeout.
-- **No code comments.** Intent lives in names and docstrings. Tool docstrings are the
-  model's tool descriptions. [tests/test_no_comments.py](tests/test_no_comments.py)
-  allows only shebangs and ruff `noqa` directives.
+Before you change code, read [AGENTS.md](AGENTS.md). It lists the commands CI runs and
+pairs each code rule with the test or check that enforces it.
 
 ## Local development
 
 Use Python 3.13 and uv. Configure `.env.local` (see [.env.example](.env.example));
 exported variables take precedence. Console audio needs live credentials and an office.
+Named LiveKit deployments are sandboxes: no human transfers, no Product writes.
 
 ```sh
 uv sync --locked
 ABITA_CONSOLE_OFFICE=spring-hill uv run abita-s2s console
 uv run abita-s2s dev
-uv run --no-sync python -m unittest discover -s tests -q
-uv run --no-sync ruff check . && uv run --no-sync ruff format --check .
-uv run --no-sync basedpyright
 ```
 
-`basedpyright` fails only on type errors missing from
-[.basedpyright/baseline.json](.basedpyright/baseline.json). When a fix removes a baselined
-error, the run rewrites the file; commit it, since CI fails on a stale baseline.
-
-Deploy middleware contracts before their agent consumer. Offline tests and
-[eval scenarios](evals/README.md) do not prove live audio, SIP, or provider writes.
+Offline tests and [eval scenarios](evals/README.md) do not prove live audio, SIP, or
+provider writes.
 
 ## Post-call evaluation
 
