@@ -10,7 +10,7 @@ from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.knowledge import OfficeKnowledge
 from abita_s2s.offices import EASTERN, OfficeProfile
-from abita_s2s.prompt import load_prompt
+from abita_s2s.prompt import greeting, load_prompt
 from abita_s2s.scheduling.appointments import Scheduling
 from abita_s2s.staff_tasks import StaffTasks
 from abita_s2s.tools.call_control import CallControlTools
@@ -21,18 +21,6 @@ from abita_s2s.tools.scheduling import SchedulingTools
 from abita_s2s.tools.staff_tasks import StaffTaskTools
 
 logger = logging.getLogger(__name__)
-
-
-def greeting(practice_name: str, now: datetime) -> str:
-    """The opening instructions, seeded into session.input and then asked for once, as GPT-Live advises."""
-    return (
-        "Greet the caller with “Good morning,” “Good afternoon,” or “Good evening,” "
-        "using office-local time. Name the practice, introduce yourself as Sofia, "
-        "and ask how you can help. Be warm, caring, and upbeat; vary wording "
-        "slightly, keep it brief, then listen. "
-        f"Office-local time: {now:%H:%M %Z} (America/New_York). "
-        f'Practice name: "{practice_name}"'
-    )
 
 
 class AbitaAgent(Agent):

@@ -4,15 +4,14 @@ from livekit.agents import RunContext, function_tool
 from livekit.agents.beta.tools.end_call import EndCallTool
 
 from abita_s2s.call_control import CallControl
+from abita_s2s.prompt import load_prompt
 from abita_s2s.state import CallState
 from abita_s2s.tools.context import say_only
 
 
 class CallControlTools(EndCallTool):
     def __init__(self, control: CallControl) -> None:
-        super().__init__(
-            delete_room=False, end_instructions="Say a brief goodbye to the caller."
-        )
+        super().__init__(delete_room=False, end_instructions=load_prompt("goodbye"))
         self._control = control
 
     @function_tool
