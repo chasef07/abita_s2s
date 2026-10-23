@@ -66,10 +66,16 @@ class Owners:
 
 @dataclass(frozen=True)
 class Entry:
-    """One tool or toolset; ``build`` returns None when this call does not offer it."""
+    """One tool or toolset; ``build`` returns None when this call does not offer it.
+
+    ``action`` marks a tool that writes or moves the call, which hands off to its owner
+    before any speech.
+    """
 
     capabilities: tuple[Capability, ...]
     build: Callable[[Owners], llm.Tool | llm.Toolset | None]
+    _: KW_ONLY
+    action: bool
 
 
 TOOLS: tuple[Entry, ...] = (
@@ -80,18 +86,21 @@ TOOLS: tuple[Entry, ...] = (
             if o.scheduling
             else None
         ),
+        action=False,
     ),
     Entry(
         ("Appointments",),
         lambda o: (
             SchedulingTools(o.scheduling).book_appointment if o.scheduling else None
         ),
+        action=True,
     ),
     Entry(
         ("Appointments",),
         lambda o: (
             SchedulingTools(o.scheduling).cancel_appointment if o.scheduling else None
         ),
+        action=True,
     ),
     Entry(
         ("Appointments",),
@@ -100,6 +109,7 @@ TOOLS: tuple[Entry, ...] = (
             if o.scheduling
             else None
         ),
+        action=True,
     ),
     Entry(
         ("Staff assistance",),
@@ -108,25 +118,38 @@ TOOLS: tuple[Entry, ...] = (
             if o.office.staff_tasks_enabled
             else None
         ),
+        action=True,
     ),
     Entry(
         ("Call completion", "Staff assistance"),
         lambda o: CallControlTools(o.call_control) if o.call_control else None,
+        action=True,
     ),
     Entry(
         ("Patients",),
         lambda o: PatientTools(o.resolver, o.insurance, o.scheduling).add_patient,
+        action=True,
     ),
-    Entry(("Insurance",), lambda o: InsuranceTools(o.insurance).check_insurance),
+    Entry(
+        ("Insurance",),
+        lambda o: InsuranceTools(o.insurance).check_insurance,
+        action=False,
+    ),
     Entry(
         ("Patients",),
         lambda o: PatientTools(o.resolver, o.insurance, o.scheduling).resolve_patient,
+        action=False,
     ),
     Entry(
         ("Office information",),
         lambda o: KnowledgeTools(o.knowledge).search_office_knowledge,
+        action=False,
     ),
-    Entry(("Insurance",), lambda o: InsuranceTools(o.insurance).update_insurance),
+    Entry(
+        ("Insurance",),
+        lambda o: InsuranceTools(o.insurance).update_insurance,
+        action=True,
+    ),
 )
 
 
