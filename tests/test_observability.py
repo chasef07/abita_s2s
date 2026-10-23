@@ -267,13 +267,17 @@ class BackendResponseTraceTests(TraceCase):
                 self.assertFalse(span.status.is_ok)
                 self.assertNotIn("PROVIDER DETAIL", str(dict(span.attributes)))
 
-    async def test_cancelled_response_finishes_its_trace(self):
+    async def test_cancelled_response_finishes_its_trace_without_an_error(self):
         self.receive(
             backend("d1", {"type": "response.created", "response": {"id": "r1"}}),
             backend("d1", {"type": "response.cancelled", "response": {"id": "r1"}}),
         )
         (span,) = self.spans("llm_request")
-        self.assertEqual(span.attributes["error.type"], "response.cancelled")
+        self.assertEqual(
+            span.attributes["gen_ai.response.finish_reasons"], ("cancelled",)
+        )
+        self.assertNotIn("error.type", span.attributes)
+        self.assertNotEqual(span.status.status_code, trace.StatusCode.ERROR)
         self.assertFalse(self.session._backend_traces)
 
     async def test_connection_end_finishes_unfinished_responses_and_speech(self):

@@ -255,9 +255,20 @@ class BackendResponseTrace:
     output: list[dict[str, Any]] = field(default_factory=list)
     has_tool_calls: bool = False
 
-    def finish(self, error: str | None = None) -> None:
-        """Export the response once its terminal event arrives or the connection ends."""
-        reason = "error" if error else "tool_call" if self.has_tool_calls else "stop"
+    def finish(self, error: str | None = None, cancelled: bool = False) -> None:
+        """Export the response once its terminal event arrives or the connection ends.
+
+        A cancelled response is the caller barging in, not a failure.
+        """
+        reason = (
+            "error"
+            if error
+            else "cancelled"
+            if cancelled
+            else "tool_call"
+            if self.has_tool_calls
+            else "stop"
+        )
         gen_ai.set_response_attributes(self.span, finish_reasons=[reason])
         gen_ai.set_content_attributes(self.span, output_messages=self.output)
         if error:
@@ -383,9 +394,7 @@ class ObservedGPTLiveSession(GPTLiveSession):
             elif event.type == "response.incomplete":
                 details = (response and response.incomplete_details) or {}
                 failure = details.get("reason") or event.type
-            elif event.type != "response.completed":
-                failure = event.type
-            current.finish(failure)
+            current.finish(failure, cancelled=event.type == "response.cancelled")
 
     def _handle_response_event(self, envelope) -> None:
         """Tracing never costs the backend a dispatch: a dropped call stalls the delegation.
