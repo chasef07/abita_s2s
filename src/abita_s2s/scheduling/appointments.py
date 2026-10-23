@@ -1,9 +1,10 @@
-"""One per-call scheduling owner: private appointment references and write receipts."""
+"""One per-call scheduling owner: private appointment references and every appointment write."""
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Literal, assert_never
 
 from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.integrations.patient_middleware import Appointment, Receipt
@@ -13,14 +14,20 @@ from abita_s2s.integrations.scheduling_http import (
     RescheduleReceipt,
     SchedulingFailure,
     SchedulingHTTP,
+    SchedulingOutcome,
+    Slot,
     WriteReceipt,
 )
 from abita_s2s.offices import get_office_profile
 from abita_s2s.results import reply
+from abita_s2s.scheduling import answers
 from abita_s2s.scheduling.answers import (
     CHOOSE_LOADED_APPOINTMENT,
     STALE_BEFORE_WRITE,
     UNAVAILABLE,
+    BookOutcome,
+    CancelOutcome,
+    MoveOutcome,
 )
 from abita_s2s.scheduling.availability import (
     Offers,
@@ -30,14 +37,126 @@ from abita_s2s.scheduling.availability import (
     scheduling_context,
 )
 from abita_s2s.state import CallState
+from abita_s2s.writes import WriteKey, WriteLedger, WriteOutcome, write_effect
+
+Refusal = Literal["refused", "expired", "failed", "unsent", "uncertain"]
 
 
-@dataclass(repr=False)
+def refusal(
+    action: Literal["book", "cancel"], outcome: SchedulingOutcome | None
+) -> Refusal:
+    """What a middleware error outcome means for a booking or for a cancellation."""
+    booking = action == "book"
+    match outcome:
+        case "provider_conflict" | "provider_rejected":
+            return "refused"
+        case "slot_unavailable" | "patient_context_mismatch":
+            return "refused" if booking else "uncertain"
+        case (
+            "invalid_booking_token"
+            | "booking_token_required"
+            | "invalid_reschedule_token"
+        ):
+            return "expired" if booking else "uncertain"
+        case "invalid_cancellation_token":
+            return "uncertain" if booking else "expired"
+        case "ownership_mismatch":
+            return "uncertain" if booking else "refused"
+        case "write_failed":
+            return "failed"
+        case None:
+            return "unsent" if booking else "uncertain"
+        case "validation" | "indeterminate_write" | "appointment_type_unresolved":
+            return "uncertain"
+        case _:
+            assert_never(outcome)
+
+
+def booked_appointment(
+    receipt: WriteReceipt | SchedulingFailure | None, slot: Slot, office: str
+) -> Appointment | None:
+    """The appointment a receipt confirms as booked, or None when it confirms nothing."""
+    if (
+        not isinstance(receipt, WriteReceipt)
+        or receipt.status != "booked"
+        or not receipt.appointmentId
+    ):
+        return None
+    return Appointment(
+        id=receipt.appointmentId,
+        date=slot.date,
+        time=slot.time,
+        provider=provider_name(receipt.providerName or slot.provider),
+        facility=receipt.locationName or get_office_profile(office).display_name,
+        office=receipt.office,
+        officeId=receipt.officeId,
+        visitType=receipt.visitType,
+        cancellationToken=receipt.cancellationToken,
+        type=receipt.appointmentTypeName or "Appointment",
+        appointmentTypeId=receipt.appointmentTypeId,
+        rescheduleToken=receipt.rescheduleToken,
+        confirmed=True,
+    )
+
+
+def booking_outcome(
+    result: WriteReceipt | SchedulingFailure, new: Appointment | None
+) -> BookOutcome:
+    """A booking refusal counts whatever the receipt status; other non-error receipts are uncertain."""
+    if new is not None:
+        return "written"
+    if isinstance(result, SchedulingFailure):
+        return "uncertain" if result.uncertain else "unsent"
+    if result.outcome == "appointment_type_unresolved" and result.missing:
+        return "needs_input"
+    outcome = refusal("book", result.outcome)
+    if result.status != "error" and outcome not in ("refused", "expired"):
+        return "uncertain"
+    return outcome
+
+
+def cancellation_outcome(
+    result: WriteReceipt | SchedulingFailure, appointment_id: int
+) -> CancelOutcome:
+    """Only an error receipt can refuse a cancellation; other unmatched receipts are uncertain."""
+    if isinstance(result, SchedulingFailure):
+        return "uncertain" if result.uncertain else "unsent"
+    if result.status == "cancelled" and result.appointmentId == appointment_id:
+        return "written"
+    if result.status != "error":
+        return "uncertain"
+    return refusal("cancel", result.outcome)
+
+
+def move_outcome(
+    result: RescheduleReceipt | SchedulingFailure,
+    old_id: int,
+    new: Appointment | None,
+) -> MoveOutcome:
+    if not isinstance(result, RescheduleReceipt):
+        return "uncertain"
+    if new is None:
+        return "failed" if result.status == "failed" else "uncertain"
+    cancellation = result.cancellation
+    cancelled = (
+        result.status == "completed"
+        and cancellation is not None
+        and cancellation.status == "cancelled"
+        and cancellation.appointmentId == old_id
+        and new.id != old_id
+    )
+    return "written" if cancelled else "partial"
+
+
+@dataclass(frozen=True, repr=False)
 class MutationReceipt:
     result: dict
     booked: Appointment | None = None
     cancelled_id: int | None = None
     offered: OfferedSlot | None = None
+
+
+Operation = Callable[..., Awaitable[dict]]
 
 
 class Scheduling:
@@ -46,11 +165,11 @@ class Scheduling:
         self.http = http
         self.now = now or (lambda: datetime.now(UTC))
         self._offers = Offers(state, http, lambda: self.now())
-        self._references: dict[tuple, str] = {}
+        self._references: dict[tuple[int, str, int], str] = {}
         self._next_ref = 0
-        self._write_task = None
+        self._write_task: asyncio.Task[dict] | None = None
         self._closed = False
-        self._receipts: dict[tuple, MutationReceipt] = {}
+        self._ledger: WriteLedger[MutationReceipt] = WriteLedger()
 
     def close_admission(self) -> None:
         self._closed = True
@@ -68,9 +187,8 @@ class Scheduling:
     def _context(self) -> SchedulingContext:
         return scheduling_context(self.state)
 
-    def _reference(self, appointment):
-        p = self.state.patient
-        key = (p.revision, p.active.patientId, appointment.id)
+    def _reference(self, patient_id: str, appointment: Appointment) -> str:
+        key = (self.state.patient.revision, patient_id, appointment.id)
         if key not in self._references:
             self._next_ref += 1
             self._references[key] = f"A{self._next_ref}"
@@ -83,7 +201,7 @@ class Scheduling:
             return []
         return [
             {
-                "appointmentRef": self._reference(a),
+                "appointmentRef": self._reference(p.patientId, a),
                 "date": a.date,
                 "time": a.time,
                 "provider": provider_name(a.provider),
@@ -176,7 +294,7 @@ class Scheduling:
             call_id=call_id,
         )
 
-    async def _execute(self, operation, **arguments) -> str:
+    async def _execute(self, operation: Operation, **arguments) -> str:
         if self._closed:
             return UNAVAILABLE
         if self._write_task and not self._write_task.done():
@@ -184,15 +302,11 @@ class Scheduling:
         patient = self.state.patient.active
         if not patient:
             return "needs_input: Verify the patient before changing appointments."
-        for (patient_id, _, _), receipt in self._receipts.items():
-            if patient_id == patient.patientId and receipt.result["outcome"] in (
-                "uncertain",
-                "partial_reschedule",
-            ):
-                return receipt.result["answer"] + self.appointments_text()
+        if fence := self._ledger.blocking(patient.patientId):
+            return fence.result["answer"] + self.appointments_text()
         captured = self._context()
 
-        async def change():
+        async def change() -> dict:
             if self._closed or self._context() != captured:
                 return reply("stale", STALE_BEFORE_WRITE)
             result = await operation(patient, captured, **arguments)
@@ -202,8 +316,14 @@ class Scheduling:
         result = await asyncio.shield(self._write_task)
         return result["answer"] + self.appointments_text()
 
-    def _target(self, patient: Receipt, action: str, ref: str):
-        matches = [a for a in patient.appointments if self._reference(a) == ref.strip()]
+    def _target(
+        self, patient: Receipt, action: Literal["cancel", "reschedule"], ref: str
+    ) -> tuple[Appointment | None, WriteKey]:
+        matches = [
+            a
+            for a in patient.appointments
+            if self._reference(patient.patientId, a) == ref.strip()
+        ]
         old = (
             matches[0]
             if patient.appointmentsStatus == "found" and len(matches) == 1
@@ -225,13 +345,12 @@ class Scheduling:
                 None,
             )
         )
-        return old, (patient.patientId, action, appointment_id)
+        return old, WriteKey(patient.patientId, action, appointment_id)
 
     def _cancelled(self, patient_id: str, appointment_id: int) -> bool:
         return any(
             receipt.cancelled_id == appointment_id
-            for (owner_id, _, _), receipt in self._receipts.items()
-            if owner_id == patient_id
+            for receipt in self._ledger.receipts(patient_id)
         )
 
     def _replay(self, patient: Receipt, saved: MutationReceipt) -> dict:
@@ -242,6 +361,25 @@ class Scheduling:
             )
         return saved.result
 
+    def _settle(
+        self,
+        patient: Receipt,
+        captured: SchedulingContext,
+        key: WriteKey,
+        outcome: WriteOutcome,
+        receipt: MutationReceipt,
+        *,
+        target: Appointment | None,
+    ) -> None:
+        """Spend the target's authority when the outcome says so, then keep or forget the receipt."""
+        if (
+            target is not None
+            and write_effect(outcome).spends_target
+            and self._context() == captured
+        ):
+            self._appointments_stale(patient)
+        self._ledger.record(key, outcome, receipt)
+
     async def _cancel(
         self,
         p: Receipt,
@@ -251,9 +389,9 @@ class Scheduling:
         confirmed: bool | None,
         call_id: str,
     ) -> dict:
-        old, receipt_key = self._target(p, "cancel", old_ref)
-        if saved := self._receipts.get(receipt_key):
-            return saved.result
+        old, key = self._target(p, "cancel", old_ref)
+        if saved := self._ledger.get(key):
+            return self._replay(p, saved)
         if old is None:
             return reply("needs_input", CHOOSE_LOADED_APPOINTMENT)
         if not old.cancellationToken:
@@ -269,31 +407,27 @@ class Scheduling:
                 f" with {provider_name(old.provider)} before cancelling.",
             )
         self._offers.invalidate()
-        self._receipts[receipt_key] = MutationReceipt(
-            self._write_failure(
-                SchedulingFailure(reason="pending", uncertain=True), "cancellation"
-            )
+        self._ledger.record(
+            key, "uncertain", MutationReceipt(answers.uncertain("cancellation"))
         )
         result = await self.http.cancel(
             Cancellation(patientId=p.patientId, cancellationToken=old.cancellationToken)
         )
-        outcome = self._cancel_result(result, old.id)
+        outcome = cancellation_outcome(result, old.id)
+        answer = answers.cancellation(outcome)
         self._report(
-            p, cancellation_outcome=outcome["outcome"], old=old, call_id=call_id
+            p, call_id=call_id, cancellation_outcome=answer["outcome"], old=old
         )
-        if (
-            outcome["outcome"] == "rejected"
-            or (outcome["outcome"] == "failed" and isinstance(result, WriteReceipt))
-        ) and self._context() == captured:
-            self._appointments_stale(p)
-        if outcome["outcome"] in ("cancelled", "uncertain"):
-            self._receipts[receipt_key] = MutationReceipt(
-                outcome,
-                cancelled_id=old.id if outcome["outcome"] == "cancelled" else None,
-            )
-        else:
-            self._receipts.pop(receipt_key, None)
-        return outcome
+        cancelled_id = old.id if outcome == "written" else None
+        self._settle(
+            p,
+            captured,
+            key,
+            outcome,
+            MutationReceipt(answer, cancelled_id=cancelled_id),
+            target=old,
+        )
+        return answer
 
     async def _book(
         self,
@@ -310,12 +444,14 @@ class Scheduling:
         old: Appointment | None = None,
     ) -> dict:
         slot_ref = slot_ref.strip().upper()
-        receipt_key = (
-            (p.patientId, "reschedule", old.id)
+        key = (
+            WriteKey(p.patientId, "reschedule", old.id)
             if old
-            else (p.patientId, "book", (slot_ref, self._offers.issued(slot_ref)))
+            else WriteKey(
+                p.patientId, "book", (slot_ref, self._offers.issued(slot_ref))
+            )
         )
-        if not old and (saved := self._receipts.get(receipt_key)):
+        if not old and (saved := self._ledger.get(key)):
             return self._replay(p, saved)
         offered = self._offers.get(slot_ref)
         if not offered:
@@ -330,10 +466,9 @@ class Scheduling:
                 "needs_input: Search availability again and choose a current returned slot.",
             )
         if not old:
-            for (patient_id, _, _), saved in self._receipts.items():
+            for saved in self._ledger.receipts(p.patientId):
                 if (
-                    patient_id == p.patientId
-                    and saved.offered
+                    saved.offered
                     and saved.booked
                     and saved.offered.selection == offered.selection
                     and not self._cancelled(p.patientId, saved.booked.id)
@@ -400,122 +535,85 @@ class Scheduling:
             rescheduleToken=old.rescheduleToken if old else None,
         )
         self._offers.invalidate()
-        self._receipts[receipt_key] = MutationReceipt(
-            self._write_failure(
-                SchedulingFailure(reason="pending", uncertain=True), "booking"
-            )
+        self._ledger.record(
+            key, "uncertain", MutationReceipt(answers.uncertain("booking"))
         )
-        reschedule = None
         if old:
-            reschedule = await self.http.reschedule(booking)
-            if (
-                not isinstance(reschedule, RescheduleReceipt)
-                or reschedule.booking is None
-            ):
-                outcome = (
-                    reply(
-                        "failed",
-                        "blocked: The reschedule failed. Reload appointments or ask staff to reconcile before another change.",
-                    )
-                    if isinstance(reschedule, RescheduleReceipt)
-                    and reschedule.status == "failed"
-                    else self._write_failure(
-                        SchedulingFailure(reason="reschedule", uncertain=True),
-                        "reschedule",
-                    )
-                )
-                if outcome["outcome"] == "failed" and self._context() == captured:
-                    self._appointments_stale(p)
-                if outcome["outcome"] == "uncertain":
-                    self._receipts[receipt_key] = MutationReceipt(outcome)
-                else:
-                    self._receipts.pop(receipt_key, None)
-                self._report(
-                    p,
-                    booking=reschedule,
-                    booking_outcome=outcome["outcome"],
-                    old=old,
-                    slot=slot,
-                    call_id=call_id,
-                )
-                return outcome
-            result = reschedule.booking
-        else:
-            result = await self.http.book(booking)
-        outcome = self._book_result(result, description)
-        if not old:
+            moved = await self.http.reschedule(booking)
+            return self._moved(
+                p, captured, key, moved, offered, old, description, call_id
+            )
+        result = await self.http.book(booking)
+        new = booked_appointment(result, slot, offered.office)
+        outcome = booking_outcome(result, new)
+        missing = result.missing if isinstance(result, WriteReceipt) else []
+        answer = answers.booking(outcome, description, missing)
+        self._report(
+            p,
+            call_id=call_id,
+            booking=result,
+            booking_outcome=answer["outcome"],
+            slot=slot,
+        )
+        self._settle(
+            p,
+            captured,
+            key,
+            outcome,
+            MutationReceipt(answer, booked=new, offered=offered if new else None),
+            target=None,
+        )
+        return answer
+
+    def _moved(
+        self,
+        p: Receipt,
+        captured: SchedulingContext,
+        key: WriteKey,
+        result: RescheduleReceipt | SchedulingFailure,
+        offered: OfferedSlot,
+        old: Appointment,
+        description: str,
+        call_id: str,
+    ) -> dict:
+        slot = offered.slot
+        booked = result.booking if isinstance(result, RescheduleReceipt) else None
+        new = booked_appointment(booked, slot, offered.office)
+        outcome = move_outcome(result, old.id, new)
+        answer = answers.move(outcome, description, old)
+        if new is None:
             self._report(
                 p,
-                booking=result,
-                booking_outcome=outcome["outcome"],
-                slot=slot,
                 call_id=call_id,
-            )
-        if outcome["outcome"] != "booked":
-            if old:
-                outcome = {
-                    **outcome,
-                    "answer": outcome["answer"]
-                    + " The existing appointment was not cancelled.",
-                }
-            if outcome["outcome"] == "uncertain":
-                self._receipts[receipt_key] = MutationReceipt(outcome)
-            else:
-                self._receipts.pop(receipt_key, None)
-            return outcome
-        appointment = Appointment(
-            id=result.appointmentId,
-            date=slot.date,
-            time=slot.time,
-            provider=provider_name(result.providerName or slot.provider),
-            facility=result.locationName
-            or get_office_profile(offered.office).display_name,
-            office=result.office,
-            officeId=result.officeId,
-            visitType=result.visitType,
-            cancellationToken=result.cancellationToken,
-            type=result.appointmentTypeName or "Appointment",
-            appointmentTypeId=result.appointmentTypeId,
-            rescheduleToken=result.rescheduleToken,
-            confirmed=True,
-        )
-        cancelled_id = None
-        if old:
-            cancelled = (
-                reschedule.status == "completed"
-                and reschedule.cancellation is not None
-                and reschedule.cancellation.status == "cancelled"
-                and reschedule.cancellation.appointmentId == old.id
-                and appointment.id != old.id
-            )
-            cancelled_id = old.id if cancelled else None
-            outcome = reply(
-                "rescheduled" if cancelled else "partial_reschedule",
-                (
-                    f"success: Your new appointment is booked for {description}. Your old appointment on {old.date} at {old.time} is cancelled. Tell the caller both outcomes."
-                    if cancelled
-                    else f"blocked: The new appointment is booked for {description}, but cancellation of the old appointment requires staff reconciliation. Do not book again."
-                ),
-            )
-            self._report(
-                p,
                 booking=result,
-                booking_outcome="booked",
-                cancellation_outcome="cancelled" if cancelled else "uncertain",
+                booking_outcome=answer["outcome"],
                 old=old,
                 slot=slot,
-                call_id=call_id,
             )
-        saved = MutationReceipt(
-            outcome,
-            booked=appointment,
-            cancelled_id=cancelled_id,
+            self._settle(p, captured, key, outcome, MutationReceipt(answer), target=old)
+            return answer
+        cancelled = outcome == "written"
+        self._report(
+            p,
+            call_id=call_id,
+            booking=booked,
+            booking_outcome="booked",
+            cancellation_outcome="cancelled" if cancelled else "uncertain",
+            old=old,
+            slot=slot,
+        )
+        receipt = MutationReceipt(
+            answer,
+            booked=new,
+            cancelled_id=old.id if cancelled else None,
             offered=offered,
         )
-        self._receipts[receipt_key] = saved
-        if old and cancelled_id:
-            self._receipts[p.patientId, "reschedule", appointment.id] = saved
-        return outcome
+        self._settle(p, captured, key, outcome, receipt, target=old)
+        if cancelled:
+            self._ledger.record(
+                WriteKey(p.patientId, "reschedule", new.id), outcome, receipt
+            )
+        return answer
 
     async def _reschedule(
         self,
@@ -531,8 +629,8 @@ class Scheduling:
         confirmed: bool | None,
         call_id: str,
     ) -> dict:
-        old, receipt_key = self._target(p, "reschedule", old_ref)
-        saved = self._receipts.get(receipt_key)
+        old, key = self._target(p, "reschedule", old_ref)
+        saved = self._ledger.get(key)
         offered = self._offers.get(slot_ref.strip().upper())
         if saved:
             different = (
@@ -570,24 +668,29 @@ class Scheduling:
 
     def _report(
         self,
-        patient,
+        patient: Receipt,
         *,
-        call_id,
-        booking=None,
-        booking_outcome=None,
-        cancellation_outcome="not_attempted",
-        old=None,
-        slot=None,
-    ):
+        call_id: str,
+        booking: WriteReceipt | RescheduleReceipt | SchedulingFailure | None = None,
+        booking_outcome: str | None = None,
+        cancellation_outcome: str = "not_attempted",
+        old: Appointment | None = None,
+        slot: Slot | None = None,
+    ) -> None:
         reporter = self.state.reporter
         if not reporter:
             return
-        evidence = {"externalPatientId": str(patient.patientId)}
+        evidence: dict[str, object] = {"externalPatientId": str(patient.patientId)}
         if booking is not None:
-            evidence["bookingResult"] = {"status": booking_outcome}
-            if booking_outcome == "booked":
+            booking_result: dict[str, object] = {"status": booking_outcome}
+            evidence["bookingResult"] = booking_result
+            if (
+                booking_outcome == "booked"
+                and isinstance(booking, WriteReceipt)
+                and slot is not None
+            ):
                 evidence["newAppointmentId"] = str(booking.appointmentId)
-                evidence["bookingResult"].update(
+                booking_result.update(
                     appointmentId=booking.appointmentId,
                     appointmentDate=slot.date,
                     appointmentTime=slot.time,
@@ -601,16 +704,16 @@ class Scheduling:
                 )
         if old:
             evidence["oldAppointmentId"] = str(old.id)
-            evidence["cancellationResult"] = {"status": cancellation_outcome}
-            evidence["cancellationResult"].update(
-                appointmentId=old.id,
-                appointmentDate=old.date,
-                appointmentTime=old.time,
-                providerName=old.provider,
-                appointmentTypeName=old.type,
-                locationName=old.facility,
-                patientName=patient.name,
-            )
+            evidence["cancellationResult"] = {
+                "status": cancellation_outcome,
+                "appointmentId": old.id,
+                "appointmentDate": old.date,
+                "appointmentTime": old.time,
+                "providerName": old.provider,
+                "appointmentTypeName": old.type,
+                "locationName": old.facility,
+                "patientName": patient.name,
+            }
         evidence["action"] = (
             "RESCHEDULED"
             if booking is not None and old
@@ -629,11 +732,7 @@ class Scheduling:
         patient = self.state.patient.active
         if patient is None:
             return
-        receipts = [
-            receipt
-            for (patient_id, _, _), receipt in self._receipts.items()
-            if patient_id == patient.patientId
-        ]
+        receipts = self._ledger.receipts(patient.patientId)
         cancelled = {
             receipt.cancelled_id
             for receipt in receipts
@@ -654,7 +753,7 @@ class Scheduling:
                 }
             )
 
-    def _finish_change(self, result, captured):
+    def _finish_change(self, result: dict, captured: SchedulingContext) -> dict:
         if self._context() != captured:
             return {
                 **result,
@@ -663,77 +762,3 @@ class Scheduling:
             }
         self._reconcile_receipts()
         return result
-
-    @staticmethod
-    def _cancel_result(result, appointment_id):
-        if (
-            isinstance(result, WriteReceipt)
-            and result.status == "cancelled"
-            and result.appointmentId == appointment_id
-        ):
-            return reply(
-                "cancelled", "success: The selected appointment was cancelled."
-            )
-        if (
-            isinstance(result, WriteReceipt)
-            and result.status == "error"
-            and result.outcome == "invalid_cancellation_token"
-        ):
-            return reply(
-                "rejected",
-                "needs_input: The appointment details expired. Reload appointments and reconfirm the exact cancellation.",
-            )
-        if (
-            isinstance(result, WriteReceipt)
-            and result.status == "error"
-            and result.outcome
-            in ("provider_conflict", "provider_rejected", "ownership_mismatch")
-        ):
-            return reply(
-                "rejected",
-                "needs_input: Cancellation was not completed. Reload appointments and reconfirm the exact appointment, or ask office staff for help.",
-            )
-        return Scheduling._write_failure(result, "cancellation")
-
-    @staticmethod
-    def _book_result(result, description):
-        if isinstance(result, WriteReceipt):
-            if result.status == "booked" and result.appointmentId:
-                return reply("booked", f"success: Booked {description}.")
-            if result.outcome == "appointment_type_unresolved" and result.missing:
-                return reply(
-                    "needs_input",
-                    f"needs_input: Booking needs additional facts: {', '.join(result.missing)}. Clarify these before trying again.",
-                )
-            if result.outcome in (
-                "slot_unavailable",
-                "invalid_booking_token",
-                "booking_token_required",
-                "invalid_reschedule_token",
-                "provider_conflict",
-                "provider_rejected",
-                "patient_context_mismatch",
-            ):
-                return reply(
-                    "rejected",
-                    "needs_input: That slot could not be booked. Reload availability or the existing appointment as needed before confirming another choice.",
-                )
-            if result.status == "error" and not result.outcome:
-                result = SchedulingFailure(reason="validation")
-        return Scheduling._write_failure(result, "booking")
-
-    @staticmethod
-    def _write_failure(result, action):
-        if (isinstance(result, SchedulingFailure) and not result.uncertain) or (
-            isinstance(result, WriteReceipt)
-            and result.status == "error"
-            and result.outcome == "write_failed"
-        ):
-            return reply(
-                "failed",
-                f"blocked: The {action} failed. Ask staff for help or explicitly retry after resolving the failure.",
-            )
-        return reply(
-            "uncertain",
-            f"blocked: The {action} outcome could not be confirmed. Do not repeat the write or claim success; staff must reconcile the appointment record.",
-        )
