@@ -6,12 +6,9 @@ from livekit.agents import RunContext, function_tool
 
 from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.offices import EASTERN, SchedulingOfficeChoice
-from abita_s2s.scheduling import (
-    UNAVAILABLE,
-    Scheduling,
-    afternoon,
-    eastern_datetime,
-)
+from abita_s2s.scheduling.answers import UNAVAILABLE
+from abita_s2s.scheduling.appointments import Scheduling
+from abita_s2s.scheduling.availability import afternoon, eastern_datetime
 from abita_s2s.state import CallState
 from abita_s2s.tools.context import bound
 

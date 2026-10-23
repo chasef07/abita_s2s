@@ -27,12 +27,11 @@ from insurance_fixtures import decision
 from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.offices import SPRING_HILL, get_office_profile
 from abita_s2s.tools.scheduling import SchedulingTools
-from abita_s2s.scheduling import (
+from abita_s2s.scheduling.appointments import MutationReceipt, Scheduling
+from abita_s2s.scheduling.availability import (
     HOLLYWOOD_ROUTINE_OFFICE_CHOICE,
     HOLLYWOOD_ROUTINE_OFFICE_FOLLOW_UP,
     SHARED_OFFICE_CHOICE,
-    MutationReceipt,
-    Scheduling,
 )
 from abita_s2s.integrations.scheduling_http import (
     SchedulingFailure,
@@ -42,6 +41,7 @@ from abita_s2s.integrations.scheduling_http import (
 
 NOW = datetime(2026, 9, 14, 17, tzinfo=UTC)
 REF = r"[A-Z]{3}[0-9]{2}-[0-9]{4}-[A-Z]+(?:-[0-9]+)?"
+REF_0900 = "SEP15-0900-BACH"
 
 
 def soonest(output):
@@ -345,7 +345,9 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertEqual(requests[0][2]["authorization"], "test-auth")
-        self.assertNotIn("private-signed-slot", json.dumps(owner._cache[1]))
+        cached = await owner.availability("medical", office="hollywood")
+        self.assertEqual(len(requests), 1)
+        self.assertNotIn("private-signed-slot", json.dumps(cached))
 
     async def test_hollywood_routine_vision_announces_north_miami_beach_once(self):
         state = call_state(None, get_office_profile("hollywood"))
@@ -508,7 +510,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             "  Dr. Miriam Bach morning: open 9:00 AM SEP15-0900-BACH-2",
             output,
         )
-        self.assertEqual(owner._slots["SEP15-0900-BACH-2"].slot.columnId, 40)
         result = await self.book(owner, "sep15-0900-bach-2")
         self.assertTrue(result.startswith("success:"), result)
         self.assertEqual(
@@ -630,8 +631,24 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             "chart-jane",
         ):
             self.assertNotIn(private, output)
-        self.assertEqual(owner._slots["SEP15-1130-BACH"].slot.time, "11:30 AM")
-        self.assertEqual(owner._slots["SEP15-1145-BACH"].slot.time, "11:45 AM")
+        for ref, time in (
+            ("SEP15-1130-BACH", "11:30 AM"),
+            ("SEP15-1145-BACH", "11:45 AM"),
+        ):
+            unconfirmed = await self.tool(
+                owner,
+                "book_appointment",
+                appointmentSlotRef=ref,
+                appointmentReason="Follow up",
+                referringDoctor="none",
+                readBack=None,
+            )
+            self.assertTrue(
+                unconfirmed.startswith(
+                    f"needs_input: Confirm 2026-09-15 at {time} Eastern"
+                ),
+                unconfirmed,
+            )
         self.assertTrue(
             owner.appointments_text().startswith("\nExisting appointments:")
         )
@@ -704,7 +721,10 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertNotIn("Searched", result)
             self.assertNotIn("other dates", result)
-            self.assertEqual(owner._cache[1]["outcome"], "unsupported")
+            self.assertEqual(
+                (await owner.availability(visit))["outcome"], "unsupported"
+            )
+            self.assertEqual(len(requests), 1)
             self.assertEqual(requests[0][1]["visitType"], visit)
 
     async def test_calendar_marks_shared_starts_and_offers_open_slots_first(self):
@@ -806,8 +826,11 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         )
         original = await self.book(owner, await self.slots(owner))
         self.assertTrue(original.startswith("success:"), original)
-        ref = await self.slots(owner)
-        self.assertEqual(owner._slots[ref].slot.columnId, 14)
+        listing = await self.tool(
+            owner, "list_available_appointments", visitType="medical"
+        )
+        ref = soonest(listing)[0]
+        self.assertIn(f"open 9:00 AM {ref}", listing)
         self.assertEqual(await self.book(owner, ref), original)
         self.assertEqual(
             [path for path, _, _ in requests].count("/api/appointment/book"), 1
@@ -846,7 +869,9 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         verified(owner.state, "chart-john")
         release.set()
         self.assertEqual((await second)["outcome"], "stale")
-        self.assertEqual(owner._slots, {})
+        self.assertIn(
+            "slot reference was not returned", await self.book(owner, REF_0900)
+        )
         self.assertEqual(len(requests), 1)
 
     async def test_corrected_search_does_not_reuse_invalidated_pending_read(self):
@@ -867,9 +892,10 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0)
         release.set()
         self.assertEqual((await first)["outcome"], "stale")
-        self.assertEqual((await corrected)["outcome"], "found")
+        found = await corrected
+        self.assertEqual(found["outcome"], "found")
         self.assertEqual(len(requests), 2)
-        self.assertEqual(len(owner._slots), 1)
+        self.assertEqual(len(found["slots"]), 1)
 
     async def test_last_cancelled_waiter_stops_read_and_allows_fresh_search(self):
         entered, cancelled = asyncio.Event(), asyncio.Event()
@@ -888,7 +914,9 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.CancelledError):
             await task
         await cancelled.wait()
-        self.assertEqual(owner._slots, {})
+        self.assertIn(
+            "slot reference was not returned", await self.book(owner, REF_0900)
+        )
         await self.slots(owner)
         self.assertEqual(len(requests), 2)
 
@@ -919,7 +947,9 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             (await owner.availability("medical", "2026-09-16"))["outcome"],
             "availability_failed",
         )
-        self.assertFalse(owner._slots)
+        self.assertIn(
+            "slot reference was not returned", await self.book(owner, REF_0900)
+        )
         self.assertEqual(len(requests), 3)
 
     async def test_booking_confirmation_receipt_duplicate_and_new_cancellation(self):
@@ -2191,7 +2221,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         owner, requests = self.owner([inventory(), booking()])
         ref = await self.slots(owner)
         self.assertTrue((await self.book(owner, "ST_TYPO")).startswith("needs_input:"))
-        self.assertIn(ref, owner._slots)
         await self.slots(owner)
         self.assertEqual(len(requests), 1)
         self.assertTrue((await self.book(owner, ref)).startswith("success:"))

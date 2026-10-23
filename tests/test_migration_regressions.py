@@ -20,7 +20,7 @@ from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.integrations.product import Product
-from abita_s2s.scheduling import Scheduling
+from abita_s2s.scheduling.appointments import Scheduling
 from abita_s2s.integrations.scheduling_http import SchedulingHTTP
 from abita_s2s.runtime.silence import BackendResponses
 
