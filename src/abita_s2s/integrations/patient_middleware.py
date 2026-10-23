@@ -3,11 +3,11 @@
 import asyncio
 from typing import Annotated, Literal
 
-import httpx
-from pydantic import Field, TypeAdapter, ValidationError
+from pydantic import Field, TypeAdapter
 
 from abita_s2s.insurance_contract import CoverageType, InsuranceDecision
-from abita_s2s.integrations.middleware import Middleware
+from abita_s2s.integrations.middleware import Middleware, OfficeKey
+from abita_s2s.integrations.transport import Request
 from abita_s2s.records import Record, Text
 
 
@@ -72,39 +72,39 @@ Result = Receipt | Multiple | NotFound | Unresolved | Failure
 RESULT = TypeAdapter(Annotated[Result, Field(discriminator="status")])
 
 
+class ResolveRequest(Request):
+    phone: str | None = None
+    firstName: str | None = None
+    dob: str | None = None
+    patientId: str | None = None
+    office: OfficeKey
+
+
 class PatientMiddleware(Middleware):
     DEADLINE = 10
 
-    async def resolve(self, office_key: str, identity: dict[str, str]) -> Result:
-        if not self._configured:
-            return Failure(reason="not_configured")
+    async def resolve(self, request: ResolveRequest) -> Result:
         try:
             async with asyncio.timeout(self._deadline):
                 for attempt in range(2):
-                    try:
-                        response = await self._send(
-                            "/api/patient/resolve", {**identity, "office": office_key}
-                        )
-                    except httpx.HTTPError:
+                    reply = await self._post("/api/patient/resolve", request, RESULT)
+                    if reply == "not_configured":
+                        return Failure(reason="not_configured")
+                    if isinstance(reply, str):
                         if attempt == 0:
                             continue
                         return Failure(reason="network_error")
-                    if (
-                        response.status_code in (408, 429)
-                        or response.status_code >= 500
-                    ):
+                    if reply.retryable:
                         if attempt == 0:
                             continue
                         return Failure()
-                    if not response.is_success:
+                    if not reply.ok:
                         return Failure(reason="request_rejected")
-                    try:
-                        result = RESULT.validate_python(response.json())
-                    except (ValueError, ValidationError):
+                    if reply.body is None:
                         return Failure(reason="invalid_response")
-                    if isinstance(result, Failure) and attempt == 0:
+                    if isinstance(reply.body, Failure) and attempt == 0:
                         continue
-                    return result
+                    return reply.body
         except TimeoutError:
             return Failure(reason="timeout")
         return Failure()
