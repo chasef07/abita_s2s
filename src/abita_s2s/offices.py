@@ -1,9 +1,12 @@
-"""Office identity and trunk routing; business policies live with their workflows."""
+"""Office identity, trunk routing, phone numbers and each office's scheduling policy."""
 
 import re
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Literal, NewType, get_args
 from zoneinfo import ZoneInfo
+
+from abita_s2s.insurance_contract import CoverageType
 
 EASTERN = ZoneInfo("America/New_York")
 E164 = NewType("E164", str)
@@ -13,6 +16,24 @@ SHARED_SCHEDULING_OFFICES: tuple[str, ...] = get_args(SharedSchedulingOffice)
 HollywoodPromotedOffice = Literal["north-miami-beach-optical"]
 HOLLYWOOD_PROMOTED_OFFICE: str = get_args(HollywoodPromotedOffice)[0]
 SchedulingOfficeChoice = Literal[SharedSchedulingOffice, HollywoodPromotedOffice]
+HOLLYWOOD_ROUTINE_OFFICE_CHOICE = (
+    "needs_input: Before searching, tell the caller: Before we schedule your appointment "
+    "at Hollywood, Abita Eye Group is excited to announce our newest office, at 633 "
+    "Northeast 167th Street in North Miami Beach. Would you like to schedule your "
+    "appointment there with Dr. Miriam Bach, or continue booking at our Hollywood "
+    "location? Then search with the office the caller chooses."
+)
+HOLLYWOOD_ROUTINE_OFFICE_FOLLOW_UP = "needs_input: Ask whether the caller wants North Miami Beach or Hollywood, then search with that office."
+
+
+@dataclass(frozen=True)
+class OfficePromotion:
+    """A newer office offered once to callers booking one visit type."""
+
+    visit: CoverageType
+    office: str
+    announcement: str
+    follow_up: str
 
 
 @dataclass(frozen=True)
@@ -23,6 +44,9 @@ class OfficeProfile:
     greeting_name: str
     staff_tasks_enabled: bool = True
     transfer_phone: str | None = None
+    product_keys: Mapping[str, str] = field(default_factory=dict)
+    scheduling_offices: tuple[str, ...] = ()
+    promotion: OfficePromotion | None = None
 
 
 SPRING_HILL = OfficeProfile(
@@ -48,6 +72,13 @@ OFFICES = (
         display_name="Abita Eye Group Hollywood",
         trunk_numbers=("+19542872010",),
         greeting_name="Abita Eye Group",
+        scheduling_offices=SHARED_SCHEDULING_OFFICES,
+        promotion=OfficePromotion(
+            visit="routine_vision",
+            office=HOLLYWOOD_PROMOTED_OFFICE,
+            announcement=HOLLYWOOD_ROUTINE_OFFICE_CHOICE,
+            follow_up=HOLLYWOOD_ROUTINE_OFFICE_FOLLOW_UP,
+        ),
     ),
     OfficeProfile(
         key="sweetwater",
@@ -61,6 +92,8 @@ OFFICES = (
             "+17864654882",
         ),
         greeting_name="Abita Eye Group",
+        product_keys={"+17864657479": "sweetwater-optical"},
+        scheduling_offices=SHARED_SCHEDULING_OFFICES,
     ),
     OfficeProfile(
         key="north-miami-beach-optical",
@@ -101,6 +134,4 @@ def get_office_profile_by_phone(phone: str) -> OfficeProfile:
 
 def get_product_office_key(phone: str) -> str:
     office = get_office_profile_by_phone(phone)
-    if e164(phone) == "+17864657479":
-        return "sweetwater-optical"
-    return office.key
+    return office.product_keys.get(e164(phone) or "", office.key)

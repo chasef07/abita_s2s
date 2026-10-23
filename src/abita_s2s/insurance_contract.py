@@ -1,10 +1,11 @@
 """Backend participation decisions; no local plan matching or coverage rules."""
 
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 CoverageType = Literal["medical", "routine_vision"]
+COVERAGE_TYPES: tuple[str, ...] = get_args(CoverageType)
 
 
 class InsuranceRequirement(BaseModel):
