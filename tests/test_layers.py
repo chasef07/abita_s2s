@@ -19,6 +19,7 @@ LAYERS = {
         "records",
         "results",
         "state",
+        "writes",
     ),
     "integrations": ("integrations",),
     "observability": ("observability",),
