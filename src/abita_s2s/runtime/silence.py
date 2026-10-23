@@ -11,6 +11,7 @@ from abita_s2s.prompt import load_prompt
 CHECK_IN = load_prompt("check_in")
 STILL_WORKING = load_prompt("still_working")
 COULD_NOT_FINISH = load_prompt("could_not_finish")
+STILL_WORKING_LINES = 3
 FAILED = frozenset({"response.failed", "response.incomplete"})
 FINISHED = FAILED | {"response.completed", "response.cancelled"}
 
@@ -76,10 +77,17 @@ def check_in_on_silence(
     control: CallControl,
     hand_off_held: Callable[[], bool],
 ) -> None:
+    """Say STILL_WORKING at most STILL_WORKING_LINES times per caller turn, then check in as an idle call does."""
+    still_working = 0
+
     def on_user_state(event: UserStateChangedEvent) -> None:
+        nonlocal still_working
+        if event.new_state == "speaking":
+            still_working = 0
         if event.new_state != "away":
             return
-        if backend.running:
+        if backend.running and still_working < STILL_WORKING_LINES:
+            still_working += 1
             session.generate_reply(instructions=STILL_WORKING)
             session.reset_away_timer()
             return
