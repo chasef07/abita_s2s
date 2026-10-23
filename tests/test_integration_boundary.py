@@ -1,9 +1,11 @@
 """Typed requests keep the wire bytes, and adapters parse every outcome at the boundary."""
 
+import asyncio
 import hashlib
 import json
 import unittest
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 import httpx
 from pydantic import ValidationError
@@ -18,6 +20,7 @@ from abita_s2s.integrations.patient_middleware import (
 from abita_s2s.integrations.product import (
     HandoffGrant,
     Product,
+    Refusal,
     StaffTask,
     StaffTaskReceipt,
 )
@@ -100,6 +103,8 @@ class Recorder:
     def __call__(self, request):
         self.requests.append(request)
         response = self.responses.pop(0) if self.responses else {}
+        if isinstance(response, Exception):
+            raise response
         if isinstance(response, httpx.Response):
             return response
         return httpx.Response(200, json=response)
@@ -594,16 +599,21 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         }
         for response, expected in (
             (httpx.Response(201, json=grant), HandoffGrant),
-            (httpx.Response(400), "rejected"),
-            (httpx.Response(409), "unconfirmed"),
-            (httpx.Response(503), "unconfirmed"),
-            (httpx.Response(201, json=grant | {"id": "bad"}), "unconfirmed"),
+            (httpx.Response(400), Refusal("rejected", "http_400")),
+            (httpx.Response(409), Refusal("unconfirmed", "http_409")),
+            (httpx.Response(503), Refusal("unconfirmed", "http_503")),
+            (httpx.ReadTimeout("slow"), Refusal("unconfirmed", "timeout")),
+            (httpx.ConnectError("down"), Refusal("unconfirmed", "network")),
+            (
+                httpx.Response(201, json=grant | {"id": "bad"}),
+                Refusal("unconfirmed", "invalid_response"),
+            ),
             (
                 httpx.Response(201, json=grant | {"expiresAt": "2026-01-01T00:00:00"}),
-                "unconfirmed",
+                Refusal("unconfirmed", "invalid_response"),
             ),
         ):
-            with self.subTest(code=response.status_code, expected=expected):
+            with self.subTest(response=response, expected=expected):
                 result = await Product(self.client(Recorder(response)), PRODUCT).admit(
                     "spring-hill", "call", "+15555550101"
                 )
@@ -615,5 +625,51 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
             await Product(self.client(Recorder()), Config("offline")).admit(
                 "spring-hill", "call", ""
             ),
-            "not_configured",
+            Refusal("not_configured", "not_configured"),
         )
+
+    async def test_handoff_admission_bounds_each_phase_not_the_whole_exchange(self):
+        grant = json.dumps(
+            {
+                "id": TASK_ID,
+                "expiresAt": (datetime.now(UTC) + timedelta(minutes=2)).isoformat(),
+                "sipDestination": "sip:acuity-handoff@product.test",
+            }
+        ).encode()
+
+        async def trickle(reader, writer):
+            await reader.readuntil(b"\r\n\r\n")
+            await asyncio.sleep(0.3)
+            writer.write(
+                b"HTTP/1.1 201 Created\r\nContent-Type: application/json\r\n"
+                + f"Content-Length: {len(grant)}\r\n\r\n".encode()
+                + grant[:10]
+            )
+            await writer.drain()
+            await asyncio.sleep(0.3)
+            writer.write(grant[10:])
+            await writer.drain()
+            writer.close()
+
+        server = await asyncio.start_server(trickle, "127.0.0.1", 0)
+        self.addAsyncCleanup(server.wait_closed)
+        self.addCleanup(server.close)
+        port = server.sockets[0].getsockname()[1]
+        config = Config(
+            "offline",
+            handoff=HandoffConfig(
+                f"http://127.0.0.1:{port}/v1/handoffs",
+                "handoff-secret",
+                "00000000-0000-4000-8000-000000000001",
+            ),
+        )
+        client = httpx.AsyncClient()
+        self.addAsyncCleanup(client.aclose)
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        with patch("abita_s2s.integrations.product.HANDOFF_TIMEOUT", 0.5):
+            result = await Product(client, config).admit(
+                "spring-hill", "call", "+15555550101"
+            )
+        self.assertGreater(loop.time() - started, 0.5)
+        self.assertIsInstance(result, HandoffGrant)
