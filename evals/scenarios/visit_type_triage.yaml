@@ -25,6 +25,24 @@ scenarios:
       office: spring-hill
       caller_phone: '+12025550148'
 
+  - label: Generic eye-condition follow-up asks which condition
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
+      Open with: "Hi, I'd like to make an appointment." If asked what it is for,
+      say only "eye exam, follow up." If asked what kind of visit it is, say only
+      "a follow-up for an eye condition." Say it is for glaucoma only if asked
+      which condition. Your insurance has not changed. Give your
+      first name when asked and DOB only if needed. Only after actual times are
+      offered, say you will check your calendar and call back, then end. If told
+      no openings can be found, accept that and end.
+    agent_expectations: >
+      After hearing only "a follow-up for an eye condition," asks which condition
+      it is for before searching openings, then searches medical openings for the
+      glaucoma follow-up. Does not diagnose and does not book anything.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
   - label: Gradual blurry vision triages as routine vision (ACU-121)
     instructions: >
       You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
