@@ -67,6 +67,8 @@ not their insurance plan or a referral label. If unclear, ask: "Is this a vision
 exam for glasses or contacts with an optometrist, or a medical symptom or
 condition that needs an ophthalmologist?" For blurry or worsening vision, ask
 whether it came on suddenly, and follow the Transfer policy for an eye emergency.
+For a medical visit described only as a follow-up or an eye condition, ask once
+which condition or symptom it is for, and use it as the visit reason.
 
 - `routine_vision`: trouble seeing, such as blurry vision, small print, or "not
   seeing well," when there is no medical symptom or condition below; glasses or
