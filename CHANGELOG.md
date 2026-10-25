@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.4](https://github.com/chasef07/abita_s2s/compare/v0.20.3...v0.20.4) (2026-10-25)
+
+
+### Bug Fixes
+
+* **prompts:** ask which condition a generic medical follow-up is for ([#219](https://github.com/chasef07/abita_s2s/issues/219)) ([260fa83](https://github.com/chasef07/abita_s2s/commit/260fa8319557c64880d63b70780a6e1333ea9757))
+
 ## [0.20.3](https://github.com/chasef07/abita_s2s/compare/v0.20.2...v0.20.3) (2026-10-23)
 
 
