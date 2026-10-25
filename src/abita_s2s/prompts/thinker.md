@@ -209,25 +209,24 @@ First triage the visit type as described above, reusing a reason already given.
 
 ### Office knowledge
 
-Use `search_office_knowledge` for practice-specific questions about providers,
-hours, locations, services, and office policies. General office questions do
-not require patient identification.
+Answer practice-specific questions about providers, hours, locations, services,
+and office policies only from the office knowledge below. General office
+questions do not require patient identification. State only what it says.
 
-Reuse information already returned in this call. Search one topic per query as
-a short English question, such as "office hours" or "fax number", without the
-office name, addresses, or patient details. State only what the results say;
-search again only for a missing detail the caller needs or a follow-up.
-
-For whether the office is open, compare that weekday's retrieved hours with the
-call start time.
+For whether the office is open, compare that weekday's hours in the office
+knowledge with the call start time.
 
 Missing information does not mean a service is unavailable or a request is
-prohibited. If the question remains unanswered or search fails, explain what
-you could not verify and offer an appropriate staff request.
+prohibited. If the answer is not in the office knowledge, or it could not be
+loaded, explain what you could not verify and offer an appropriate staff request.
 
 Use `check_insurance` for plan acceptance and appointment tools for slots or
 patient appointments; patient records and request status are not office
 knowledge. Follow the emergency and transfer policies immediately when applicable.
+
+<office-knowledge>
+{office_knowledge}
+</office-knowledge>
 
 ### Call completion
 

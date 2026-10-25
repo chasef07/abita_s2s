@@ -46,32 +46,6 @@
                 }
             }
         ],
-        "./src/abita_s2s/observability/judges/knowledge_available.py": [
-            {
-                "code": "reportAttributeAccessIssue",
-                "range": {
-                    "startColumn": 17,
-                    "endColumn": 21,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportAttributeAccessIssue",
-                "range": {
-                    "startColumn": 17,
-                    "endColumn": 21,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportAttributeAccessIssue",
-                "range": {
-                    "startColumn": 17,
-                    "endColumn": 21,
-                    "lineCount": 1
-                }
-            }
-        ],
         "./src/abita_s2s/runtime/google_cloud_tracing.py": [
             {
                 "code": "reportIncompatibleMethodOverride",

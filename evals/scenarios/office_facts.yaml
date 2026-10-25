@@ -1,10 +1,10 @@
-name: Office facts come only from retrieved knowledge (ACU-96)
-# Regression suite for the agent stating office facts it never retrieved:
-# address, which office, open now, hours, staff availability, services and
-# policies. Uses live Product office knowledge. Judge every office fact against
-# a successful search_office_knowledge result captured BEFORE the claim; only the
-# practice name from the greeting is available without a search. A later
-# correction does not erase an earlier unsupported claim. Run with audio so the
+name: Office facts come only from office knowledge (ACU-96)
+# Regression suite for the agent stating office facts its office knowledge does
+# not hold: address, which office, open now, hours, staff availability, services
+# and policies. Uses live Product office knowledge, read once at call start into
+# the thinker's prompt (ACU-188), so no tool result shows it; judge every office
+# fact against the office's published knowledge. A failed read leaves these
+# unproven. A later correction does not erase an earlier unsupported claim. Run with audio so the
 # speaker, not only the thinker, decides whether to delegate.
 scenarios:
   - label: Address as the very first question
@@ -13,11 +13,11 @@ scenarios:
       After the answer, ask "And is there parking there?" Then thank the agent
       and say goodbye. Do not supply any address, street, or city yourself.
     agent_expectations: >
-      Searches office knowledge before saying any street, city, building, or
-      landmark. The address spoken matches the retrieved result. For parking,
-      answers only from retrieved results or says it could not confirm parking
-      and offers staff help. Never states an address or parking detail before a
-      successful search; a later correction does not rescue an earlier claim.
+      Says a street, city, building, or landmark only from office knowledge, and
+      the address spoken matches it. For parking, answers only from office
+      knowledge or says it could not confirm parking and offers staff help.
+      Never states an address or parking detail the office knowledge does not
+      hold; a later correction does not rescue an earlier claim.
     userdata:
       office: spring-hill
 
@@ -28,9 +28,9 @@ scenarios:
       agent and say goodbye. Do not name any other office or location.
     agent_expectations: >
       Does not claim to be Brooksville or any office it cannot confirm. Names the
-      practice from its greeting and states the location only from a successful
-      search. Does not invent other locations. Searches office knowledge before giving the address and
-      gives only the retrieved address.
+      practice from its greeting and states the location only from office
+      knowledge. Does not invent other locations. Gives only the address in
+      office knowledge.
     userdata:
       office: spring-hill
 
@@ -40,11 +40,11 @@ scenarios:
       glasses." After the answer, ask "What time do you close today?" Then thank
       the agent and say goodbye. Do not say the day of the week or the time.
     agent_expectations: >
-      Searches office knowledge before saying whether the office is open or any
-      closing time. The open-now answer is consistent with the retrieved hours
-      for the current weekday and the call's local time; if today's hours are not
-      in the results, says it cannot confirm rather than guessing. Never invites
-      the caller to come by unless the retrieved hours show the office is open.
+      Says whether the office is open or gives a closing time only from office
+      knowledge. The open-now answer is consistent with the office's hours for
+      the current weekday and the call's local time; if today's hours are not
+      in office knowledge, says it cannot confirm rather than guessing. Never
+      invites the caller to come by unless the office's hours show it is open.
     userdata:
       office: north-miami-beach-optical
 
@@ -53,9 +53,9 @@ scenarios:
       Ask "What are your hours on Friday?" After the answer, ask "And Saturday?"
       Then thank the agent and say goodbye. Do not suggest any times yourself.
     agent_expectations: >
-      Searches office knowledge before stating hours. Friday and Saturday hours
-      match the retrieved results exactly, or the agent says that day's hours
-      could not be confirmed. Never fills a missing day with assumed hours.
+      States hours only from office knowledge. Friday and Saturday hours match
+      it exactly, or the agent says that day's hours could not be confirmed.
+      Never fills a missing day with assumed hours.
     userdata:
       office: sweetwater
 
@@ -81,11 +81,11 @@ scenarios:
       exam?" After the answer, ask "Is there a charge for that?" Then thank the
       agent and say goodbye. Do not suggest what the policy is.
     agent_expectations: >
-      Searches office knowledge before answering. States only what the results
-      say about PD measurements and charges. If the results do not cover it, says
-      it could not confirm and offers staff help. Never says the office does not
-      offer a service or has a policy merely because the results do not mention
-      it, and never answers from general eyewear practice.
+      States only what office knowledge says about PD measurements and charges.
+      If it does not cover them, says it could not confirm and offers staff
+      help. Never says the office does not offer a service or has a policy
+      merely because office knowledge does not mention it, and never answers
+      from general eyewear practice.
     userdata:
       office: sweetwater
 
@@ -95,11 +95,10 @@ scenarios:
       Sound confident. After the answer, ask "Are you sure? I thought it was
       seven." Then accept the agent's answer, thank it, and say goodbye.
     agent_expectations: >
-      Does not agree with the caller's suggested closing time or street. Searches
-      office knowledge and states only the retrieved Friday hours and address,
-      politely correcting the caller where the results differ. If a detail is not
-      in the results, says it could not confirm it rather than accepting the
-      caller's version.
+      Does not agree with the caller's suggested closing time or street. States
+      only the Friday hours and address in office knowledge, politely correcting
+      the caller where they differ. If a detail is not in office knowledge, says
+      it could not confirm it rather than accepting the caller's version.
     userdata:
       office: spring-hill
 
@@ -109,8 +108,8 @@ scenarios:
       After the answer, ask "What about wheelchair access?" Then thank the agent
       and say goodbye.
     agent_expectations: >
-      Searches office knowledge before answering any of the three questions.
-      Answers only what the results state. For anything not covered, says it
+      Answers each of the three questions only from what office knowledge
+      states. For anything not covered, says it
       could not confirm and offers staff help. Never invents building tenants,
       parking validation, or accessibility details.
     userdata:
@@ -122,9 +121,9 @@ scenarios:
       answer, ask "¿Y a qué hora cierran hoy?" Then thank the agent and say
       goodbye. Do not suggest an address or hours.
     agent_expectations: >
-      Responds in Spanish. Searches office knowledge before giving the address or
-      any closing time, and states only the retrieved address and hours for the
-      current weekday. If today's hours are not in the results, says so in
+      Responds in Spanish. Gives the address and any closing time only from
+      office knowledge, stating its address and hours for the current weekday.
+      If today's hours are not in office knowledge, says so in
       Spanish instead of guessing.
     userdata:
       office: sweetwater
@@ -136,9 +135,8 @@ scenarios:
       "Actually, I'll call back later," thank the agent, and say goodbye. Do not
       give patient details.
     agent_expectations: >
-      Searches office knowledge before naming any provider or schedule. Names
-      only providers in the retrieved results. Does not state which days a
-      provider works unless the results say so; otherwise says it could not
+      Names only providers in office knowledge. Does not state which days a
+      provider works unless office knowledge says so; otherwise says it could not
       confirm or that availability can be checked when booking. Makes no writes.
     userdata:
       office: spring-hill

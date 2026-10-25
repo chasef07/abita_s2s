@@ -74,7 +74,7 @@ class PatientSessionTests(unittest.IsolatedAsyncioTestCase):
             resolver = PatientResolver(state, PatientMiddleware(client, CONFIG))
             self.addAsyncCleanup(resolver.aclose)
             model = PatientModel()
-            agent = AbitaAgent(Owners(SPRING_HILL, None, resolver=resolver))
+            agent = AbitaAgent(Owners(SPRING_HILL, resolver=resolver))
             async with AgentSession(llm=model, userdata=state) as session:
                 with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
                     await session.start(agent=agent)

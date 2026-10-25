@@ -87,6 +87,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                 openrouter_key=openrouter_key,
             ),
             drain or AsyncMock(),
+            "Hours\nWeekdays 9 to 5.",
         )
 
     async def test_sweetwater_reports_dialed_number_and_product_location(self):
@@ -257,13 +258,6 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                 "call_ended_correctly",
                 "transfer_policy_followed",
                 "expressed_sentiment",
-            },
-        )
-        self.assertEqual(
-            evaluation["results"]["knowledge_available"],
-            {
-                "status": "not_applicable",
-                "reason": "no_office_knowledge_search",
             },
         )
         self.assertEqual(
@@ -522,17 +516,17 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.requests[-1]["appointmentOutcome"]["action"], "BOOKED")
         self.assertLess(budgets[0], 0.2)
 
-    async def test_closeout_evaluates_with_configured_openrouter_key(self):
-        keys = []
+    async def test_closeout_evaluates_with_configured_key_and_call_knowledge(self):
+        calls = []
 
-        async def evaluate(report, api_key, _, **__):
-            keys.append(api_key)
+        async def evaluate(report, api_key, _, *, office_knowledge, **__):
+            calls.append((api_key, office_knowledge))
             return {}
 
         reporter = self.reporter(evaluate=evaluate, openrouter_key="config-key")
         reporter.started = True
         await reporter.finish(lambda: REPORT)
-        self.assertEqual(keys, ["config-key"])
+        self.assertEqual(calls, [("config-key", "Hours\nWeekdays 9 to 5.")])
 
     async def test_staff_delivery_exception_or_cancellation_fails_closeout(self):
         for error in (RuntimeError("delivery failed"), asyncio.CancelledError()):
@@ -707,7 +701,7 @@ class ReportingConfigTests(unittest.TestCase):
                 "OPENAI_API_KEY": "offline",
                 "ACUITY_PRODUCT_INTERACTION_URL": "https://production.test/v1/ai/interactions",
                 "LIVEKIT_AGENT_DEPLOYMENT": "staging",
-                "STAGING_ACUITY_PRODUCT_KNOWLEDGE_URL": "https://sandbox.test/knowledge",
+                "STAGING_ACUITY_PRODUCT_KNOWLEDGE_URL": "https://sandbox.test/v1/agent/knowledge/search",
                 "STAGING_ACUITY_PRODUCT_HANDOFF_URL": "https://sandbox.test/v1/handoffs",
                 "STAGING_ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET": "sandbox-secret",
                 "STAGING_AMD_API_URL": "https://sandbox.test",

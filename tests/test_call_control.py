@@ -159,7 +159,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.addAsyncCleanup(self.session.aclose)
         with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
             await self.session.start(
-                agent=AbitaAgent(Owners(SPRING_HILL, None, call_control=self.control))
+                agent=AbitaAgent(Owners(SPRING_HILL, call_control=self.control))
             )
 
     async def run_tool(self, name):

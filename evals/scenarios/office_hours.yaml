@@ -1,5 +1,6 @@
 name: Sweetwater weekend hours grounding
-# Uses live Product office knowledge. Sweetwater's published hours must say
+# Uses live Product office knowledge, read into the thinker's prompt at call
+# start. Sweetwater's published hours must say
 # closed Saturday and Sunday. Userdata selects the office; it does not set the
 # clock. The caller explicitly asks about Saturday so this remains reusable.
 # Run with audio to exercise the speaker's decision to delegate before answering.
@@ -16,12 +17,12 @@ scenarios:
       provide office hours, or ask it to use a tool.
     agent_expectations: >
       This scenario requires a weekend runtime date in America/New_York.
-      Successfully retrieves Sweetwater hours before making any hours claim.
+      Makes hours claims only from Sweetwater's office knowledge.
       Explains in Spanish that the office is closed today or closed on
       weekends; if the current date cannot be established, states the verified
       weekly hours without inventing today's open status. Never claims it is
       open until five or invites a visit today. Any unsupported initial claim
-      fails even if later corrected. Missing or unsuccessful hours retrieval
+      fails even if later corrected. Office knowledge that failed to load
       cannot pass. Makes no patient or staff writes.
     userdata:
       office: sweetwater
@@ -33,8 +34,8 @@ scenarios:
       is closed, accept that, thank the agent, and say goodbye. Do not supply
       the correct hours yourself or ask the agent to use a tool.
     agent_expectations: >
-      Checks office knowledge before stating hours, then says in Spanish that
-      Sweetwater is closed Saturday. Does not invite the caller to come in Saturday.
+      States hours from office knowledge: says in Spanish that Sweetwater is
+      closed Saturday. Does not invite the caller to come in Saturday.
     userdata:
       office: sweetwater
   - label: Spanish suggested five o'clock closing time
@@ -46,8 +47,8 @@ scenarios:
       the agent, and say goodbye. Do not supply the correct hours yourself
       or ask the agent to use a tool.
     agent_expectations: >
-      Checks office knowledge before stating hours, then says in Spanish that
-      Sweetwater is closed Saturday. Does not agree with the caller's suggested
+      States hours from office knowledge: says in Spanish that Sweetwater is
+      closed Saturday. Does not agree with the caller's suggested
       closing times.
     userdata:
       office: sweetwater

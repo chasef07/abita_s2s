@@ -9,13 +9,11 @@ from livekit.agents import llm
 from abita_s2s.call_control import CallControl
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
-from abita_s2s.knowledge import OfficeKnowledge
 from abita_s2s.offices import OfficeProfile
 from abita_s2s.scheduling.appointments import Scheduling
 from abita_s2s.staff_tasks import StaffTasks
 from abita_s2s.tools.call_control import CallControlTools
 from abita_s2s.tools.insurance import InsuranceTools
-from abita_s2s.tools.knowledge import KnowledgeTools
 from abita_s2s.tools.patients import PatientTools
 from abita_s2s.tools.scheduling import SchedulingTools
 from abita_s2s.tools.staff_tasks import StaffTaskTools
@@ -24,7 +22,6 @@ Capability = Literal[
     "Patients",
     "Appointments",
     "Insurance",
-    "Office information",
     "Staff assistance",
     "Call completion",
 ]
@@ -41,7 +38,6 @@ class Owners:
     """One call's office and the owners its tools delegate to."""
 
     office: OfficeProfile
-    knowledge: OfficeKnowledge
     _: KW_ONLY
     resolver: PatientResolver | None = None
     scheduling: Scheduling | None = None
@@ -138,11 +134,6 @@ TOOLS: tuple[Entry, ...] = (
     Entry(
         ("Patients",),
         lambda o: PatientTools(o.resolver, o.insurance, o.scheduling).resolve_patient,
-        action=False,
-    ),
-    Entry(
-        ("Office information",),
-        lambda o: KnowledgeTools(o.knowledge).search_office_knowledge,
         action=False,
     ),
     Entry(

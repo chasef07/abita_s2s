@@ -1,8 +1,9 @@
 name: Abita live office and provider knowledge
-# Uses the live Product knowledge endpoint configured by ACUITY_PRODUCT_KNOWLEDGE_URL
-# and ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET. Credentials stay in the runtime
-# environment, never in this file. Judge facts against captured
-# tool results. An unavailable search leaves the successful retrieval path unproven.
+# Uses live Product office knowledge, read once at call start from the endpoint
+# derived from ACUITY_PRODUCT_KNOWLEDGE_URL with ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET.
+# Credentials stay in the runtime environment, never in this file. The knowledge
+# sits in the thinker's prompt, not a tool result; judge facts against the office's
+# published knowledge. A failed read leaves the answer path unproven.
 scenarios:
   - label: Spring Hill office hours and address
     instructions: >

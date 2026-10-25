@@ -24,7 +24,7 @@ EVALUATION_SECONDS = 20
 EVALUATION_GRACE_SECONDS = 1
 RETRY_SECONDS = 0.25
 MIN_CALL_SECONDS = 30
-PUBLISHED_VERSIONS = {"08dd0cd605e2": "typesafe-scorecard-v8"}
+PUBLISHED_VERSIONS = {"dda5ed75c218": "typesafe-scorecard-v8"}
 EVALUATOR_VERSION = PUBLISHED_VERSIONS.get(
     DEFINITIONS_HASH, f"typesafe-scorecard-{DEFINITIONS_HASH}"
 )
@@ -32,8 +32,8 @@ YES_ABOVE = 0.40
 SPEAKERS = {"user": "caller", "assistant": "agent"}
 
 
-def judge_state(history: ChatContext) -> dict:
-    """Give judges the agent's rules once and the call as one line per turn or tool result.
+def judge_state(history: ChatContext, office_knowledge: str) -> dict:
+    """Give judges the agent's rules and office knowledge once, and the call as one line per turn or tool result.
 
     A tool line sits where its result arrived, so judges see what the agent knew when.
     """
@@ -57,7 +57,7 @@ def judge_state(history: ChatContext) -> dict:
             result = f"ERROR: {item.output}" if item.is_error else item.output
             lines.append(f"tool {call.name}({call.arguments}) -> {result}")
     return {
-        "agent_instructions": thinker_instructions(started)
+        "agent_instructions": thinker_instructions(started, office_knowledge)
         + "\n\n"
         + load_prompt("speaker"),
         "transcript": lines,
@@ -80,6 +80,7 @@ async def evaluate_judges(
     history: ChatContext,
     *,
     api_key: str,
+    office_knowledge: str,
     seconds: float = EVALUATION_SECONDS,
     closeout: dict,
     transferred: bool,
@@ -90,7 +91,7 @@ async def evaluate_judges(
     A malformed answer fails only its own question. Each question takes the
     jury's majority for yes/no answers and mean for sentiment scores.
     """
-    state = judge_state(history)
+    state = judge_state(history, office_knowledge)
     results, errors = {}, {}
     if include_jury:
         for name, gate in GATES.items():
@@ -215,6 +216,7 @@ async def evaluate_call(
     api_key: str | None,
     seconds: float,
     *,
+    office_knowledge: str,
     budget: float = math.inf,
     closeout: dict | None = None,
 ) -> dict:
@@ -258,6 +260,7 @@ async def evaluate_call(
                     await evaluate_judges(
                         history,
                         api_key=api_key,
+                        office_knowledge=office_knowledge,
                         seconds=window,
                         closeout=closeout or {},
                         transferred=transferred,

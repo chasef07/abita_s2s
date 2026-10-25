@@ -31,8 +31,10 @@ class CallReporter:
         client: httpx.AsyncClient,
         config: Config,
         drain: Callable[[], Awaitable[None]],
+        office_knowledge: str,
     ):
         self._client = client
+        self._office_knowledge = office_knowledge
         self._url = config.interaction_url
         self._secret = config.product_secret
         self._openrouter_key = config.openrouter_key
@@ -237,6 +239,7 @@ class CallReporter:
                     report or {},
                     self._openrouter_key,
                     (ended_at - self._started_at).total_seconds(),
+                    office_knowledge=self._office_knowledge,
                     budget=remaining,
                     closeout={
                         **deepcopy(payload["closeoutPayload"]),

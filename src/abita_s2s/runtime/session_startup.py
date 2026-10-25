@@ -18,9 +18,9 @@ from abita_s2s.call_control import CallControl
 from abita_s2s.config import load_config
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
-from abita_s2s.knowledge import OfficeKnowledge
+from abita_s2s.knowledge import read_office_knowledge, render_office_knowledge
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
-from abita_s2s.integrations.product import Product
+from abita_s2s.integrations.product import KNOWLEDGE_ENTRIES, Product
 from abita_s2s.model_config import create_model
 from abita_s2s.offices import (
     get_office_profile,
@@ -123,6 +123,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         close_on_disconnect=True,
         delete_room_on_close=True,
     )
+    scenario_knowledge = None
     if simulation is not None:
         sandbox_url = os.environ.get("SANDBOX_AMD_API_URL", "").strip()
         sandbox_token = os.environ.get("SANDBOX_AMD_API_TOKEN", "").strip()
@@ -145,6 +146,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         )
         data = simulation.userdata()
         office = get_office_profile(data["office"])
+        scenario_knowledge = data.get("office_knowledge")
         await ctx.connect()
         participant = await ctx.wait_for_participant()
         room_options.participant_identity = participant.identity
@@ -234,13 +236,22 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         await asyncio.shield(cleanup_task)
 
     ctx.add_shutdown_callback(close_client)
+    product = Product(client, config)
+    if scenario_knowledge is None:
+        office_knowledge = await read_office_knowledge(product, office.key)
+    else:
+        office_knowledge = render_office_knowledge(
+            KNOWLEDGE_ENTRIES.validate_python(scenario_knowledge)
+        )
     if config.interaction_url and not ctx.is_fake_job():
         if call.caller_phone:
-            state.reporter = CallReporter(call, client, config, drain_writes)
+            state.reporter = CallReporter(
+                call, client, config, drain_writes, office_knowledge
+            )
         else:
             logger.error("Product call reporting unavailable: caller phone missing")
     try:
-        model = create_model(config)
+        model = create_model(config, office_knowledge)
         session = AgentSession[CallState](
             userdata=state,
             llm=model,
@@ -259,7 +270,6 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             "close", lambda event: logger.info("session_closed reason=%s", event.reason)
         )
         resolver = PatientResolver(state, PatientMiddleware(client, config))
-        product = Product(client, config)
         if not ctx.is_fake_job() and simulation is None:
             sip_api = api.LiveKitAPI(failover=False)
         control = CallControl(
@@ -273,7 +283,6 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         )
         owners = Owners(
             office,
-            OfficeKnowledge(product),
             resolver=resolver,
             scheduling=Scheduling(state, SchedulingHTTP(client, config)),
             insurance=InsuranceRegistration(
