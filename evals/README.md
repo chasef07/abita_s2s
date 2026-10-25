@@ -41,7 +41,8 @@ against. A scenario can set `office_knowledge` in its userdata to a list of
 reading Product, which keeps synthetic facts and their expectations together
 (see [office_knowledge_in_prompt.yaml](scenarios/office_knowledge_in_prompt.yaml)).
 Without `ACUITY_PRODUCT_KNOWLEDGE_URL` and the product secret, other scenarios
-load no office knowledge; compare those suites before and after, not absolutely.
+run with the could-not-be-loaded notice in place of office knowledge; compare
+those suites before and after, not absolutely.
 Judges can mark a spoken result as premature because GPT-Live adds speech to the
 history before the tool output; check the order in the agent log before trusting
 such a failure. These command forms are verified
