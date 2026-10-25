@@ -113,7 +113,6 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             agent = AbitaAgent(
                 Owners(
                     get_office_profile(state.call.called_office_key),
-                    AsyncMock(),
                     resolver=resolver,
                     staff_tasks=owner,
                 )

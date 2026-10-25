@@ -1,39 +1,53 @@
 import asyncio
 import json
 import unittest
-from copy import deepcopy
 from datetime import UTC, datetime
-from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import httpx
 from livekit.agents.llm.tool_context import ToolContext
-from livekit.agents.llm.utils import build_strict_openai_schema
 
-from abita_s2s.agent import AbitaAgent
 from abita_s2s.config import Config, load_config
 from abita_s2s.integrations.product import Product
-from abita_s2s.knowledge import OfficeKnowledge
-from abita_s2s.offices import OFFICES, SPRING_HILL
+from abita_s2s.knowledge import UNAVAILABLE, read_office_knowledge
+from abita_s2s.offices import SPRING_HILL, get_office_profile
+from abita_s2s.prompt import thinker_instructions
 from abita_s2s.state import CallContext, CallState
-from abita_s2s.tools.registry import Owners
+from abita_s2s.tools.registry import Owners, offer
 
 CONFIG = Config(
     "offline",
-    knowledge_url="https://product.example/v1/agent/knowledge/search",
+    knowledge_url="https://product.example/v1/agent/knowledge/read",
     product_secret="test-secret",
 )
-FOUND = {
-    "outcome": "found",
-    "revisionId": "revision-1",
-    "passages": [
-        {
-            "revisionId": "revision-1",
-            "sectionId": "hours",
-            "title": "Hours",
-            "text": "Status: available\nWeekdays 8:30 AM–4:30 PM. Closed weekends.",
-        }
-    ],
+STARTED = datetime(2026, 10, 8, 12, tzinfo=UTC)
+SWEETWATER = get_office_profile("sweetwater")
+KNOWLEDGE = {
+    "spring-hill": {
+        "revisionId": "00000000-0000-4000-8000-000000000001",
+        "entries": [
+            {
+                "id": "hours",
+                "title": "Hours",
+                "text": "Status: available\nWeekdays 8:30 AM to 4:30 PM. Closed weekends.",
+            },
+            {
+                "id": "records",
+                "title": "Medical records requests",
+                "text": "Fax records requests to 555-0142.",
+            },
+        ],
+    },
+    "sweetwater": {
+        "revisionId": "00000000-0000-4000-8000-000000000002",
+        "entries": [
+            {
+                "id": "hours",
+                "title": "Sweetwater hours",
+                "text": "Tuesday to Saturday 10 AM to 6 PM.",
+            }
+        ],
+    },
 }
 
 
@@ -50,245 +64,179 @@ def call_state(office=SPRING_HILL):
     )
 
 
-class KnowledgeTests(unittest.IsolatedAsyncioTestCase):
-    def knowledge(self, handler, config=CONFIG):
+def by_office(requests):
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json=KNOWLEDGE[request.headers["x-office-key"]])
+
+    return handler
+
+
+class OfficeKnowledgeTests(unittest.IsolatedAsyncioTestCase):
+    def product(self, handler, config=CONFIG):
         client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         self.addAsyncCleanup(client.aclose)
-        return OfficeKnowledge(Product(client, config))
+        return Product(client, config)
 
-    async def test_registered_tool_uses_call_office_and_sends_only_question(self):
+    async def test_prompt_holds_every_entry_of_the_called_office_and_no_other(self):
         requests = []
-
-        def handler(request):
-            requests.append(request)
-            return httpx.Response(200, json=FOUND)
-
-        knowledge = self.knowledge(handler)
-        for office in OFFICES:
+        product = self.product(by_office(requests))
+        for office, other in ((SPRING_HILL, SWEETWATER), (SWEETWATER, SPRING_HILL)):
             with self.subTest(office=office.key):
-                agent = AbitaAgent(Owners(SPRING_HILL, knowledge))
-                search = ToolContext(agent.tools).function_tools[
-                    "search_office_knowledge"
-                ]
-                schema = build_strict_openai_schema(search)["function"]
-                self.assertEqual(schema["name"], "search_office_knowledge")
-                self.assertEqual(set(schema["parameters"]["properties"]), {"query"})
-                self.assertFalse(schema["parameters"]["additionalProperties"])
-                answer = await search(
-                    SimpleNamespace(userdata=call_state(office)),
-                    "  When do you close?  ",
-                )
+                text = await read_office_knowledge(product, office.key)
+                instructions = thinker_instructions(STARTED, text)
                 request = requests[-1]
                 self.assertEqual(str(request.url), CONFIG.knowledge_url)
                 self.assertEqual(request.headers["authorization"], "Bearer test-secret")
                 self.assertEqual(request.headers["x-office-key"], office.key)
-                self.assertEqual(
-                    json.loads(request.content), {"query": "When do you close?"}
-                )
-                self.assertEqual(
-                    answer,
-                    "success: Weekdays 8:30 AM–4:30 PM. Closed weekends.",
-                )
-
-    async def test_no_information_is_distinct_from_unavailability(self):
-        for outcome in ("no_relevant_information", "temporary_failure"):
-            with self.subTest(outcome=outcome):
-                knowledge = self.knowledge(
-                    lambda request, outcome=outcome: httpx.Response(
-                        200, json={"outcome": outcome, "passages": []}
+                self.assertEqual(json.loads(request.content), {})
+                for entry in KNOWLEDGE[office.key]["entries"]:
+                    self.assertIn(entry["title"], instructions)
+                    self.assertIn(
+                        entry["text"].removeprefix("Status: available\n"), instructions
                     )
-                )
-                result = await knowledge.search(
-                    "spring-hill", "Do you offer this service?"
-                )
-                self.assertEqual(result["outcome"], outcome)
-                if outcome == "no_relevant_information":
-                    self.assertTrue(result["answer"].startswith("no_results:"))
-                    self.assertIn("does not establish", result["answer"])
-                else:
-                    self.assertTrue(result["answer"].startswith("blocked:"))
-                    self.assertIn("Offer staff help", result["answer"])
+                for entry in KNOWLEDGE[other.key]["entries"]:
+                    self.assertNotIn(entry["text"], instructions)
+                self.assertNotIn("Status:", instructions)
+                self.assertNotIn(KNOWLEDGE[office.key]["revisionId"], instructions)
+                self.assertNotIn(UNAVAILABLE, instructions)
 
-    async def test_invalid_query_lengths_never_reach_backend(self):
-        def unexpected(request):
-            self.fail("Invalid query reached Product")
+    async def test_entries_keep_their_display_order(self):
+        text = await read_office_knowledge(self.product(by_office([])), SPRING_HILL.key)
+        self.assertEqual(
+            text,
+            "Hours\nWeekdays 8:30 AM to 4:30 PM. Closed weekends.\n\n"
+            "Medical records requests\nFax records requests to 555-0142.",
+        )
 
-        knowledge = self.knowledge(unexpected)
-        for query in (
-            "",
-            "  a ",
-            "x" * 501,
-        ):
-            with self.subTest(query=query):
-                result = await knowledge.search("spring-hill", query)
-                self.assertEqual(result["outcome"], "invalid_query")
-                self.assertTrue(result["answer"].startswith("needs_input:"))
-                self.assertNotIn("query", result)
-
-    async def test_malformed_or_inconsistent_evidence_is_unavailable(self):
-        mixed = deepcopy(FOUND)
-        mixed["passages"][0]["revisionId"] = "other-revision"
-        empty = deepcopy(FOUND)
-        empty["passages"][0]["text"] = "Status: available"
-        cases = [
-            mixed,
-            empty,
-            {},
-            {**FOUND, "revisionId": None},
-            {**FOUND, "passages": []},
-            {**FOUND, "passages": FOUND["passages"] * 9},
-            {**FOUND, "outcome": "no_relevant_information"},
-            {**FOUND, "passages": [{**FOUND["passages"][0], "text": 42}]},
-        ]
-        for body in cases:
-            with self.subTest(body=body):
-                knowledge = self.knowledge(
-                    lambda request, body=body: httpx.Response(200, json=body)
-                )
-                result = await knowledge.search("spring-hill", "Hours?")
-                self.assertEqual(result["outcome"], "temporary_failure")
-                self.assertNotIn("4:30", result["answer"])
-
-    async def test_http_errors_redirects_and_bad_json_never_become_answers(self):
-        for status in (302, 401, 403, 429, 503, 200):
-            requests = []
-
-            def handler(request, requests=requests, status=status):
-                requests.append(request)
-                return httpx.Response(
-                    status,
-                    headers={"location": "https://other.example"},
-                    text="private-error-body",
-                )
-
-            with (
-                self.subTest(status=status),
-                self.assertLogs("abita_s2s.knowledge", level="WARNING") as logs,
-            ):
-                result = await self.knowledge(handler).search("spring-hill", "Hours?")
-                self.assertEqual(result["outcome"], "temporary_failure")
-                self.assertEqual(len(requests), 1)
-                self.assertNotIn("private-error-body", str(logs.output))
-                self.assertNotIn("test-secret", str(logs.output))
-
-    async def test_network_failure_and_missing_configuration_are_unavailable(self):
+    async def test_failed_read_yields_the_unavailable_block_and_logs_its_cause(self):
         def offline(request):
             raise httpx.ConnectError("private transport detail")
 
-        self.assertEqual(
-            (await self.knowledge(offline).search("spring-hill", "Hours?"))["outcome"],
-            "temporary_failure",
+        def respond(status, body):
+            return lambda request: httpx.Response(status, json=body)
+
+        valid = KNOWLEDGE["spring-hill"]
+        cases = (
+            (respond(503, {"error": "private-error-body"}), CONFIG, "http_503"),
+            (respond(401, valid), CONFIG, "http_401"),
+            (respond(302, valid), CONFIG, "http_302"),
+            (respond(200, {"entries": valid["entries"]}), CONFIG, "invalid_response"),
+            (
+                respond(200, {**valid, "entries": [{"title": "Hours", "text": 4}]}),
+                CONFIG,
+                "invalid_response",
+            ),
+            (offline, CONFIG, "network"),
+            (respond(200, valid), Config("offline"), "not_configured"),
         )
+        for handler, config, cause in cases:
+            with (
+                self.subTest(cause=cause),
+                self.assertLogs("abita_s2s.knowledge", level="ERROR") as logs,
+            ):
+                text = await read_office_knowledge(
+                    self.product(handler, config), SPRING_HILL.key
+                )
+                self.assertEqual(text, UNAVAILABLE)
+                self.assertIn(UNAVAILABLE, thinker_instructions(STARTED, text))
+                self.assertIn(f"cause={cause}", logs.output[0])
+                self.assertIn("office=spring-hill", logs.output[0])
+                self.assertNotIn("private", str(logs.output))
+                self.assertNotIn("test-secret", str(logs.output))
 
-        def unexpected(request):
-            self.fail("Unconfigured knowledge sent a request")
-
-        result = await self.knowledge(unexpected, Config("offline")).search(
-            "spring-hill", "Hours?"
-        )
-        self.assertEqual(result["outcome"], "temporary_failure")
-
-    async def test_deadline_cancels_read_and_external_cancellation_propagates(self):
-        started = asyncio.Event()
+    async def test_timed_out_read_yields_the_unavailable_block_and_logs_timeout(self):
         cancelled = asyncio.Event()
 
         async def slow(request):
-            started.set()
             try:
                 await asyncio.Event().wait()
             finally:
                 cancelled.set()
 
-        knowledge = self.knowledge(slow)
-        with patch("abita_s2s.integrations.product.SEARCH_TIMEOUT", 0.01):
-            result = await knowledge.search("spring-hill", "Hours?")
-        self.assertEqual(result["outcome"], "temporary_failure")
-        self.assertTrue(cancelled.is_set())
-        started.clear()
-        cancelled.clear()
-        task = asyncio.create_task(knowledge.search("spring-hill", "Hours?"))
-        await asyncio.wait_for(started.wait(), 1)
-        task.cancel()
-        with self.assertRaises(asyncio.CancelledError):
-            await task
+        with (
+            patch("abita_s2s.integrations.product.KNOWLEDGE_READ_TIMEOUT", 0.01),
+            self.assertLogs("abita_s2s.knowledge", level="ERROR") as logs,
+        ):
+            text = await read_office_knowledge(self.product(slow), SPRING_HILL.key)
+        self.assertEqual(text, UNAVAILABLE)
+        self.assertIn("cause=timeout", logs.output[0])
         self.assertTrue(cancelled.is_set())
 
-    async def test_overlapping_results_retain_their_original_question(self):
-        first_started, release_first = asyncio.Event(), asyncio.Event()
-
-        async def handler(request):
-            query = json.loads(request.content)["query"]
-            if query == "Weekday hours?":
-                first_started.set()
-                await release_first.wait()
-            body = deepcopy(FOUND)
-            body["passages"][0]["text"] = (
-                "Closed weekends."
-                if query == "Actually, Saturday hours?"
-                else "Weekdays close at 4:30 PM."
-            )
-            return httpx.Response(200, json=body)
-
-        knowledge = self.knowledge(handler)
-        first = asyncio.create_task(knowledge.search("spring-hill", "Weekday hours?"))
-        await asyncio.wait_for(first_started.wait(), 1)
-        latest = await knowledge.search("spring-hill", "Actually, Saturday hours?")
-        release_first.set()
-        earlier = await first
-        self.assertEqual(latest["query"], "Actually, Saturday hours?")
-        self.assertEqual(latest["answer"], "success: Closed weekends.")
-        self.assertEqual(earlier["query"], "Weekday hours?")
-        self.assertEqual(earlier["answer"], "success: Weekdays close at 4:30 PM.")
+    async def test_office_knowledge_search_is_not_offered_to_the_model(self):
+        owners = Owners(
+            SPRING_HILL,
+            resolver=Mock(),
+            scheduling=Mock(),
+            insurance=Mock(),
+            staff_tasks=Mock(),
+            call_control=Mock(),
+        )
+        tools = ToolContext(offer(owners)).function_tools
+        self.assertTrue(tools)
+        self.assertNotIn("search_office_knowledge", tools)
 
 
 class KnowledgeConfigTests(unittest.TestCase):
-    def test_configuration_requires_secret_and_secure_endpoint(self):
-        base = {
-            "OPENAI_API_KEY": "offline",
-            "ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET": "private-secret",
-        }
-        for url in (
-            "http://product.example/search",
-            "file:///tmp/knowledge",
-            "https://user:password@product.example/search",
+    BASE = {
+        "OPENAI_API_KEY": "offline",
+        "ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET": "private-secret",
+    }
+
+    def load(self, url):
+        with patch.dict(
+            "os.environ",
+            {**self.BASE, "ACUITY_PRODUCT_KNOWLEDGE_URL": url},
+            clear=True,
         ):
-            with (
-                self.subTest(url=url),
-                patch.dict(
-                    "os.environ",
-                    {**base, "ACUITY_PRODUCT_KNOWLEDGE_URL": url},
-                    clear=True,
-                ),
-                self.assertRaises(ValueError),
-            ):
-                load_config()
-        with patch.dict("os.environ", base, clear=True):
+            return load_config()
+
+    def test_read_endpoint_is_derived_from_the_configured_search_endpoint(self):
+        for url, expected in (
+            (
+                "https://product.example/v1/agent/knowledge/search",
+                "https://product.example/v1/agent/knowledge/read",
+            ),
+            (
+                "https://product.example/v1/agent/knowledge/search/",
+                "https://product.example/v1/agent/knowledge/read",
+            ),
+            (
+                "http://127.0.0.1:8000/v1/agent/knowledge/search",
+                "http://127.0.0.1:8000/v1/agent/knowledge/read",
+            ),
+            (
+                "http://[::1]:8000/v1/agent/knowledge/search",
+                "http://[::1]:8000/v1/agent/knowledge/read",
+            ),
+        ):
+            with self.subTest(url=url):
+                config = self.load(url)
+                self.assertEqual(config.knowledge_url, expected)
+                self.assertNotIn("private-secret", repr(config))
+
+    def test_configuration_requires_secret_and_secure_search_endpoint(self):
+        for url in (
+            "http://product.example/v1/agent/knowledge/search",
+            "file:///tmp/v1/agent/knowledge/search",
+            "https://user:password@product.example/v1/agent/knowledge/search",
+            "https://product.example/v1/agent/knowledge/read",
+            "https://product.example/knowledge",
+            "https://product.example/v1/agent/knowledge/search?x=1",
+        ):
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                self.load(url)
+        with patch.dict("os.environ", self.BASE, clear=True):
             self.assertIsNone(load_config().knowledge_url)
         with (
             patch.dict(
                 "os.environ",
                 {
                     "OPENAI_API_KEY": "offline",
-                    "ACUITY_PRODUCT_KNOWLEDGE_URL": CONFIG.knowledge_url,
+                    "ACUITY_PRODUCT_KNOWLEDGE_URL": "https://product.example/v1/agent/knowledge/search",
                 },
                 clear=True,
             ),
             self.assertRaises(ValueError),
         ):
             load_config()
-        for url in (
-            CONFIG.knowledge_url,
-            "http://127.0.0.1:8000/search",
-            "http://[::1]:8000/search",
-        ):
-            with (
-                self.subTest(url=url),
-                patch.dict(
-                    "os.environ",
-                    {**base, "ACUITY_PRODUCT_KNOWLEDGE_URL": url},
-                    clear=True,
-                ),
-            ):
-                config = load_config()
-                self.assertEqual(config.knowledge_url, url)
-                self.assertNotIn("private-secret", repr(config))

@@ -71,7 +71,6 @@ def action_tools() -> dict[str, llm.FunctionTool]:
     state = call_state()
     owners = Owners(
         SPRING_HILL,
-        Owner(state, "knowledge"),
         resolver=Owner(state, "resolver"),
         scheduling=Owner(state, "scheduling"),
         insurance=Owner(state, "insurance"),

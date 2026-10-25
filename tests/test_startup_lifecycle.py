@@ -241,7 +241,7 @@ class StagingConfigTests(unittest.TestCase):
             "LIVEKIT_AGENT_DEPLOYMENT": "staging",
             "STAGING_AMD_API_URL": "https://sandbox.example",
             "STAGING_AMD_API_TOKEN": "sandbox",
-            "STAGING_ACUITY_PRODUCT_KNOWLEDGE_URL": "https://sandbox.example/knowledge",
+            "STAGING_ACUITY_PRODUCT_KNOWLEDGE_URL": "https://sandbox.example/v1/agent/knowledge/search",
             "STAGING_ACUITY_PRODUCT_HANDOFF_URL": "https://sandbox.example/v1/handoffs",
             "STAGING_ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET": "sandbox-product",
         }

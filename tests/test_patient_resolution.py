@@ -515,7 +515,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_tool_schema_and_cross_call_guard(self):
         r, calls = self.resolver([])
-        agent = AbitaAgent(Owners(SPRING_HILL, None, resolver=r))
+        agent = AbitaAgent(Owners(SPRING_HILL, resolver=r))
         resolve_patient = ToolContext(agent.tools).function_tools["resolve_patient"]
         schema = build_strict_openai_schema(resolve_patient)["function"]
         self.assertEqual(set(schema["parameters"]["properties"]), {"firstName", "dob"})

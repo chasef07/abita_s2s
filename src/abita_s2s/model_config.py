@@ -32,7 +32,7 @@ class CallModel(GPTLiveModel):
         return live
 
 
-def create_model(config: Config) -> CallModel:
+def create_model(config: Config, office_knowledge: str) -> CallModel:
     now = datetime.now(EASTERN)
     return CallModel(
         api_key=config.openai_api_key,
@@ -42,6 +42,6 @@ def create_model(config: Config) -> CallModel:
             "model": THINKER_MODEL,
             "reasoning": {"effort": THINKER_REASONING_EFFORT},
             "parallel_tool_calls": False,
-            "instructions": thinker_instructions(now),
+            "instructions": thinker_instructions(now, office_knowledge),
         },
     )

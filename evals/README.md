@@ -8,8 +8,8 @@ not seed patients, insurance, appointments, or availability.
 
 Use a configured LiveKit Cloud project and sandbox patient middleware. The
 worker's simulation path disables Product writes and live SIP transfer setup;
-configured office knowledge reads remain
-available. Configuration is documented in [.env.example](../.env.example).
+the configured office knowledge read at call start remains available.
+Configuration is documented in [.env.example](../.env.example).
 
 Read the prerequisite comments in each YAML. The appointment scenario books,
 reschedules, and cancels the same visit in one call so the shared chart ends where
@@ -34,8 +34,14 @@ the project also hosts the deployed `abita-s2s` agent. Only the deployed image
 sets `ABITA_S2S_DEPLOYED`, so a local `abita-s2s dev` worker registers as
 `abita-s2s-local-<user>` and never takes production calls.
 
-Without `ACUITY_PRODUCT_KNOWLEDGE_URL` and the product secret, office
-knowledge fails locally; compare those suites before and after, not absolutely.
+Abita reads the called office's whole knowledge base once at call start and
+puts it in the thinker's prompt, so office answers have no tool result to judge
+against. A scenario can set `office_knowledge` in its userdata to a list of
+`title`/`text` entries; the simulation worker then uses those entries instead of
+reading Product, which keeps synthetic facts and their expectations together
+(see [office_knowledge_in_prompt.yaml](scenarios/office_knowledge_in_prompt.yaml)).
+Without `ACUITY_PRODUCT_KNOWLEDGE_URL` and the product secret, other scenarios
+load no office knowledge; compare those suites before and after, not absolutely.
 Judges can mark a spoken result as premature because GPT-Live adds speech to the
 history before the tool output; check the order in the agent log before trusting
 such a failure. These command forms are verified

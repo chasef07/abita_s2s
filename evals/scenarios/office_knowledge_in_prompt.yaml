@@ -1,0 +1,141 @@
+name: Office knowledge in the thinker prompt (ACU-188)
+# Synthetic office knowledge: every fact below is invented. Userdata hands the
+# entries to the simulation worker, which renders them into the thinker's prompt
+# instead of reading Product, so each expectation can name the exact facts.
+# The patterns come from production search misses: records fax, provider full
+# name, which office a provider works at, current address against an old one,
+# office hours against a doctor's days, and a question the knowledge does not
+# answer. Needs no patient, insurance, or appointment fixtures; makes no writes.
+scenarios:
+  - label: Records fax number is the records line, not the general fax
+    instructions: >
+      Say "I need to get my old eye records sent over to you. What fax number
+      should my old doctor use?" After the answer, ask "Is that the same as
+      your regular fax?" Then thank the agent and say goodbye. Do not give
+      patient details or ask for staff help.
+    agent_expectations: >
+      Gives the records fax number 555-0177 for the records request, and says
+      it is different from the general fax 555-0110. May mention emailing
+      records@heronbend-eye.example. Does not give 555-0110 as the records fax
+      and does not say it lacks the information.
+    userdata:
+      office: spring-hill
+      office_knowledge: &synthetic_knowledge
+        - title: Location and address
+          text: >-
+            Abita Eye Group is at 4410 Heron Bend Parkway, Suite 200, Spring Hill,
+            FL 34609. We moved here in March 2026 and are no longer at 18 Old Mill
+            Road. Free parking is in the lot behind the building.
+        - title: Hours
+          text: >-
+            Monday to Thursday 8:00 AM to 5:00 PM. Friday 8:00 AM to 1:00 PM.
+            Closed Saturday and Sunday. These are front desk hours, not any
+            doctor's schedule.
+        - title: Phone and fax
+          text: Main phone 555-0100. General fax 555-0110.
+        - title: Medical records requests
+          text: >-
+            Fax records requests to the records department at 555-0177, not the
+            general fax. Records requests can also be emailed to
+            records@heronbend-eye.example. Allow five business days.
+        - title: Providers
+          text: >-
+            Dr. Marisol Quintero-Hale, OD, optometrist: routine eye exams and
+            contact lens fittings for ages 6 and up. Dr. Bernard Okafor, MD,
+            ophthalmologist: cataract and glaucoma care.
+        - title: Where providers see patients
+          text: >-
+            Dr. Quintero-Hale sees patients only at Spring Hill. Dr. Okafor sees
+            patients at Spring Hill on Mondays and Wednesdays and at our
+            Brooksville office, 220 Cypress Lane, Brooksville, on Tuesdays and
+            Thursdays.
+        - title: Payments
+          text: We accept cash, credit, and debit cards. We do not accept personal checks.
+
+  - label: Provider full name
+    instructions: >
+      Say "My mom sees Dr. Okafor there. What's his first name?" After the
+      answer, ask "And what's the full name of your optometrist?" Then thank
+      the agent and say goodbye. Do not give patient details.
+    agent_expectations: >
+      Says Dr. Okafor's first name is Bernard, and gives the optometrist's
+      full name as Dr. Marisol Quintero-Hale. Does not say it cannot find
+      provider names and does not invent other providers.
+    userdata:
+      office: spring-hill
+      office_knowledge: *synthetic_knowledge
+
+  - label: Which office a provider sees patients at
+    instructions: >
+      Say "Does Dr. Okafor see patients in Brooksville, or only at Spring
+      Hill?" After the answer, ask "What's the address in Brooksville?" Then
+      thank the agent and say goodbye. Do not give patient details or ask to
+      book.
+    agent_expectations: >
+      Says Dr. Okafor sees patients in Brooksville on Tuesdays and Thursdays
+      and at Spring Hill on Mondays and Wednesdays, and gives the Brooksville
+      address as 220 Cypress Lane, Brooksville. Does not claim to know whether
+      he is in today or available at a specific time.
+    userdata:
+      office: spring-hill
+      office_knowledge: *synthetic_knowledge
+
+  - label: Current address when the caller names a city and an old address
+    instructions: >
+      Say "Hi, is this the Spring Hill office? You're still on Old Mill Road,
+      right?" After the answer, ask "So where do I go now?" Then thank the
+      agent and say goodbye. Do not supply any other address.
+    agent_expectations: >
+      Politely corrects the caller: the office is no longer at 18 Old Mill
+      Road and is now at 4410 Heron Bend Parkway, Suite 200, Spring Hill.
+      Does not agree that the office is on Old Mill Road.
+    userdata:
+      office: spring-hill
+      office_knowledge: *synthetic_knowledge
+
+  - label: Office hours are not a doctor's availability
+    instructions: >
+      Say "Is Dr. Okafor in on Friday? What time are you open Friday?" After
+      the answer, ask "So I can see him Friday morning?" Then thank the agent
+      and say goodbye. Do not give patient details or ask to book.
+    agent_expectations: >
+      Gives Friday front desk hours as 8:00 AM to 1:00 PM. Does not say Dr.
+      Okafor is in on Friday or that the caller can see him Friday; the office
+      information lists his days as Monday through Thursday. May offer to
+      check appointment availability or staff help, but never claims to know
+      his live schedule.
+    userdata:
+      office: spring-hill
+      office_knowledge: *synthetic_knowledge
+
+  - label: Bundled records request question
+    instructions: >
+      Say "I'm switching doctors and need my records from you sent to my new
+      eye doctor. How do I request that, and how long does it take?" After
+      the answer, thank the agent and say goodbye. Decline any offer to save a
+      request for staff. Do not give patient details.
+    agent_expectations: >
+      Explains how to request records from the office knowledge: fax the
+      records department at 555-0177 or email
+      records@heronbend-eye.example, and allow five business days. Does not
+      say it has no information about records requests.
+    userdata:
+      office: spring-hill
+      office_knowledge: *synthetic_knowledge
+
+  - label: Question the office knowledge does not answer
+    instructions: >
+      Say "Do you do LASIK there, and how much does it cost?" After the
+      answer, ask "Do you at least know if one of your doctors does it?"
+      Accept any offer to have staff follow up, but do not give patient
+      details beyond saying you would like a call back. Then thank the agent
+      and say goodbye.
+    agent_expectations: >
+      Does not say the office offers or does not offer LASIK, and gives no
+      price, because the office knowledge does not cover it. Says it could not
+      confirm that and offers staff help or a staff request. May name the
+      listed providers and their listed services, but does not claim either
+      performs LASIK.
+    userdata:
+      office: spring-hill
+      office_knowledge: *synthetic_knowledge

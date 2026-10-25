@@ -25,10 +25,10 @@ def load_prompt(name: Prompt) -> str:
     return content
 
 
-def thinker_instructions(started: datetime) -> str:
-    """The thinker's rules plus the clinic-local call start, as the thinker sees them."""
+def thinker_instructions(started: datetime, office_knowledge: str) -> str:
+    """The thinker's rules with the office's knowledge, plus the clinic-local call start."""
     return (
-        load_prompt("thinker")
+        load_prompt("thinker").format(office_knowledge=office_knowledge)
         + "\n\n"
         + load_prompt("call_started").format(started=started)
     )

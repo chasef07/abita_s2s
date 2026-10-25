@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import nullcontext
 import json
 import os
 from pathlib import Path
@@ -10,10 +11,12 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, PropertyMock, patch
 
 import httpx
+from test_knowledge import KNOWLEDGE
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.tools.registry import Owners
 from abita_s2s.config import Config
+from abita_s2s.knowledge import UNAVAILABLE
 from abita_s2s.integrations.patient_middleware import NotFound
 from abita_s2s.offices import (
     OFFICES,
@@ -126,7 +129,7 @@ class OfficeRoutingTests(unittest.TestCase):
 
 class GreetingTests(unittest.IsolatedAsyncioTestCase):
     async def test_greeting_seeds_startup_history_and_is_spoken_once(self):
-        agent = AbitaAgent(Owners(SPRING_HILL, None))
+        agent = AbitaAgent(Owners(SPRING_HILL))
         seeded = [
             item
             for item in agent.chat_ctx.items
@@ -200,6 +203,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         config=None,
         model_error=None,
         simulation=None,
+        product=None,
     ):
         participant = SimpleNamespace(
             identity="caller",
@@ -233,6 +237,12 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         session_generic = MagicMock()
         session_generic.__getitem__.return_value = session_type
         with (
+            patch(
+                "abita_s2s.runtime.session_startup.httpx.AsyncClient",
+                return_value=httpx.AsyncClient(transport=httpx.MockTransport(product)),
+            )
+            if product
+            else nullcontext(),
             patch.dict("os.environ", env or {}, clear=True),
             patch(
                 "abita_s2s.runtime.session_startup.load_config",
@@ -241,7 +251,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             patch(
                 "abita_s2s.runtime.session_startup.create_model",
                 side_effect=model_error,
-            ),
+            ) as create_model,
             patch(
                 "abita_s2s.runtime.session_startup.api.LiveKitAPI",
                 return_value=SimpleNamespace(sip=Mock(), aclose=AsyncMock()),
@@ -259,7 +269,61 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         args = session.start.call_args.kwargs
         args["userdata"] = session_type.call_args.kwargs["userdata"]
         args["dependencies"] = agent_factory.call_args.args[0]
+        args["office_knowledge"] = create_model.call_args.args[1]
         return ctx, args
+
+    async def test_office_knowledge_reaches_the_model_and_a_failed_read_continues(
+        self,
+    ):
+        config = Config(
+            "offline",
+            product_secret="product-token",
+            knowledge_url="https://product.test/v1/agent/knowledge/read",
+        )
+        requests = []
+
+        def read(status):
+            def handler(request):
+                requests.append(request)
+                return httpx.Response(status, json=KNOWLEDGE["spring-hill"])
+
+            return handler
+
+        _, args = await self.run_startup(False, config=config, product=read(200))
+        self.assertEqual(requests[-1].headers["x-office-key"], "spring-hill")
+        self.assertIn("Medical records requests", args["office_knowledge"])
+        self.assertIn("Fax records requests to 555-0142.", args["office_knowledge"])
+        with self.assertLogs("abita_s2s.knowledge", "ERROR") as logs:
+            _, args = await self.run_startup(False, config=config, product=read(503))
+        self.assertEqual(args["office_knowledge"], UNAVAILABLE)
+        self.assertIn("cause=http_503", logs.output[0])
+        self.assertEqual(args["userdata"].call.called_office_key, "spring-hill")
+
+    async def test_simulation_takes_synthetic_office_knowledge_from_userdata(self):
+        sim = SimpleNamespace(
+            userdata=lambda: {
+                "office": "spring-hill",
+                "office_knowledge": [
+                    {"title": "Hours", "text": "Status: available\nDaily 7 AM to 9 PM."}
+                ],
+            },
+            simulation_job_id="simulation-knowledge",
+        )
+        _, args = await self.run_startup(
+            False,
+            trunk="",
+            simulation=sim,
+            env={
+                "SANDBOX_AMD_API_URL": "https://abita-middleware-sandbox-test.run.app",
+                "SANDBOX_AMD_API_TOKEN": "sandbox-token",
+            },
+            config=Config(
+                "offline",
+                product_secret="product-token",
+                knowledge_url="https://product.test/v1/agent/knowledge/read",
+            ),
+        )
+        self.assertEqual(args["office_knowledge"], "Hours\nDaily 7 AM to 9 PM.")
 
     async def test_named_deployment_sandboxes_call_control(self):
         for deployment, sandbox in ((None, False), ("staging", True)):
@@ -287,9 +351,16 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                 middleware_url="https://production.test",
                 middleware_token="production-token",
                 product_secret="product-token",
-                knowledge_url="https://product.test/v1/agent/knowledge/search",
+                knowledge_url="https://product.test/v1/agent/knowledge/read",
                 interaction_url="https://product.test/v1/ai/interactions",
                 staff_tasks_url="https://product.test/v1/tasks",
+            ),
+            product=lambda request: httpx.Response(
+                200,
+                json={
+                    "revisionId": "revision-1",
+                    "entries": [{"id": "h", "title": "Hours", "text": "Weekdays."}],
+                },
             ),
         )
         ctx.wait_for_participant.assert_awaited_once_with()
@@ -306,11 +377,9 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(config.staff_tasks_url)
         self.assertEqual(config.product_secret, "product-token")
         self.assertEqual(
-            config.knowledge_url, "https://product.test/v1/agent/knowledge/search"
+            config.knowledge_url, "https://product.test/v1/agent/knowledge/read"
         )
-        product = args["dependencies"].knowledge._product._config
-        self.assertEqual(product.knowledge_url, config.knowledge_url)
-        self.assertEqual(product.product_secret, "product-token")
+        self.assertEqual(args["office_knowledge"], "Hours\nWeekdays.")
         self.assertIsNone(config.interaction_url)
         self.assertIsNone(config.handoff)
 

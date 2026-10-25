@@ -110,15 +110,18 @@ def load_config() -> Config:
             "Set ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET with ACUITY_PRODUCT_KNOWLEDGE_URL or ACUITY_PRODUCT_HANDOFF_URL"
         )
     if knowledge_url:
-        url = urlsplit(knowledge_url)
+        search_url = knowledge_url.rstrip("/")
+        url = urlsplit(search_url)
         if (
             not _is_service_url(url)
-            or url.username is not None
-            or url.password is not None
+            or url.query
+            or url.fragment
+            or not url.path.endswith("/v1/agent/knowledge/search")
         ):
             raise ValueError(
-                "ACUITY_PRODUCT_KNOWLEDGE_URL must use HTTPS (HTTP only on loopback)"
+                "ACUITY_PRODUCT_KNOWLEDGE_URL must be an HTTPS /v1/agent/knowledge/search endpoint (HTTP only on loopback)"
             )
+        knowledge_url = search_url.removesuffix("/search") + "/read"
     middleware_url = backend("AMD_API_URL", "").strip() or None
     middleware_token = backend("AMD_API_TOKEN", "").strip() or None
     if bool(middleware_url) != bool(middleware_token):

@@ -46,7 +46,7 @@ PRODUCT = Config(
     "offline",
     product_secret="test-secret",
     staff_tasks_url="https://product.test/v1/tasks",
-    knowledge_url="https://product.test/v1/agent/knowledge/search",
+    knowledge_url="https://product.test/v1/agent/knowledge/read",
     handoff=HandoffConfig(
         "https://product.test/v1/handoffs",
         "handoff-secret",
@@ -368,9 +368,9 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             await self.sent(
-                lambda c: Product(c, PRODUCT).search("spring-hill", "Hours?")
+                lambda c: Product(c, PRODUCT).read_knowledge("spring-hill")
             ),
-            wire({"query": "Hours?"}),
+            wire({}),
         )
         identity = {
             "practiceId": "00000000-0000-4000-8000-000000000001",

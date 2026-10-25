@@ -81,9 +81,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
             )
             self.addAsyncCleanup(resolver.aclose)
             self.addAsyncCleanup(owner.aclose)
-            agent = AbitaAgent(
-                Owners(SPRING_HILL, None, resolver=resolver, insurance=owner)
-            )
+            agent = AbitaAgent(Owners(SPRING_HILL, resolver=resolver, insurance=owner))
             model = InsuranceModel()
             async with AgentSession(llm=model, userdata=state) as session:
                 with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
@@ -185,7 +183,6 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                             agent=AbitaAgent(
                                 Owners(
                                     SPRING_HILL,
-                                    None,
                                     resolver=resolver,
                                     insurance=owner,
                                 )
@@ -220,7 +217,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(requests), 2)
 
     def test_schema_preserves_top_level_inputs_and_nullable_identity(self):
-        agent = AbitaAgent(Owners(SPRING_HILL, None))
+        agent = AbitaAgent(Owners(SPRING_HILL))
         tools = ToolContext(agent.tools).function_tools
         for tool in [
             tools["check_insurance"],
@@ -267,9 +264,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                 with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
                     await session.start(
                         agent=AbitaAgent(
-                            Owners(
-                                SPRING_HILL, None, resolver=resolver, insurance=owner
-                            )
+                            Owners(SPRING_HILL, resolver=resolver, insurance=owner)
                         )
                     )
                 for name, args in [

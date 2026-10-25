@@ -112,6 +112,7 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
                 {"chat_history": history.to_dict()},
                 "synthetic-key",
                 seconds,
+                office_knowledge="Hours\nWeekdays 9 to 5.",
                 closeout=closeout or {"transferStatus": "idle"},
             )
         return requests, result
@@ -244,7 +245,11 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
                 "abita_s2s.observability.evaluation.httpx.AsyncClient"
             ) as client:
                 result = await evaluate_call(
-                    {"chat_history": history.to_dict()}, key, 60, budget=budget
+                    {"chat_history": history.to_dict()},
+                    key,
+                    60,
+                    office_knowledge="",
+                    budget=budget,
                 )
             client.assert_not_called()
             self.assertEqual(result["classification"]["status"], "skipped")
@@ -311,7 +316,9 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
             with patch(
                 "abita_s2s.observability.evaluation.httpx.AsyncClient"
             ) as client:
-                result = await evaluate_call(native, key, seconds, budget=budget)
+                result = await evaluate_call(
+                    native, key, seconds, office_knowledge="", budget=budget
+                )
             client.assert_not_called()
             self.assertEqual(
                 result["classification"],
@@ -332,7 +339,7 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
                 "abita_s2s.observability.evaluation.httpx.AsyncClient"
             ) as client:
                 result = await evaluate_call(
-                    {"chat_history": history.to_dict()}, "key", 60
+                    {"chat_history": history.to_dict()}, "key", 60, office_knowledge=""
                 )
             client.assert_not_called()
             self.assertEqual(result["classification"]["status"], "skipped")

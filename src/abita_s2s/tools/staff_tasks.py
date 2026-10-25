@@ -28,7 +28,7 @@ class StaffTaskTools:
         Say the request is noted, not submitted; staff owns fulfillment and timing.
         Reuse draft_id for added details or corrections to the same request, including
         pharmacy details. Omit it only for a genuinely separate need, even in one category.
-        For records, search office knowledge for intake/delivery rules; speak restrictions
+        For records, use the office knowledge for intake/delivery rules; speak restrictions
         and missing prerequisites. Collect available details and list remaining gaps.
         Follow the Transfer policy for urgent or clinical concerns.
 

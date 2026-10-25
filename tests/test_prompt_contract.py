@@ -17,7 +17,6 @@ REGISTRY = "tools/registry.py TOOLS"
 BACKEND_TOOLS = "Backend tools:\n"
 EVERY_OWNER = Owners(
     SPRING_HILL,
-    Mock(),
     resolver=Mock(),
     scheduling=Mock(),
     insurance=Mock(),

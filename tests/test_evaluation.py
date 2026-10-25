@@ -13,6 +13,7 @@ import httpx
 from livekit.agents import ChatContext
 from livekit.agents.llm import AgentConfigUpdate, FunctionCall, FunctionCallOutput
 
+from abita_s2s.knowledge import UNAVAILABLE
 from abita_s2s.observability.decisions import parse, read_answers
 from abita_s2s.observability.evaluation import (
     EVALUATOR_VERSION,
@@ -23,7 +24,7 @@ from abita_s2s.observability.evaluation import (
 from abita_s2s.observability.judges import DEFINITIONS_HASH, JURORS, QUESTIONS
 from abita_s2s.prompt import load_prompt
 
-NOT_ASKED = ("knowledge_available",)
+OFFICE_KNOWLEDGE = "Hours\nMonday to Friday, 9 to 5."
 SOURCE = Path(__file__).parents[1] / "src"
 
 
@@ -65,8 +66,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         extra_tools=(),
         action_output="success: The appointment was moved to Wednesday at 10:00.",
         action_error=False,
-        knowledge_output="success: Office hours are Monday to Friday, 9 to 5.",
-        knowledge_error=False,
+        office_knowledge=OFFICE_KNOWLEDGE,
         jurors=("juror-a",),
         closeout=None,
     ):
@@ -103,12 +103,8 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                     FunctionCallOutput(
                         call_id=extra_tool,
                         name=extra_tool,
-                        output=knowledge_output
-                        if extra_tool == "search_office_knowledge"
-                        else action_output,
-                        is_error=knowledge_error
-                        if extra_tool == "search_office_knowledge"
-                        else False,
+                        output=action_output,
+                        is_error=False,
                     ),
                 ]
             )
@@ -165,6 +161,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 {"chat_history": history.to_dict()},
                 "synthetic-secret",
                 60,
+                office_knowledge=office_knowledge,
                 closeout=confirmed("rescheduled") if closeout is None else closeout,
             )
         return requests, result
@@ -290,13 +287,6 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                             else "no_appointment_action",
                         },
                     )
-                    self.assertEqual(
-                        result["results"]["knowledge_available"],
-                        {
-                            "status": "not_applicable",
-                            "reason": "no_office_knowledge_search",
-                        },
-                    )
 
     async def test_recorded_write_outcome_decides_the_date_check_not_answer_wording(
         self,
@@ -333,19 +323,11 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                             },
                         )
 
-    async def test_knowledge_tool_results_are_sent_to_the_yes_no_jury(self):
-        for output, is_error in (
-            ("success: Office hours are Monday to Friday, 9 to 5.", False),
-            ("no_results: No information was found for this question.", False),
-            ("blocked: Office information could not be checked.", False),
-            ("needs_input: Provide a focused office question.", False),
-            ("Timed out", True),
-        ):
-            with self.subTest(output=output):
+    async def test_call_office_knowledge_is_sent_to_the_yes_no_jury(self):
+        for knowledge in (OFFICE_KNOWLEDGE, UNAVAILABLE):
+            with self.subTest(knowledge=knowledge):
                 requests, result = await self.run_evaluation(
-                    extra_tools=("search_office_knowledge",),
-                    knowledge_output=output,
-                    knowledge_error=is_error,
+                    office_knowledge=knowledge,
                     values={"knowledge_available": 0.1},
                 )
                 question = requests[0]["questions"]["knowledge_available"]
@@ -353,24 +335,17 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(set(question["criteria"]), {"true", "false"})
                 self.assertFalse(result["results"]["knowledge_available"]["verdict"])
                 self.assertIn("office_question_answered", requests[0]["questions"])
-                self.assertIn(output, str(requests[0]["state"]))
-
-    async def test_knowledge_call_without_a_result_still_gets_a_yes_no_judge(self):
-        requests, result = await self.run_evaluation(
-            tool="search_office_knowledge",
-            returned=False,
-            values={"knowledge_available": 0.1},
-        )
-        self.assertIn("knowledge_available", requests[0]["questions"])
-        self.assertFalse(result["results"]["knowledge_available"]["verdict"])
-        self.assertIn("no result", str(requests[0]["state"]))
+                self.assertIn(
+                    f"<office-knowledge>\n{knowledge}\n</office-knowledge>",
+                    requests[0]["state"]["agent_instructions"],
+                )
 
     async def test_each_juror_gets_every_question_in_one_request_with_zero_retention(
         self,
     ):
         requests, result = await self.run_evaluation(
             tool="list_available_appointments",
-            extra_tools=("book_appointment", "search_office_knowledge"),
+            extra_tools=("book_appointment",),
         )
         sent = {}
         for request in requests:
@@ -400,7 +375,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.assertEqual(len(requests), 1)
-        self.assertEqual(len(requests[0]["questions"]), 6)
+        self.assertEqual(len(requests[0]["questions"]), 7)
         self.assertEqual(result["status"], "complete")
         jev = "juror-a"
         self.assertEqual(
@@ -488,13 +463,8 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             "emergency_policy_followed",
         )
         for tool, extra_tools, facts, count in (
-            ("list_available_appointments", (), (), 4),
-            (
-                "reschedule_appointment",
-                ("search_office_knowledge",),
-                ("rescheduled",),
-                6,
-            ),
+            ("list_available_appointments", (), (), 5),
+            ("reschedule_appointment", (), ("rescheduled",), 6),
         ):
             for value in (0.0, 0.5, 1.0):
                 with self.subTest(tool=tool, value=value):
@@ -587,8 +557,8 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             {"juror-a": "TimeoutError"},
         )
         self.assertIn("http_status=429", str(logs.output))
-        self.assertEqual(len(result["errors"]), 6)
-        self.assertEqual(set(result["results"]), set(NOT_ASKED))
+        self.assertEqual(len(result["errors"]), 7)
+        self.assertEqual(result["results"], {})
 
     async def test_exhausted_http_and_transport_retries_remain_visible(self):
         for transport_failure in (False, True):
@@ -606,7 +576,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             ):
                 requests, result = await self.run_evaluation(behavior)
             self.assertEqual(len(requests), 2)
-            self.assertEqual(set(result["results"]), set(NOT_ASKED))
+            self.assertEqual(result["results"], {})
             cause = "ConnectError" if transport_failure else "HTTPStatusError"
             self.assertEqual(
                 result["errors"]["emergency_policy_followed"]["errors"],
@@ -624,15 +594,13 @@ class JudgeStateTests(unittest.TestCase):
         )
         history.add_message(role="user", content="Is Dr. Lee in Friday?")
         history.items.append(
-            FunctionCall(
-                call_id="k-1", name="search_office_knowledge", arguments='{"q":"Lee"}'
-            )
+            FunctionCall(call_id="k-1", name="resolve_patient", arguments='{"q":"Lee"}')
         )
         history.add_message(role="assistant", content="One moment.", interrupted=True)
         history.items.append(
             FunctionCallOutput(
                 call_id="k-1",
-                name="search_office_knowledge",
+                name="resolve_patient",
                 output="Dr. Lee: Mon-Thu",
                 is_error=False,
             )
@@ -641,18 +609,22 @@ class JudgeStateTests(unittest.TestCase):
         history.items.append(
             FunctionCall(call_id="t-1", name="transfer_call", arguments="{}")
         )
-        state = judge_state(history)
+        state = judge_state(history, OFFICE_KNOWLEDGE)
         self.assertEqual(
             state["transcript"],
             [
                 "caller: Is Dr. Lee in Friday?",
                 "agent: One moment. (interrupted)",
-                'tool search_office_knowledge({"q":"Lee"}) -> Dr. Lee: Mon-Thu',
+                'tool resolve_patient({"q":"Lee"}) -> Dr. Lee: Mon-Thu',
                 "tool transfer_call({}) -> no result",
             ],
         )
         instructions = state["agent_instructions"]
-        self.assertTrue(instructions.startswith(load_prompt("thinker")))
+        self.assertTrue(
+            instructions.startswith(
+                load_prompt("thinker").format(office_knowledge=OFFICE_KNOWLEDGE)
+            )
+        )
         self.assertIn(
             "Call started: Thursday, 2026-10-08 12:00 EDT (America/New_York)",
             instructions,

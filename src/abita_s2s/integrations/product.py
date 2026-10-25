@@ -22,7 +22,7 @@ from abita_s2s.integrations.transport import Fault, Reply, Request, post
 from abita_s2s.records import Record
 
 STAFF_TASK_TIMEOUT = 10.0
-SEARCH_TIMEOUT = 4.0
+KNOWLEDGE_READ_TIMEOUT = 2.0
 HANDOFF_TIMEOUT = 2.0
 
 Category = Literal[
@@ -72,39 +72,22 @@ class StaffTaskReceipt(Record):
     urgency: Urgency
 
 
-class KnowledgeQuery(Request):
-    query: str
+class KnowledgeRead(Request):
+    """The read takes no body fields; X-Office-Key names the office."""
 
 
-_Id = Annotated[str, Field(min_length=1, max_length=100)]
-
-
-class Passage(BaseModel):
+class KnowledgeEntry(BaseModel):
     model_config = ConfigDict(strict=True)
-    revisionId: _Id
-    sectionId: _Id
     title: Annotated[str, Field(min_length=1, max_length=200)]
     text: Annotated[str, Field(min_length=1, max_length=12000)]
 
 
-class KnowledgeResult(BaseModel):
-    model_config = ConfigDict(strict=True)
-    outcome: Literal["found", "no_relevant_information", "temporary_failure"]
-    revisionId: _Id | None = None
-    passages: Annotated[list[Passage], Field(max_length=8)]
+class KnowledgeRevision(BaseModel):
+    """An office's whole active knowledge revision, entries in display order."""
 
-    @model_validator(mode="after")
-    def coherent_revision(self) -> Self:
-        if self.outcome == "found":
-            if (
-                not self.revisionId
-                or not self.passages
-                or any(p.revisionId != self.revisionId for p in self.passages)
-            ):
-                raise ValueError("Incomplete or mixed corpus revision")
-        elif self.passages:
-            raise ValueError("Unexpected passages for unsuccessful search")
-        return self
+    model_config = ConfigDict(strict=True)
+    revisionId: Annotated[str, Field(min_length=1, max_length=100)]
+    entries: list[KnowledgeEntry]
 
 
 class HandoffContact(Request):
@@ -164,7 +147,8 @@ class Refusal(NamedTuple):
 
 
 STAFF_TASK_RECEIPT = TypeAdapter(StaffTaskReceipt)
-KNOWLEDGE_RESULT = TypeAdapter(KnowledgeResult)
+KNOWLEDGE_REVISION = TypeAdapter(KnowledgeRevision)
+KNOWLEDGE_ENTRIES = TypeAdapter(list[KnowledgeEntry])
 HANDOFF_GRANT = TypeAdapter(HandoffGrant)
 
 
@@ -213,15 +197,15 @@ class Product:
             return receipt
         return "ambiguous"
 
-    async def search(self, office_key: str, query: str) -> KnowledgeResult | str:
-        """The corpus answer, or a log-safe cause when there is none."""
+    async def read_knowledge(self, office_key: str) -> KnowledgeRevision | str:
+        """The office's whole knowledge revision in one attempt, or a log-safe cause."""
         reply = await self._post(
             self._config.knowledge_url,
             self._config.product_secret,
-            KnowledgeQuery(query=query),
-            KNOWLEDGE_RESULT,
-            SEARCH_TIMEOUT,
-            SEARCH_TIMEOUT,
+            KnowledgeRead(),
+            KNOWLEDGE_REVISION,
+            KNOWLEDGE_READ_TIMEOUT,
+            KNOWLEDGE_READ_TIMEOUT,
             {"X-Office-Key": office_key},
         )
         if isinstance(reply, str):

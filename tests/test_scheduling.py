@@ -664,9 +664,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         )
         resolver = PatientResolver(owner.state, AsyncMock())
         self.addAsyncCleanup(resolver.aclose)
-        agent = AbitaAgent(
-            Owners(SPRING_HILL, None, resolver=resolver, scheduling=owner)
-        )
+        agent = AbitaAgent(Owners(SPRING_HILL, resolver=resolver, scheduling=owner))
         resolve_patient = ToolContext(agent.tools).function_tools["resolve_patient"]
         context = SimpleNamespace(
             userdata=owner.state, function_call=SimpleNamespace(call_id="resolution")
@@ -1981,7 +1979,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.addAsyncCleanup(resolver.aclose)
                 agent = AbitaAgent(
-                    Owners(SPRING_HILL, None, resolver=resolver, scheduling=owner)
+                    Owners(SPRING_HILL, resolver=resolver, scheduling=owner)
                 )
                 resolve_patient = ToolContext(agent.tools).function_tools[
                     "resolve_patient"
@@ -2648,7 +2646,7 @@ class SchedulingSessionTests(unittest.IsolatedAsyncioTestCase):
     async def test_patient_correction_rejects_previous_slot_through_session(self):
         owner, requests = self.owner([inventory()])
         model = SchedulingModel()
-        agent = AbitaAgent(Owners(SPRING_HILL, None, scheduling=owner))
+        agent = AbitaAgent(Owners(SPRING_HILL, scheduling=owner))
         async with AgentSession(llm=model, userdata=owner.state) as session:
             with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
                 await session.start(agent=agent)
@@ -2676,7 +2674,7 @@ class SchedulingSessionTests(unittest.IsolatedAsyncioTestCase):
         )
         verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
         model = SchedulingModel()
-        agent = AbitaAgent(Owners(SPRING_HILL, None, scheduling=owner))
+        agent = AbitaAgent(Owners(SPRING_HILL, scheduling=owner))
         async with AgentSession(llm=model, userdata=owner.state) as session:
             with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
                 await session.start(agent=agent)
