@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/chasef07/abita_s2s/compare/v0.20.4...v0.21.0) (2026-10-25)
+
+
+### Features
+
+* **knowledge:** load the called office's knowledge into Abita's prompt at call start and remove knowledge search ([#222](https://github.com/chasef07/abita_s2s/issues/222)) ([5b43896](https://github.com/chasef07/abita_s2s/commit/5b43896fe85d48fa4f9bbdda101e2f8ea33a9a0c))
+
 ## [0.20.4](https://github.com/chasef07/abita_s2s/compare/v0.20.3...v0.20.4) (2026-10-25)
 
 
