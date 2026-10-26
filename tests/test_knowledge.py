@@ -105,8 +105,8 @@ class OfficeKnowledgeTests(unittest.IsolatedAsyncioTestCase):
         text = await read_office_knowledge(self.product(by_office([])), SPRING_HILL.key)
         self.assertEqual(
             text,
-            "Hours\nWeekdays 8:30 AM to 4:30 PM. Closed weekends.\n\n"
-            "Medical records requests\nFax records requests to 555-0142.",
+            "### Hours\n\nWeekdays 8:30 AM to 4:30 PM. Closed weekends.\n\n"
+            "### Medical records requests\n\nFax records requests to 555-0142.",
         )
 
     async def test_failed_read_yields_the_unavailable_block_and_logs_its_cause(self):

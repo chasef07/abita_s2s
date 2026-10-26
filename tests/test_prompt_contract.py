@@ -14,7 +14,7 @@ from abita_s2s.prompt import PROMPTS_DIR, load_prompt
 from abita_s2s.tools.registry import TOOLS, Capability, Owners, offer
 
 REGISTRY = "tools/registry.py TOOLS"
-BACKEND_TOOLS = "Backend tools:\n"
+BACKEND_TOOLS = "### Backend tools\n\n"
 EVERY_OWNER = Owners(
     SPRING_HILL,
     resolver=Mock(),

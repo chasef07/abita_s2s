@@ -45,7 +45,7 @@ class ModelConfigTests(unittest.TestCase):
                         load_prompt("thinker").format(
                             office_knowledge="Hours\nWeekdays."
                         )
-                        + f"\n\nCall started: {expected} (America/New_York). "
+                        + f"\n\n## Call start\n\nCall started: {expected} (America/New_York). "
                         "Use this clinic-local date to interpret relative dates.",
                     )
             self.assertEqual(clock.now.call_count, len(cases))

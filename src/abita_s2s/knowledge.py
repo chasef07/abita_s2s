@@ -16,9 +16,12 @@ _STATUS = re.compile(
 
 
 def render_office_knowledge(entries: Iterable[KnowledgeEntry]) -> str:
-    """Each entry's title and text in order, without Product's status labels."""
+    """Each entry as a markdown heading and its text, in order, without Product's status labels.
+
+    Headings are level 3 because the knowledge sits under the prompt's `## Office knowledge`.
+    """
     return "\n\n".join(
-        f"{entry.title}\n{_STATUS.sub('', entry.text).strip()}".strip()
+        f"### {entry.title}\n\n{_STATUS.sub('', entry.text).strip()}".strip()
         for entry in entries
     )
 
