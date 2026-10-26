@@ -323,7 +323,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                 knowledge_url="https://product.test/v1/agent/knowledge/read",
             ),
         )
-        self.assertEqual(args["office_knowledge"], "Hours\nDaily 7 AM to 9 PM.")
+        self.assertEqual(args["office_knowledge"], "### Hours\n\nDaily 7 AM to 9 PM.")
 
     async def test_named_deployment_sandboxes_call_control(self):
         for deployment, sandbox in ((None, False), ("staging", True)):
@@ -379,7 +379,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             config.knowledge_url, "https://product.test/v1/agent/knowledge/read"
         )
-        self.assertEqual(args["office_knowledge"], "Hours\nWeekdays.")
+        self.assertEqual(args["office_knowledge"], "### Hours\n\nWeekdays.")
         self.assertIsNone(config.interaction_url)
         self.assertIsNone(config.handoff)
 
