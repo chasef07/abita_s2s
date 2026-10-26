@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/chasef07/abita_s2s/compare/v0.21.0...v0.22.0) (2026-10-26)
+
+
+### Features
+
+* **prompts:** structure prompts with markdown headings and render office knowledge entries as headings ([#224](https://github.com/chasef07/abita_s2s/issues/224)) ([e0b595e](https://github.com/chasef07/abita_s2s/commit/e0b595e6039da083b786de0926ca11442c2f6bac))
+
 ## [0.21.0](https://github.com/chasef07/abita_s2s/compare/v0.20.4...v0.21.0) (2026-10-25)
 
 
