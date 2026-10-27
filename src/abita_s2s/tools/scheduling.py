@@ -111,14 +111,10 @@ class SchedulingTools:
         Use reschedule_appointment to move an existing appointment.
 
         Args:
-            referringDoctor: New patients: reuse a supplied answer or ask "Did a doctor
-                refer you?" and get the name; "none" if not referred. Existing patients:
-                "none" without asking. Never narrate "none".
-            referringDoctorPhone: If referred, ask once for the doctor's phone and
-                address together; the office needs them to request clinical notes.
-                Say any referral note can go to eligibility@abitaeye.com. Use null for
-                what the caller does not know; do not ask again.
-            referringDoctorAddress: The referring doctor's office address.
+            referringDoctor: The referring doctor's name, or "none" if not referred or an
+                existing patient. Never narrate "none".
+            referringDoctorPhone: The referring doctor's phone, or null if unknown.
+            referringDoctorAddress: The referring doctor's office address, or null if unknown.
         """
         if not bound(self._scheduling, context):
             return UNAVAILABLE
