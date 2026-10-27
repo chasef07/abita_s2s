@@ -114,10 +114,10 @@ class SchedulingTools:
             referringDoctor: New patients: reuse a supplied answer or ask "Did a doctor
                 refer you?" and get the name; "none" if not referred. Existing patients:
                 "none" without asking. Never narrate "none".
-            referringDoctorPhone: If referred, ask once for the doctor's phone and
+            referringDoctorPhone: If referred, ask for the doctor's phone and
                 address together; the office needs them to request clinical notes.
                 Say any referral note can go to eligibility@abitaeye.com. Use null for
-                what the caller does not know; do not ask again.
+                what the caller does not know.
             referringDoctorAddress: The referring doctor's office address.
         """
         if not bound(self._scheduling, context):

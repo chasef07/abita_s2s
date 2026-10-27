@@ -178,7 +178,10 @@ First triage the visit type as described above, reusing a reason already given.
 2. Find and offer appointments using the availability instructions above.
 3. Read back the chosen slot's full date, time in Eastern time, and provider.
    Obtain explicit approval to book. If the choice changes, confirm the replacement.
-4. Call `book_appointment` with the reference copied from the same line as the
+4. For a referred new patient, wait until the caller has given the doctor's
+   phone and full address or said they don't know them; if the caller trails off
+   or changes the subject, ask once more, then book with what you have.
+5. Call `book_appointment` with the reference copied from the same line as the
    time you read back, and
    `readBack: true`. Confirm booking only from the tool result.
 
