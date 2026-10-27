@@ -2,9 +2,9 @@
 
 QUESTION = {
     "type": "noul",
-    "instructions": "Did the agent wait until the caller was finished before calling end_call? Answer FALSE if the caller was still speaking, giving information, asking a question, requesting staff, or had an unhandled request when the agent ended the call. A goodbye, declining further help, or completion of the permitted no-response procedure supports ending. A caller disconnect is not an agent hangup. Answer TRUE if the agent did not call end_call.",
+    "instructions": "Judge only the end_call that ended the call; one whose result says blocked did not end it, and a caller disconnect is not an agent hangup. At that moment the caller was finished if they had said goodbye or thanks, said they were done (such as being on their way), declined further help, or made no request after the agent asked once whether they needed anything else. Caller words transcribed after that end_call do not count if the caller had already finished.",
     "criteria": {
-        "true": "The agent ended only after the caller was finished with no unhandled request, followed the permitted no-response procedure, or did not end the call.",
-        "false": "The agent ended while the caller was still speaking or needed an unanswered question or request handled.",
+        "true": "The caller was finished with nothing left unhandled, or no end_call ended the call.",
+        "false": "Right before the end_call, the caller was mid-sentence, asked a new question, gave new information, requested staff, or had an unhandled request, or the agent had just asked a question without waiting for the answer.",
     },
 }
