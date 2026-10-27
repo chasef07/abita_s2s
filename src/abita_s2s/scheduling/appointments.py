@@ -579,11 +579,13 @@ class Scheduling:
         outcome = move_outcome(result, old.id, new)
         answer = answers.move(outcome, description, old)
         if new is None:
+            lost = isinstance(result, SchedulingFailure) and result.uncertain
             self._report(
                 p,
                 call_id=call_id,
                 booking=result,
                 booking_outcome=answer["outcome"],
+                cancellation_outcome="uncertain" if lost else "not_attempted",
                 old=old,
                 slot=slot,
             )
