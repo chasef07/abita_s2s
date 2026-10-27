@@ -92,8 +92,8 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
         return scheduling, resolver, requests
 
     async def test_previous_patients_check_does_not_block_returning_patient(self):
-        for plan in ("Self Pay", "Unknown corrected plan"):
-            with self.subTest(plan=plan):
+        for plan, self_pay in (("", True), ("Unknown corrected plan", False)):
+            with self.subTest(plan=plan, self_pay=self_pay):
                 owner, resolver, requests = await self.resolved_owner(
                     [
                         receipt(
@@ -108,7 +108,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
                 insurance = InsuranceRegistration(
                     owner.state, resolver, AsyncMock(check=AsyncMock(return_value=None))
                 )
-                await insurance.check(plan, "medical")
+                await insurance.check(plan, "medical", self_pay=self_pay)
                 await resolver.resolve("John", "03/04/1981")
                 self.assertEqual(owner.state.patient.active.patientId, "chart-john")
                 self.assertEqual(
@@ -149,7 +149,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
                     )
                 ),
             )
-            await insurance.check("Self Pay", "medical")
+            await insurance.check("", "medical", self_pay=True)
             self.assertIsNone(state.insurance.accepted.patient_id)
             self.assertEqual(
                 (await resolver.resolve("Jane", "01/02/1980"))["outcome"], "verified"

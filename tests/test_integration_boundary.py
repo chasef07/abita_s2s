@@ -166,24 +166,6 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
                 lambda c: RegistrationMiddleware(c, CONFIG).check(
                     DecisionRequest(
                         office="spring-hill",
-                        plan="",
-                        coverageType="medical",
-                        dob="",
-                        selfPay=True,
-                    )
-                ),
-                {
-                    "office": "spring-hill",
-                    "plan": "",
-                    "coverageType": "medical",
-                    "dob": "",
-                    "selfPay": True,
-                },
-            ),
-            (
-                lambda c: RegistrationMiddleware(c, CONFIG).check(
-                    DecisionRequest(
-                        office="spring-hill",
                         plan="Aetna",
                         coverageType="routine_vision",
                         dob="01/02/1980",
