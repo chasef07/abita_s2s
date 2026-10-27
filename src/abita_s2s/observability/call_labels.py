@@ -1,11 +1,11 @@
 """Tool-backed transfer outcomes and model-judged intent and remaining outcomes."""
 
-import asyncio
+from collections.abc import Awaitable, Callable
 
 import httpx
 from livekit.agents import ChatContext
 
-from abita_s2s.observability.decisions import URL, parse, read_answers
+from abita_s2s.observability.decisions import parse
 
 VERSION = "call-labels-v1"
 MODEL = "typesafe/jev-1.14"
@@ -27,16 +27,15 @@ def classification(status: str, reason: str | None = None) -> dict:
 
 
 async def classify_labels(
-    client: httpx.AsyncClient,
+    ask: Callable[[str, dict, dict], Awaitable[dict]],
     state: dict,
     closeout: dict,
     *,
-    api_key: str,
-    deadline: float,
     transferred: bool,
 ) -> dict:
     """Judge intent, and judge outcome only when no transfer tool was called.
 
+    ``ask`` is the jury's request, so labels share its deadline and retry.
     The caller writes the transferred outcome.
     """
     result = classification("incomplete")
@@ -46,41 +45,29 @@ async def classify_labels(
         if not (transferred and name == "outcome")
     }
     try:
-        async with asyncio.timeout_at(deadline):
-            response = await client.post(
-                URL,
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "model": MODEL,
-                    "provider": {"zdr": True},
-                    "state": {**state, "closeout": closeout},
-                    "questions": questions,
-                },
-            )
-            if response.status_code != 200:
-                result["reason"] = f"classification_http_{response.status_code}"
-                return result
-            answers = read_answers(response.content)
-            result["answers"] = answers
-            errors = []
-            for name, question in questions.items():
-                try:
-                    result[name] = parse(question, answers.get(name))
-                except ValueError:
-                    errors.append(f"{name}_choice_invalid")
-            if not transferred and (
-                closeout.get("callStatus") == "FAILED"
-                or closeout.get("mutationDrainFailed")
-                or closeout.get("closeReason") in ("error", "startup_or_report_failure")
-            ):
-                result.pop("outcome", None)
-                errors.append("call_evidence_incomplete")
-            if errors:
-                result["reason"] = ";".join(errors)
-            else:
-                result["status"] = "complete"
+        answers = await ask(MODEL, {**state, "closeout": closeout}, questions)
+        result["answers"] = answers
+        errors = []
+        for name, question in questions.items():
+            try:
+                result[name] = parse(question, answers.get(name))
+            except ValueError:
+                errors.append(f"{name}_choice_invalid")
+        if not transferred and (
+            closeout.get("callStatus") == "FAILED"
+            or closeout.get("mutationDrainFailed")
+            or closeout.get("closeReason") in ("error", "startup_or_report_failure")
+        ):
+            result.pop("outcome", None)
+            errors.append("call_evidence_incomplete")
+        if errors:
+            result["reason"] = ";".join(errors)
+        else:
+            result["status"] = "complete"
     except TimeoutError:
         result["reason"] = "classification_deadline_exceeded"
+    except httpx.HTTPStatusError as error:
+        result["reason"] = f"classification_http_{error.response.status_code}"
     except httpx.HTTPError:
         result["reason"] = "classification_transport_failed"
     except (ValueError, TypeError, KeyError):
