@@ -560,7 +560,8 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                     "externalPatientId": "original-patient",
                     "newAppointmentId": "42",
                     "bookingResult": {"status": "booked"},
-                }
+                },
+                "booked",
             )
 
         args["dependencies"].scheduling._write_task = asyncio.create_task(write())

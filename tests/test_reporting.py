@@ -97,7 +97,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                 call = replace(call_state(office=office).call, called_number=inbound)
                 reporter = self.reporter(call=call, evaluate=AsyncMock(return_value={}))
                 reporter.started = True
-                reporter.appointment(OUTCOME)
+                reporter.appointment(OUTCOME, "booked")
                 await reporter.finish(lambda: REPORT)
                 self.assertEqual(
                     [request["kind"] for request in self.requests],
@@ -123,7 +123,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             reporter.record(
                 "staff_task", {"outcome": "created", "taskId": "private-task"}
             )
-            reporter.appointment(OUTCOME)
+            reporter.appointment(OUTCOME, "booked")
 
         reporter = self.reporter(drain=drain)
         reporter.started = True
@@ -172,7 +172,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
     async def test_payload_is_snapshotted_before_async_delivery(self):
         reporter = self.reporter()
         outcome = {**OUTCOME, "bookingResult": {"status": "booked"}}
-        reporter.appointment(outcome)
+        reporter.appointment(outcome, "booked")
         outcome["bookingResult"]["status"] = "changed"
         await reporter.finish()
         self.assertEqual(
@@ -308,7 +308,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             reporter = self.reporter(openrouter_key="offline")
             reporter.started = True
             if evidence:
-                reporter.appointment(evidence)
+                reporter.appointment(evidence, evidence["bookingResult"]["status"])
             asked_questions = []
 
             def respond(request):
@@ -503,7 +503,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
 
         reporter = self.reporter(handler=handler, evaluate=evaluate)
         reporter.started = True
-        reporter.appointment(OUTCOME)
+        reporter.appointment(OUTCOME, "booked")
         with (
             patch("abita_s2s.runtime.reporting.FINISH", replace(FINISH, seconds=0.5)),
             patch(
