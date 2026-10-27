@@ -151,6 +151,7 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
                         plan="Aetna",
                         coverageType="medical",
                         dob="",
+                        selfPay=False,
                     )
                 ),
                 {
@@ -158,6 +159,7 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
                     "plan": "Aetna",
                     "coverageType": "medical",
                     "dob": "",
+                    "selfPay": False,
                 },
             ),
             (
@@ -167,6 +169,7 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
                         plan="Aetna",
                         coverageType="routine_vision",
                         dob="01/02/1980",
+                        selfPay=False,
                         offeredPlanIds=["aetna", "vsp"],
                     )
                 ),
@@ -175,6 +178,7 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
                     "plan": "Aetna",
                     "coverageType": "routine_vision",
                     "dob": "01/02/1980",
+                    "selfPay": False,
                     "offeredPlanIds": ["aetna", "vsp"],
                 },
             ),

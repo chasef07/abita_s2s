@@ -80,6 +80,7 @@ class DecisionRequest(Request):
     plan: str
     coverageType: CoverageType
     dob: str
+    selfPay: bool
     offeredPlanIds: list[str] | None = None
 
 

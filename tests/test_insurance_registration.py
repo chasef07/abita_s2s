@@ -103,7 +103,11 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
     async def prepared(self, responses, plan="Aetna", coverage="medical"):
         state, resolver, owner = self.owner([search(), *responses])
         await resolver.resolve("Jane", "01/02/1980")
-        self.assertEqual((await owner.check(plan, coverage))["outcome"], "accepted")
+        self_pay = plan == "Self Pay"
+        result = await owner.check(
+            "" if self_pay else plan, coverage, self_pay=self_pay
+        )
+        self.assertEqual(result["outcome"], "accepted")
         return state, resolver, owner
 
     async def test_two_new_patients_recheck_coverage_without_lookup(self):

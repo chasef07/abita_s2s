@@ -27,8 +27,8 @@ def check_response(request):
     import httpx
 
     body = json.loads(request.content)
-    plan = body["plan"]
-    rejected = plan not in ("Aetna", "VSP", "Self Pay")
+    plan = "Self Pay" if body["selfPay"] else body["plan"]
+    rejected = plan not in ("Aetna", "VSP") and not body["selfPay"]
     return httpx.Response(
         200,
         json=decision(

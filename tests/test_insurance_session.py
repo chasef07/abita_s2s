@@ -90,7 +90,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                     ("add_patient", registration().model_dump(), "needs_input"),
                     (
                         "check_insurance",
-                        {"plan": "Aetna", "coverageType": "medical"},
+                        {"plan": "Aetna", "coverageType": "medical", "selfPay": False},
                         "accepted",
                     ),
                     (
@@ -102,7 +102,11 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                     ("add_patient", registration().model_dump(), "success"),
                     (
                         "check_insurance",
-                        {"plan": "VSP", "coverageType": "routine_vision"},
+                        {
+                            "plan": "VSP",
+                            "coverageType": "routine_vision",
+                            "selfPay": False,
+                        },
                         "accepted",
                     ),
                     (
@@ -192,7 +196,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                         ("resolve_patient", {"firstName": "Jane", "dob": "01/02/1980"}),
                         (
                             "check_insurance",
-                            {"plan": "Self Pay", "coverageType": "medical"},
+                            {"plan": "", "coverageType": "medical", "selfPay": True},
                         ),
                         ("add_patient", registration().model_dump()),
                         ("add_patient", registration().model_dump()),
@@ -215,6 +219,51 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                         self.assertIn("Do not repeat this write", output.output)
                     self.assertFalse(insurance_ready(state))
                 self.assertEqual(len(requests), 2)
+
+    async def test_self_pay_tool_call_sends_flag_and_drops_plan_words(self):
+        bodies = []
+
+        def handler(request):
+            bodies.append(json.loads(request.content))
+            return check_response(request)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            state = call_state()
+            resolver = PatientResolver(state, PatientMiddleware(client, CONFIG))
+            owner = InsuranceRegistration(
+                state, resolver, RegistrationMiddleware(client, CONFIG)
+            )
+            self.addAsyncCleanup(resolver.aclose)
+            self.addAsyncCleanup(owner.aclose)
+            model = InsuranceModel()
+            async with AgentSession(llm=model, userdata=state) as session:
+                with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
+                    await session.start(
+                        agent=AbitaAgent(
+                            Owners(SPRING_HILL, resolver=resolver, insurance=owner)
+                        )
+                    )
+                args = {
+                    "plan": "I don't have insurance",
+                    "coverageType": "medical",
+                    "selfPay": True,
+                }
+                await asyncio.wait_for(
+                    session.run(user_input=json.dumps(["check_insurance", args])), 5
+                )
+        self.assertEqual(
+            bodies,
+            [
+                {
+                    "office": "spring-hill",
+                    "plan": "",
+                    "coverageType": "medical",
+                    "dob": "",
+                    "selfPay": True,
+                }
+            ],
+        )
+        self.assertTrue(state.insurance.accepted.decision.selfPay)
 
     def test_schema_preserves_top_level_inputs_and_nullable_identity(self):
         agent = AbitaAgent(Owners(SPRING_HILL))
@@ -271,7 +320,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                     ("resolve_patient", {"firstName": "Jane", "dob": "01/02/1980"}),
                     (
                         "check_insurance",
-                        {"plan": "Self Pay", "coverageType": "medical"},
+                        {"plan": "", "coverageType": "medical", "selfPay": True},
                     ),
                 ]:
                     await asyncio.wait_for(
