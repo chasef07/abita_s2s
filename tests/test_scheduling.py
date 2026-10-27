@@ -2127,6 +2127,50 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 3)
         self.assertEqual([a.id for a in owner.state.patient.active.appointments], [77])
 
+    async def test_lost_reschedule_response_reports_cancellation_uncertain(self):
+        async def unavailable(request):
+            return httpx.Response(503)
+
+        async def timed_out(request):
+            raise httpx.ReadTimeout("response lost", request=request)
+
+        unconfirmed = "blocked: The reschedule outcome could not be confirmed."
+        cases = {
+            "503": (unavailable, unconfirmed, "uncertain"),
+            "timeout": (timed_out, unconfirmed, "uncertain"),
+            "uncertain receipt": (
+                {"status": "uncertain"},
+                unconfirmed,
+                "not_attempted",
+            ),
+            "failed receipt": (
+                {"status": "failed", "outcome": "write_failed"},
+                "blocked: The reschedule failed.",
+                "not_attempted",
+            ),
+        }
+        for case, (response, answer, cancellation) in cases.items():
+            with self.subTest(case=case):
+                owner, requests = self.owner([inventory(), response])
+                verified(
+                    owner.state,
+                    appointmentsStatus="found",
+                    appointments=[appointment()],
+                )
+                result = await self.tool(
+                    owner,
+                    "reschedule_appointment",
+                    oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
+                    appointmentSlotRef=await self.slots(owner),
+                    appointmentReason="Follow up",
+                    referringDoctor="none",
+                    readBack=True,
+                )
+                self.assertEqual(requests[-1][0], "/api/appointment/reschedule")
+                self.assertTrue(result.startswith(answer), result)
+                evidence = owner.state.reporter.appointment.call_args.args[0]
+                self.assertEqual(evidence["cancellationResult"]["status"], cancellation)
+
     async def test_closed_owner_cannot_start_new_reads_or_writes(self):
         owner, requests = self.owner([])
         await owner.aclose()
