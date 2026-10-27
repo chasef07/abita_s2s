@@ -684,7 +684,9 @@ class EvaluatorVersionTests(unittest.TestCase):
         def reword(judges):
             judge = judges / "call_ended_correctly.py"
             text = judge.read_text()
-            judge.write_text(text.replace("Did the agent wait", "Did the agent pause"))
+            judge.write_text(
+                text.replace('"instructions": "', '"instructions": "Reworded. ')
+            )
             self.assertNotEqual(judge.read_text(), text)
 
         version = scratch_version(reword)
