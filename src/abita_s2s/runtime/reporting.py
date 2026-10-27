@@ -89,29 +89,19 @@ class CallReporter:
             }
         )
 
-    def appointment(self, evidence: dict, *, call_id: str | None = None) -> None:
-        """Checkpoint each observed scheduling write, including partial/uncertain results."""
-        outcome = {**deepcopy(evidence), "occurredAt": datetime.now(UTC).isoformat()}
-        self._appointment = outcome
-        booking = evidence.get("bookingResult", {}).get("status")
-        cancellation = evidence.get("cancellationResult", {}).get("status")
-        if evidence["action"] == "RESCHEDULED":
-            result = (
-                "rescheduled"
-                if booking == "booked" and cancellation == "cancelled"
-                else "partial_reschedule"
-                if booking in ("booked", "partial")
-                else booking
-            )
-        else:
-            result = booking or cancellation
-        self.record("appointment", {**outcome, "outcome": result}, call_id=call_id)
+    def appointment(
+        self, evidence: dict, outcome: str, *, call_id: str | None = None
+    ) -> None:
+        """Checkpoint each scheduling write with the outcome the scheduler told the agent."""
+        evidence = {**deepcopy(evidence), "occurredAt": datetime.now(UTC).isoformat()}
+        self._appointment = evidence
+        self.record("appointment", {**evidence, "outcome": outcome}, call_id=call_id)
         self._queue(
             {
                 **self._base,
                 "kind": "OUTCOME_CHECKPOINT",
                 "status": "IN_PROGRESS",
-                "appointmentOutcome": outcome,
+                "appointmentOutcome": evidence,
             }
         )
 

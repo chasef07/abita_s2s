@@ -415,7 +415,11 @@ class Scheduling:
         outcome = cancellation_outcome(result, old.id)
         answer = answers.cancellation(outcome)
         self._report(
-            p, call_id=call_id, cancellation_outcome=answer["outcome"], old=old
+            p,
+            answer["outcome"],
+            call_id=call_id,
+            cancellation_outcome=answer["outcome"],
+            old=old,
         )
         cancelled_id = old.id if outcome == "written" else None
         self._settle(
@@ -548,6 +552,7 @@ class Scheduling:
         answer = answers.booking(outcome, description, missing)
         self._report(
             p,
+            answer["outcome"],
             call_id=call_id,
             booking=result,
             booking_outcome=answer["outcome"],
@@ -582,6 +587,7 @@ class Scheduling:
             lost = isinstance(result, SchedulingFailure) and result.uncertain
             self._report(
                 p,
+                answer["outcome"],
                 call_id=call_id,
                 booking=result,
                 booking_outcome=answer["outcome"],
@@ -594,6 +600,7 @@ class Scheduling:
         cancelled = outcome == "written"
         self._report(
             p,
+            answer["outcome"],
             call_id=call_id,
             booking=booked,
             booking_outcome="booked",
@@ -668,6 +675,7 @@ class Scheduling:
     def _report(
         self,
         patient: Receipt,
+        outcome: str,
         *,
         call_id: str,
         booking: WriteReceipt | RescheduleReceipt | SchedulingFailure | None = None,
@@ -718,7 +726,7 @@ class Scheduling:
             if booking is not None and old
             else ("BOOKED" if booking is not None else "CANCELLED")
         )
-        reporter.appointment(evidence, call_id=call_id)
+        reporter.appointment(evidence, outcome, call_id=call_id)
 
     def _reconcile_receipts(self):
         """Apply confirmed receipt effects after writes and patient reloads."""

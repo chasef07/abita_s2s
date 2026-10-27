@@ -34,6 +34,7 @@ from abita_s2s.offices import (
 )
 from abita_s2s.tools.scheduling import SchedulingTools
 from abita_s2s.scheduling.answers import BookOutcome, CancelOutcome, MoveOutcome
+from abita_s2s.runtime.reporting import CallReporter
 from abita_s2s.scheduling.appointments import Scheduling
 from abita_s2s.scheduling.availability import SHARED_OFFICE_CHOICE
 from abita_s2s.integrations.scheduling_http import (
@@ -2520,6 +2521,88 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     reported,
                 )
                 self.assertEqual(observed, effects)
+
+    async def test_recorded_appointment_outcome_is_the_outcome_told_to_the_agent(self):
+        class Recorder(CallReporter):
+            def __init__(self):
+                self._base = {}
+                self.outcomes = []
+
+            def record(self, kind, evidence, *, call_id=None):
+                self.outcomes.append(evidence["outcome"])
+
+            def _queue(self, payload):
+                pass
+
+        cases = {
+            "booking": (
+                "book",
+                WriteReceipt(status="booked", appointmentId=888),
+                "booked",
+            ),
+            "cancellation": (
+                "cancel",
+                WriteReceipt(status="cancelled", appointmentId=77),
+                "cancelled",
+            ),
+            "completed reschedule": (
+                "reschedule",
+                RescheduleReceipt.model_validate(rescheduled()),
+                "rescheduled",
+            ),
+            "partial reschedule": (
+                "reschedule",
+                RescheduleReceipt.model_validate(rescheduled("error")),
+                "partial_reschedule",
+            ),
+            "failed reschedule": (
+                "reschedule",
+                RescheduleReceipt(status="failed", outcome="write_failed"),
+                "failed",
+            ),
+            "uncertain reschedule": (
+                "reschedule",
+                RescheduleReceipt(status="uncertain"),
+                "uncertain",
+            ),
+            "lost reschedule response": (
+                "reschedule",
+                SchedulingFailure(reason="transport_error", uncertain=True),
+                "uncertain",
+            ),
+        }
+        for case, (write, response, outcome) in cases.items():
+            with self.subTest(case=case):
+                owner, _ = self.owner([inventory()])
+                owner.state.reporter = reporter = Recorder()
+                verified(
+                    owner.state,
+                    appointmentsStatus="found",
+                    appointments=[appointment()],
+                )
+                setattr(owner.http, write, AsyncMock(return_value=response))
+                old_ref = owner.appointments()[0]["appointmentRef"]
+                if write == "cancel":
+                    await self.tool(
+                        owner,
+                        "cancel_appointment",
+                        appointmentRef=old_ref,
+                        readBack=True,
+                    )
+                elif write == "book":
+                    await self.book(owner, await self.slots(owner))
+                else:
+                    await self.tool(
+                        owner,
+                        "reschedule_appointment",
+                        oldAppointmentRef=old_ref,
+                        appointmentSlotRef=await self.slots(owner),
+                        appointmentReason="Follow up",
+                        referringDoctor="none",
+                        readBack=True,
+                    )
+                self.assertEqual(owner._write_task.result()["outcome"], outcome)
+                self.assertEqual(reporter.outcomes, [outcome])
 
     async def test_every_middleware_outcome_is_classified_for_booking_and_cancellation(
         self,
