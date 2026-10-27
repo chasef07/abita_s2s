@@ -102,12 +102,12 @@ async def evaluate_judges(
     deadline = asyncio.get_running_loop().time() + seconds
     async with httpx.AsyncClient(timeout=seconds) as client:
 
-        async def ask(juror):
+        async def ask(model: str, state: dict, questions: dict) -> dict:
             attempts = 0
             http_status = None
             try:
                 async with asyncio.timeout_at(deadline):
-                    for attempt in range(2):
+                    while True:
                         attempts += 1
                         http_status = None
                         delay = RETRY_SECONDS
@@ -116,18 +116,16 @@ async def evaluate_judges(
                                 URL,
                                 headers={"Authorization": f"Bearer {api_key}"},
                                 json={
-                                    "model": juror,
+                                    "model": model,
                                     "state": state,
-                                    "questions": {
-                                        name: QUESTIONS[name] for name in asked
-                                    },
+                                    "questions": questions,
                                     "provider": {"zdr": True},
                                 },
                             )
                             http_status = response.status_code
                             response.raise_for_status()
                         except httpx.HTTPStatusError:
-                            if attempt or http_status not in (
+                            if attempts == 2 or http_status not in (
                                 408,
                                 429,
                                 500,
@@ -154,31 +152,25 @@ async def evaluate_judges(
                                     delay = RETRY_SECONDS
                                 delay = max(RETRY_SECONDS, delay)
                         except httpx.TransportError:
-                            if attempt:
+                            if attempts == 2:
                                 raise
                         else:
                             return read_answers(response.content)
                         await asyncio.sleep(delay)
             except Exception as error:
                 logger.error(
-                    "Call evaluation failed juror=%s cause=%s http_status=%s attempts=%s",
-                    juror,
+                    "Call evaluation failed model=%s cause=%s http_status=%s attempts=%s",
+                    model,
                     type(error).__name__,
                     http_status,
                     attempts,
                 )
                 raise
 
+        juror_questions = {name: QUESTIONS[name] for name in asked}
         replies = await asyncio.gather(
-            *(ask(juror) for juror in jurors),
-            classify_labels(
-                client,
-                state,
-                closeout,
-                api_key=api_key,
-                deadline=deadline,
-                transferred=transferred,
-            ),
+            *(ask(juror, state, juror_questions) for juror in jurors),
+            classify_labels(ask, state, closeout, transferred=transferred),
             return_exceptions=True,
         )
     labels = replies.pop()

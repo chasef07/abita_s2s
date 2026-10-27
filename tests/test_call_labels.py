@@ -58,7 +58,7 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
         answers=None,
         *,
         closeout=None,
-        failure=None,
+        failures=(),
         hang=None,
         seconds=60,
         history=None,
@@ -67,7 +67,7 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
             history = ChatContext()
             history.add_message(role="user", content="Please cancel my appointment.")
             history.add_message(role="assistant", content="It is cancelled.")
-        requests = []
+        requests, failures = [], list(failures)
 
         async def respond(request):
             payload = json.loads(request.content)
@@ -76,8 +76,10 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
             if hang == ("labels" if labels else "jury"):
                 await asyncio.Event().wait()
             if labels:
-                if failure:
-                    return httpx.Response(failure, json={"error": "private body"})
+                if failures:
+                    return httpx.Response(
+                        failures.pop(0), json={"error": "private body"}
+                    )
                 return httpx.Response(
                     200, content=json.dumps({"answers": answers}).encode()
                 )
@@ -229,7 +231,7 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("outcome", result["classification"])
 
     async def test_transfer_outcome_survives_intent_failure_or_timeout(self):
-        for kwargs in ({"failure": 400}, {"hang": "labels"}, {"answers": {}}):
+        for kwargs in ({"failures": [400]}, {"hang": "labels"}, {"answers": {}}):
             _, result = await self.run_labels(history=transfer_history(), **kwargs)
             self.assertEqual(result["classification"]["status"], "incomplete")
             self.assertEqual(result["classification"]["outcome"], "transferred")
@@ -285,11 +287,27 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("outcome", labels)
 
     async def test_provider_failure_and_deadline_do_not_erase_jury(self):
-        for kwargs in ({"failure": 400}, {"hang": "labels"}):
+        for kwargs in ({"failures": [400]}, {"hang": "labels"}):
             _, result = await self.run_labels(**kwargs)
             self.assertEqual(result["status"], "complete")
             self.assertEqual(result["classification"]["status"], "incomplete")
             self.assertNotIn("private body", str(result))
+
+    async def test_transient_label_failure_is_retried_once_like_the_jury(self):
+        for failures, status, reason in (
+            ([429], "complete", None),
+            ([503, 429], "incomplete", "classification_http_429"),
+        ):
+            with (
+                self.subTest(failures=failures),
+                patch("abita_s2s.observability.evaluation.RETRY_SECONDS", 0),
+            ):
+                requests, result = await self.run_labels(failures=failures)
+            labels = result["classification"]
+            self.assertEqual(labels.get("reason"), reason)
+            self.assertEqual(labels["status"], status)
+            self.assertEqual(sum("intent" in p["questions"] for p in requests), 2)
+            self.assertEqual(result["status"], "complete")
 
     async def test_jury_deadline_does_not_erase_classification(self):
         with self.assertLogs("abita_s2s.observability.evaluation", "ERROR"):
