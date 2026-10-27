@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.23.0](https://github.com/chasef07/abita_s2s/compare/v0.22.0...v0.23.0) (2026-10-27)
+
+
+### Features
+
+* **insurance:** send an explicit selfPay flag from check_insurance ([#229](https://github.com/chasef07/abita_s2s/issues/229)) ([18cc507](https://github.com/chasef07/abita_s2s/commit/18cc5077e735ce0bd718c7947f4c2b39fc86ae91))
+
+
+### Bug Fixes
+
+* **evaluation:** cut transfer and call-ended judge false positives ([#231](https://github.com/chasef07/abita_s2s/issues/231)) ([842337c](https://github.com/chasef07/abita_s2s/commit/842337c6b3da52c70026935dec966323dd821982))
+* **evaluation:** retry transient OpenRouter errors for call labels like jurors ([#232](https://github.com/chasef07/abita_s2s/issues/232)) ([55389e1](https://github.com/chasef07/abita_s2s/commit/55389e1db17e6ce9971aad8fee0d5bc2d29b33a3))
+* **prompts:** ask for the referring doctor's phone and address during intake ([#227](https://github.com/chasef07/abita_s2s/issues/227)) ([979c0d0](https://github.com/chasef07/abita_s2s/commit/979c0d004889613e37b1821501988826ce06bfe4))
+* **scheduling:** report cancellation uncertain when a reschedule response is lost ([#226](https://github.com/chasef07/abita_s2s/issues/226)) ([01a939a](https://github.com/chasef07/abita_s2s/commit/01a939a14edef7ae325191c5610f0fd9dd9e5ee1))
+
 ## [0.22.0](https://github.com/chasef07/abita_s2s/compare/v0.21.0...v0.22.0) (2026-10-26)
 
 
