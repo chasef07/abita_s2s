@@ -18,18 +18,23 @@ class InsuranceTools:
         context: RunContext[CallState],
         plan: str,
         coverageType: CoverageType,
+        selfPay: bool,
     ) -> str:
         """Check office participation for the caller's insurance and triaged visit type.
 
         Pass whatever the caller said about their insurance, word for word, on every
         call: a name, part of a name, or what is on the card. If the result asks
         which plan, read the options and call again with the caller's answer, also
-        word for word. Use before registration or a requested insurance change.
+        word for word. Set selfPay true, with an empty plan, when the caller has no
+        insurance or will pay themselves (out of pocket, cash, uninsured); otherwise
+        false. Use before registration or a requested insurance change.
         Follow staff-review instructions.
         """
         if not bound(self._insurance, context):
             return staff()["answer"]
-        return (await self._insurance.check(plan, coverageType))["answer"]
+        return (await self._insurance.check(plan, coverageType, self_pay=selfPay))[
+            "answer"
+        ]
 
     @function_tool
     async def update_insurance(

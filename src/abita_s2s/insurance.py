@@ -78,6 +78,7 @@ ANSWERS = {
     "accepted": "{plan} is accepted for {visits} at this office.",
     "not_accepted": "{plan} is not accepted for {visits} at this office.",
     "office_no_coverage": "This office does not accept insurance for {visits}.",
+    "no_self_pay": "This office does not offer self-pay for {visits}.",
     "ask_card": "Ask what insurance plan is on the card.",
     "ask_full_name": "Ask for the full plan name on the card.",
     "choose_plan": "Ask which plan is on the card: {options}.",
@@ -125,7 +126,10 @@ class InsuranceRegistration:
         if self._task:
             await asyncio.shield(self._task)
 
-    async def check(self, plan: str, coverage_type: CoverageType) -> dict:
+    async def check(
+        self, plan: str, coverage_type: CoverageType, *, self_pay: bool = False
+    ) -> dict:
+        """Self-pay asks the middleware for the office's self-pay plan; plan words are dropped."""
         clear_acceptance(self.state)
         offered = offered_plans(self.state, coverage_type)
         self.state.insurance.offered = None
@@ -136,11 +140,12 @@ class InsuranceRegistration:
         decision = await self._middleware.check(
             DecisionRequest(
                 office=office,
-                plan=plan.strip(),
+                plan="" if self_pay else plan.strip(),
                 coverageType=coverage_type,
                 dob=active.dob if active else "",
+                selfPay=self_pay,
                 offeredPlanIds=list(offered.plan_ids)
-                if offered and offered.plan_ids
+                if offered and offered.plan_ids and not self_pay
                 else None,
             )
         )

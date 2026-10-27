@@ -41,6 +41,7 @@ class InsuranceDecision(BaseModel):
         "accepted",
         "not_accepted",
         "office_no_coverage",
+        "no_self_pay",
         "ask_card",
         "ask_full_name",
         "choose_plan",

@@ -112,6 +112,18 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
             ),
             (
                 decision(
+                    coverage="routine_vision",
+                    outcome="not_accepted",
+                    participation="not_accepted",
+                    planId="",
+                    canonicalPlan="",
+                    canSchedule=False,
+                    reason="no_self_pay",
+                ),
+                "This office does not offer self-pay for routine vision exams.",
+            ),
+            (
+                decision(
                     outcome="needs_clarification",
                     participation="unknown",
                     planId="",
@@ -237,6 +249,8 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
             body = json.loads(request.content)
             bodies.append(body)
             plan, coverage, office = body["plan"], body["coverageType"], body["office"]
+            if body["selfPay"]:
+                plan = "Self Pay"
             if plan not in questions:
                 return httpx.Response(200, json=decision(plan, coverage, office))
             options = [
@@ -323,6 +337,36 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(bodies[-1]["plan"], "Medicare")
                 self.assertNotIn("offeredPlanIds", bodies[-1])
                 self.assertIsNone(state.insurance.offered)
+
+    async def test_self_pay_sends_flag_instead_of_plan_and_clears_offered_plans(
+        self,
+    ):
+        state, owner, bodies = self.offering({"Aetna": ("Aetna EPO", "Aetna Medicare")})
+        await owner.check("Aetna", "medical")
+        self.assertIsNotNone(state.insurance.offered)
+        result = await owner.check("paying out of pocket", "medical", self_pay=True)
+        self.assertEqual(result["outcome"], "accepted")
+        self.assertTrue(accepted_insurance(state).decision.selfPay)
+        self.assertIsNone(state.insurance.offered)
+        self.assertEqual(
+            bodies,
+            [
+                dict(
+                    office="spring-hill",
+                    plan="Aetna",
+                    coverageType="medical",
+                    dob="",
+                    selfPay=False,
+                ),
+                dict(
+                    office="spring-hill",
+                    plan="",
+                    coverageType="medical",
+                    dob="",
+                    selfPay=True,
+                ),
+            ],
+        )
 
     async def test_writes_send_checked_plan_id_and_name(self):
         legacy = {
