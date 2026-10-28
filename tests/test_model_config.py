@@ -43,7 +43,8 @@ class ModelConfigTests(unittest.TestCase):
                     self.assertEqual(
                         instructions,
                         load_prompt("thinker").format(
-                            office_knowledge="Hours\nWeekdays."
+                            transfer_policy=load_prompt("transfer_policy"),
+                            office_knowledge="Hours\nWeekdays.",
                         )
                         + f"\n\n## Call start\n\nCall started: {expected} (America/New_York). "
                         "Use this clinic-local date to interpret relative dates.",

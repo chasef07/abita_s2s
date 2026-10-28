@@ -15,53 +15,19 @@ from abita_s2s.observability.call_labels import (
     transfer_called,
 )
 from abita_s2s.observability.decisions import URL, parse, read_answers
+from abita_s2s.observability.judge_state import judge_state
 from abita_s2s.observability.judges import DEFINITIONS_HASH, GATES, JURORS, QUESTIONS
-from abita_s2s.offices import EASTERN
-from abita_s2s.prompt import load_prompt, thinker_instructions
 
 logger = logging.getLogger(__name__)
 EVALUATION_SECONDS = 20
 EVALUATION_GRACE_SECONDS = 1
 RETRY_SECONDS = 0.25
 MIN_CALL_SECONDS = 30
-PUBLISHED_VERSIONS = {"ab57a0c5a71b": "typesafe-scorecard-v8"}
+PUBLISHED_VERSIONS = {"f60da2c6d2c8": "typesafe-scorecard-v9"}
 EVALUATOR_VERSION = PUBLISHED_VERSIONS.get(
     DEFINITIONS_HASH, f"typesafe-scorecard-{DEFINITIONS_HASH}"
 )
 YES_ABOVE = 0.40
-SPEAKERS = {"user": "caller", "assistant": "agent"}
-
-
-def judge_state(history: ChatContext, office_knowledge: str) -> dict:
-    """Give judges the agent's rules and office knowledge once, and the call as one line per turn or tool result.
-
-    A tool line sits where its result arrived, so judges see what the agent knew when.
-    """
-    started = datetime.fromtimestamp(history.items[0].created_at, EASTERN)
-    calls = {
-        item.call_id: item for item in history.items if item.type == "function_call"
-    }
-    answered = {
-        item.call_id for item in history.items if item.type == "function_call_output"
-    }
-    lines = []
-    for item in history.items:
-        if item.type == "message" and item.role in SPEAKERS:
-            if text := (item.text_content or "").strip():
-                interrupted = " (interrupted)" if item.interrupted else ""
-                lines.append(f"{SPEAKERS[item.role]}: {text}{interrupted}")
-        elif item.type == "function_call" and item.call_id not in answered:
-            lines.append(f"tool {item.name}({item.arguments}) -> no result")
-        elif item.type == "function_call_output" and item.call_id in calls:
-            call = calls[item.call_id]
-            result = f"ERROR: {item.output}" if item.is_error else item.output
-            lines.append(f"tool {call.name}({call.arguments}) -> {result}")
-    return {
-        "agent_instructions": thinker_instructions(started, office_knowledge)
-        + "\n\n"
-        + load_prompt("speaker"),
-        "transcript": lines,
-    }
 
 
 def majority(votes: dict) -> dict:
@@ -102,7 +68,9 @@ async def evaluate_judges(
     deadline = asyncio.get_running_loop().time() + seconds
     async with httpx.AsyncClient(timeout=seconds) as client:
 
-        async def ask(model: str, state: dict, questions: dict) -> dict:
+        async def ask(
+            model: str, state: dict, questions: dict
+        ) -> tuple[dict, str | None]:
             attempts = 0
             http_status = None
             try:
@@ -177,14 +145,17 @@ async def evaluate_judges(
     if isinstance(labels, Exception):
         labels = classification("incomplete", "classification_failed")
     replies = dict(zip(jurors, replies, strict=True))
+    served = {
+        juror: reply[1] for juror, reply in replies.items() if isinstance(reply, tuple)
+    }
     for name in asked:
         votes, failures = {}, {}
         for juror, reply in replies.items():
-            if not isinstance(reply, dict):
+            if not isinstance(reply, tuple):
                 failures[juror] = type(reply).__name__
                 continue
             try:
-                votes[juror] = parse(QUESTIONS[name], reply.get(name))
+                votes[juror] = parse(QUESTIONS[name], reply[0].get(name))
             except ValueError:
                 failures[juror] = "ValueError"
                 logger.error(
@@ -200,7 +171,12 @@ async def evaluate_judges(
                 "votes": votes,
                 "errors": failures,
             }
-    return {"results": results, "errors": errors, "classification": labels}
+    return {
+        "results": results,
+        "errors": errors,
+        "servedModels": served,
+        "classification": labels,
+    }
 
 
 async def evaluate_call(
