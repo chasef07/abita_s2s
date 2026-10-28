@@ -14,6 +14,7 @@ from abita_s2s.observability.call_labels import (
     classify_labels,
     transfer_called,
 )
+from abita_s2s.observability import knowledge_gap
 from abita_s2s.observability.decisions import URL, parse, read_answers
 from abita_s2s.observability.judges import DEFINITIONS_HASH, GATES, JURORS, QUESTIONS
 from abita_s2s.offices import EASTERN
@@ -168,6 +169,10 @@ async def evaluate_judges(
                 raise
 
         juror_questions = {name: QUESTIONS[name] for name in asked}
+        if "knowledge_available" in asked:
+            juror_questions[knowledge_gap.KEY] = knowledge_gap.line_question(
+                state["transcript"]
+            )
         replies = await asyncio.gather(
             *(ask(juror, state, juror_questions) for juror in jurors),
             classify_labels(ask, state, closeout, transferred=transferred),
@@ -200,6 +205,17 @@ async def evaluate_judges(
                 "votes": votes,
                 "errors": failures,
             }
+    gap = results.get("knowledge_available", {})
+    if (
+        knowledge_gap.KEY in juror_questions
+        and gap.get("verdict") is False
+        and (
+            line := knowledge_gap.picked_line(
+                juror_questions[knowledge_gap.KEY], replies, len(JURORS)
+            )
+        )
+    ):
+        gap["line"] = line
     return {"results": results, "errors": errors, "classification": labels}
 
 
