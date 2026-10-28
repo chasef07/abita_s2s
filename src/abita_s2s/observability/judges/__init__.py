@@ -12,7 +12,7 @@ from pathlib import Path
 JURORS = (
     "typesafe/jev-1.14",
     "perplexity/pplx-decider-v1.2",
-    "baseten/mammoth-1:free",
+    "baseten/mammoth-1",
 )
 
 JUDGES = {
