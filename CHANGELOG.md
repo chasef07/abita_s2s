@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.1](https://github.com/chasef07/abita_s2s/compare/v0.23.0...v0.23.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **evaluation:** use the paid Baseten mammoth-1 juror ([#233](https://github.com/chasef07/abita_s2s/issues/233)) ([16360a2](https://github.com/chasef07/abita_s2s/commit/16360a218999cf2a8e64fc100b8a5091db496d30))
+
 ## [0.23.0](https://github.com/chasef07/abita_s2s/compare/v0.22.0...v0.23.0) (2026-10-27)
 
 
