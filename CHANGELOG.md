@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.0](https://github.com/chasef07/abita_s2s/compare/v0.24.0...v0.25.0) (2026-10-29)
+
+
+### Features
+
+* **insurance:** insurance list in the prompt and plan IDs instead of check_insurance ([#240](https://github.com/chasef07/abita_s2s/issues/240)) ([6bf6515](https://github.com/chasef07/abita_s2s/commit/6bf65159317c6ad88c2eb37d0c10caffbd636cac))
+
 ## [0.24.0](https://github.com/chasef07/abita_s2s/compare/v0.23.2...v0.24.0) (2026-10-29)
 
 
