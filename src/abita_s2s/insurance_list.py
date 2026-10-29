@@ -102,6 +102,24 @@ def listed_plan(
     return plan
 
 
+def carrier_plans(plans: OfficePlans | None, carrier_id: str | None) -> str:
+    """The listed plans paid through a chart's carrier, so the agent names one plan."""
+    if plans is None or not carrier_id:
+        return ""
+    matches = [
+        f"{plan.label} `{plan.planId}` ({VISITS[coverage]})"
+        for coverage, listed in (
+            ("medical", plans.medical),
+            ("routine_vision", plans.routine_vision),
+        )
+        for plan in listed
+        if plan.carrierId == carrier_id
+    ]
+    if not matches:
+        return " No plan in the Insurance list uses this carrier; ask which plan is on the card."
+    return " Insurance list plans on this carrier: " + "; ".join(matches) + "."
+
+
 def _section(title: str, plans: Sequence[PlanSummary]) -> str:
     if not plans:
         return (

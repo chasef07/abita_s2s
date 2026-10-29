@@ -1,0 +1,94 @@
+name: Abita insurance plan IDs
+# Sandbox fixtures: Maya Singleproof, DOB 05/12/1985, +12025550148 must resolve
+# uniquely at Spring Hill with carrier AETNA on file, no staff note, one upcoming
+# medical visit, and eligible future medical slots. Spring Hill lists Aetna and
+# Humana as "varies by plan", Aetna EPO as not accepted, and Cigna Sure Fit as not
+# confirmed yet. The sandbox Spring Hill has no routine vision, so every scenario
+# is a medical visit. Existing-patient callers ask to move their visit so a search
+# runs; every call ends once openings are offered or the insurance answer is given,
+# so no chart, insurance change, or visit is written. New-patient callers may be
+# asked intake questions; they end the call instead of answering them.
+# Verify the insurancePlanId and visitType tool arguments; the spoken flow alone
+# is not a pass.
+scenarios:
+  - label: Existing patient confirms the specific plan behind a shared carrier
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
+      Open with: "Hi, I need to move my glaucoma follow-up to a later week." Give
+      your first name when asked and DOB only if needed. Your insurance has not
+      changed. If asked which plan you have, say "Aetna Medicare PPO." Only after
+      actual times are offered, say you will check your calendar and call back,
+      then end. If told no openings can be found, accept that and end.
+    agent_expectations: >
+      Before searching openings, asks or confirms which Aetna plan the patient
+      has, naming plans rather than a carrier code, and does not say plan IDs.
+      Searches medical openings with insurancePlanId aetna-medicare-ppo and offers
+      real times. Does not call update_insurance and does not book or reschedule
+      anything.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Existing patient's plan is not accepted
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
+      Open with: "Hi, I need to move my glaucoma follow-up to a later week." Give
+      your first name when asked and DOB only if needed. Your insurance has not
+      changed. If asked which plan you have, say "Aetna EPO." If offered a staff
+      request or self-pay, say you will check with your insurance first and call
+      back, then end.
+    agent_expectations: >
+      Says Aetna EPO is not accepted for medical visits at this office. Offers no
+      appointment times and does not book or reschedule. May offer self-pay or a
+      staff request. Does not call update_insurance.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: New patient asks about a company that varies by plan
+    instructions: >
+      You are Carla Nuevo, a new patient, born March 3, 1970. Open with: "Hi, I'm
+      a new patient and I want to make an appointment. Do you take Humana?" If
+      asked what the visit is for, say your eyes have been red and irritated for
+      a week. If asked which Humana plan, say "Humana Medicare PPO." Once you hear
+      whether that plan is accepted, say you will call back to finish signing up,
+      then end. Do not give your address or other details.
+    agent_expectations: >
+      Does not say Humana is accepted until it knows the specific plan; asks
+      which Humana plan is on the card. Then says Humana Medicare PPO is accepted
+      for medical visits. Asking intake questions is fine; does not call
+      add_patient or offer times.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550161'
+
+  - label: New patient with a plan staff must confirm
+    instructions: >
+      You are Dana Pending, a new patient, born July 9, 1988. Open with: "Hi, I'm
+      new and need to see the eye doctor about dry, irritated eyes. I have Cigna
+      Sure Fit." Once you hear the answer about your insurance, if offered a staff
+      request, decline and say you will call back, then end. Do not give your
+      address or other details.
+    agent_expectations: >
+      Does not say Cigna Sure Fit is accepted or that it is not accepted; says the
+      office must confirm the plan before scheduling, and offers a staff request.
+      Does not call add_patient or offer times.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550162'
+
+  - label: New patient says only Medicare
+    instructions: >
+      You are Ron Basic, a new patient, born January 20, 1950. Open with: "Hi, I'm
+      new, I need to see the eye doctor about cataracts. Do you take Medicare?" If
+      asked what kind of Medicare, say it is the red, white, and blue card. Once
+      you hear whether it is accepted, say you will call back to sign up, then
+      end. Do not give your address or other details.
+    agent_expectations: >
+      Asks whether it is the red, white, and blue Medicare card or a plan from a
+      company such as Humana or Aetna before answering, then says traditional
+      Medicare is accepted for medical visits. Asking intake questions is fine;
+      does not call add_patient or offer times.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550163'

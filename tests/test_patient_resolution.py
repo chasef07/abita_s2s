@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import httpx
-from insurance_fixtures import decision, office_plans
+from insurance_fixtures import decision, listed, office_plans
 from livekit.agents.llm.tool_context import ToolContext
 from livekit.agents.llm.utils import build_strict_openai_schema
 
@@ -16,6 +16,7 @@ from abita_s2s.config import Config
 from abita_s2s.identity import (
     PatientResolver,
 )
+from abita_s2s.insurance_list import OfficePlans
 from abita_s2s.integrations.patient_middleware import PatientMiddleware, Receipt
 from abita_s2s.name_matcher import phone_name_matches
 from abita_s2s.offices import SPRING_HILL
@@ -138,6 +139,48 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIn(shown, answer)
                 else:
                     self.assertNotIn("Staff note", answer)
+
+    async def test_resolution_lists_the_plans_on_the_chart_carrier(self):
+        state = call_state()
+        state.insurance.plans = OfficePlans.model_validate(
+            {
+                "medical": [
+                    listed("Humana Medicaid HMO", carrierId="car303033"),
+                    listed("Aetna Medicare HMO", carrierId="car40907"),
+                    listed("Simply Medicaid", carrierId="car40907"),
+                ],
+                "routine_vision": [listed("Humana Vision", carrierId="car40907")],
+            }
+        )
+        for carrier, shown in (
+            (
+                "car303033",
+                "Insurance list plans on this carrier: Humana Medicaid HMO "
+                "`humana-medicaid-hmo` (medical visits).",
+            ),
+            (
+                "car40907",
+                "Insurance list plans on this carrier: Aetna Medicare HMO "
+                "`aetna-medicare-hmo` (medical visits); Simply Medicaid "
+                "`simply-medicaid` (medical visits); Humana Vision "
+                "`humana-vision` (routine vision exams).",
+            ),
+            ("car999", "No plan in the Insurance list uses this carrier"),
+        ):
+            with self.subTest(carrier=carrier):
+                state.patient.active = None
+                r, _ = self.resolver([receipt(insuranceCarrierId=carrier)], state=state)
+                answer = (await r.resolve("Jane", "01/02/1980"))["answer"]
+                self.assertIn(shown, answer)
+
+    async def test_resolution_omits_carrier_plans_without_a_list_or_carrier(self):
+        for plans, carrier in ((None, "car1"), (office_plans(), None)):
+            with self.subTest(carrier=carrier):
+                state = call_state()
+                state.insurance.plans = plans
+                r, _ = self.resolver([receipt(insuranceCarrierId=carrier)], state=state)
+                answer = (await r.resolve("Jane", "01/02/1980"))["answer"]
+                self.assertNotIn("this carrier", answer)
 
     async def test_active_patient_wins_over_matching_phone_record(self):
         r, calls = self.resolver([receipt("chart-existing")])
