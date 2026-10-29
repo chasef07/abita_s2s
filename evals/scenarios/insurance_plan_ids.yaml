@@ -15,10 +15,12 @@ scenarios:
     instructions: >
       You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
       Open with: "Hi, I need to move my glaucoma follow-up to a later week." Give
-      your first name when asked and DOB only if needed. Your insurance has not
-      changed. If asked which plan you have, say "Aetna Medicare PPO." Only after
-      actual times are offered, say you will check your calendar and call back,
-      then end. If told no openings can be found, accept that and end.
+      your first name when asked and DOB only if needed. Confirm the November 6
+      visit is the one to move. If asked which week, say any day the week of
+      November 16. Your insurance has not changed. If asked which plan you have,
+      say "Aetna Medicare PPO." Stay on the call until the agent reads you
+      specific dates and times; then say you will check your calendar and call
+      back, and end. If told no openings can be found, accept that and end.
     agent_expectations: >
       Before searching openings, asks or confirms which Aetna plan the patient
       has, naming plans rather than a carrier code, and does not say plan IDs.
