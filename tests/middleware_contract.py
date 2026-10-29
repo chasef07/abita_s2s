@@ -7,9 +7,8 @@ from types import SimpleNamespace
 
 import httpx
 from test_patient_resolution import call_state
-from test_scheduling import verified
+from test_scheduling import PLAN, verified
 
-from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.offices import get_office_profile
 from abita_s2s.tools.scheduling import SchedulingTools
 from abita_s2s.scheduling.appointments import Scheduling
@@ -52,16 +51,10 @@ async def main(url):
                 appointments=loaded["appointments"],
             )
             state.patient.active = state.patient.active.model_copy(
-                update={
-                    "insuranceDecision": InsuranceDecision.model_validate(
-                        loaded["insuranceDecision"]
-                    ),
-                    "insuranceCarrier": loaded["insuranceCarrier"],
-                }
+                update={"insuranceCarrier": loaded["insuranceCarrier"]}
             )
-            state.insurance.accepted = None
             old_ref = owner.appointments()[0]["appointmentRef"]
-            available = await owner.availability("medical", "2026-06-03")
+            available = await owner.availability("medical", PLAN, "2026-06-03")
             assert available["outcome"] == "found", available
             slot_ref = available["slots"][0]["appointmentSlotRef"]
             args = dict(
@@ -104,9 +97,7 @@ async def main(url):
                 ("north-miami-beach-optical", "medical"),
             ):
                 office_state = call_state(None, get_office_profile(office))
-                verified(
-                    office_state, patient_id="12345", dob="01/15/1980", visit=visit
-                )
+                verified(office_state, patient_id="12345", dob="01/15/1980")
                 office_owner = Scheduling(
                     office_state,
                     SchedulingHTTP(client, config),
@@ -118,6 +109,7 @@ async def main(url):
                     ).list_available_appointments(
                         SimpleNamespace(userdata=office_state),
                         visitType=visit,
+                        insurancePlanId=PLAN,
                     )
                     assert response.startswith("blocked: No providers are eligible"), (
                         response

@@ -2,14 +2,6 @@
 
 import asyncio
 
-from abita_s2s.insurance_contract import InsuranceDecision
-from abita_s2s.insurance_state import (
-    AcceptedInsurance,
-    accepted_insurance,
-    clear_acceptance,
-    clear_chartless_acceptance,
-    rebind_acceptance,
-)
 from abita_s2s.integrations.patient_middleware import (
     Candidate,
     Multiple,
@@ -174,7 +166,6 @@ class PatientResolver:
         ):
             return await asyncio.shield(self._task)
         self._pending = (first_name, dob)
-        clear_chartless_acceptance(self.state)
         active = self.state.patient.active
         if active and not self._same_as_active(active, first_name, dob):
             self._previous_id = active.patientId
@@ -325,27 +316,20 @@ class PatientResolver:
             receipt, "switched" if switched else "verified", call_id=call_id
         )
 
-    def refresh_insurance(
-        self,
-        expected: Receipt,
-        carrier: str,
-        decision: InsuranceDecision,
-        checked: AcceptedInsurance,
-    ) -> bool:
-        """Commit validated coverage and its acceptance, fencing older patient reads."""
+    def refresh_insurance(self, expected: Receipt, carrier: str, revision: int) -> bool:
+        """Commit validated coverage, fencing older patient reads."""
         if (
             self._closed
-            or self.state.patient.revision != checked.patient_revision
+            or self.state.patient.revision != revision
             or self.state.patient.active is not expected
         ):
             return False
         self._token = None
-        self.state.patient.update_insurance(carrier, decision)
-        rebind_acceptance(self.state, checked, decision)
+        self.state.patient.update_insurance(carrier)
         return True
 
     def begin_registration(self, first_name: str, dob: str) -> bool:
-        """Leave a different patient's chart for caller-confirmed new intake."""
+        """Make caller-confirmed new intake the pending patient, leaving a different patient's chart."""
         active = self.state.patient.active
         if (
             self._closed
@@ -357,29 +341,26 @@ class PatientResolver:
         self._token = None
         self._pending = (first_name, dob)
         self._previous_id = None
-        self.state.patient.deactivate()
-        clear_acceptance(self.state)
+        if active:
+            self.state.patient.deactivate()
         return True
 
-    def activate_created(self, checked: AcceptedInsurance, receipt: Receipt) -> bool:
-        """Commit a validated creation only while its original acceptance is current."""
-        if (
-            self._closed
-            or self.state.patient.active is not None
-            or accepted_insurance(self.state) is not checked
-        ):
+    def registering(self, first_name: str, dob: str) -> bool:
+        """Whether new intake for this identity is still the call's patient."""
+        return (
+            not self._closed
+            and self.state.patient.active is None
+            and self._pending == (first_name, dob)
+        )
+
+    def activate_created(self, first_name: str, dob: str, receipt: Receipt) -> bool:
+        """Commit a validated creation only while its intake is still the call's patient."""
+        if not self.registering(first_name, dob):
             return False
         self._token = None
         self.state.patient.activate(receipt)
         self._pending = (None, None)
         self._previous_id = None
-        rebind_acceptance(
-            self.state,
-            checked,
-            receipt.insuranceDecision,
-            patient_id=receipt.patientId,
-            absence=None,
-        )
         return True
 
     def _facts(

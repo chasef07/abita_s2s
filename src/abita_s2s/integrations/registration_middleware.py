@@ -35,6 +35,7 @@ class PlanSummary(Record):
     requirements: list[Literal["pcp_referral", "prior_authorization", "staff_verify"]]
     callerNotice: str
     acceptedAt: list[str]
+    selfPay: bool
 
 
 class PlanList(Record):
@@ -96,17 +97,7 @@ CREATED = TypeAdapter(
 UPDATED = TypeAdapter(
     Annotated[UpdatedReceipt | UpdateRejection, Field(discriminator="status")]
 )
-DECISION = TypeAdapter(InsuranceDecision)
 PLAN_LIST = TypeAdapter(PlanList)
-
-
-class DecisionRequest(Request):
-    office: OfficeKey
-    plan: str
-    coverageType: CoverageType
-    dob: str
-    selfPay: bool
-    offeredPlanIds: list[str] | None = None
 
 
 class NewPatient(Request):
@@ -120,38 +111,24 @@ class NewPatient(Request):
     sex: Literal["male", "female"]
     phone: str
     aptSuite: str
-    insurance: str
     subscriberName: str
     subscriberNum: str
-    insurancePlanId: str | None = None
+    insurancePlanId: str
     email: str | None = None
-    coverageType: CoverageType | None = None
+    coverageType: CoverageType
     office: OfficeKey
 
 
 class InsuranceChange(Request):
     patientId: str
     dob: str
-    insurance: str
     coverageType: CoverageType
     subscriberNum: str
-    insurancePlanId: str | None = None
+    insurancePlanId: str
     office: OfficeKey
 
 
 class RegistrationMiddleware(Middleware):
-    async def check(self, request: DecisionRequest) -> InsuranceDecision | None:
-        reply = await self._post("/api/insurance/decision", request, DECISION)
-        if isinstance(reply, str) or not reply.ok or reply.body is None:
-            return None
-        decision = reply.body
-        if (
-            not same_office(decision.officeId, request.office)
-            or decision.coverageType != request.coverageType
-        ):
-            return None
-        return decision
-
     async def plans(self, office: str, coverage: CoverageType) -> PlanList | str:
         """Every plan's standing at the office for one coverage in one attempt, or a log-safe cause."""
         reply = await self._get(
@@ -206,13 +183,8 @@ class RegistrationMiddleware(Middleware):
         decision = body.insuranceDecision
         if decision is not None and (
             not same_office(decision.officeId, request.office)
-            or decision.coverageType != (request.coverageType or "medical")
-            or decision.canonicalPlan != request.insurance
-            or (
-                decision.planId
-                and request.insurancePlanId is not None
-                and decision.planId != request.insurancePlanId
-            )
+            or decision.coverageType != request.coverageType
+            or (decision.planId and decision.planId != request.insurancePlanId)
         ):
             return WriteFailure(
                 status="uncertain", reason="mismatched_insurance_decision"

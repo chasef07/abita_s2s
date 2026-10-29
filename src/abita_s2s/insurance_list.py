@@ -1,19 +1,24 @@
-"""Read the called office's insurance plans once per call, as text for the thinker's prompt."""
+"""Read the called office's insurance plans once per call: the thinker's Insurance list
+and the only plan IDs insurance and scheduling tools accept."""
 
 import asyncio
 import logging
 import re
 from collections.abc import Sequence
 
+from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.integrations.registration_middleware import (
     PlanSummary,
     RegistrationMiddleware,
 )
 from abita_s2s.records import Record
+from abita_s2s.results import reply
+from abita_s2s.state import CallState
 
 logger = logging.getLogger(__name__)
 
 UNAVAILABLE = "The insurance list could not be loaded for this call."
+VISITS = {"medical": "medical visits", "routine_vision": "routine vision exams"}
 
 REQUIREMENTS = {
     "pcp_referral": "a referral from the primary care doctor",
@@ -33,11 +38,13 @@ class OfficePlans(Record):
     routine_vision: list[PlanSummary]
 
 
-def render_insurance_list(plans: OfficePlans) -> str:
+def render_insurance_list(plans: OfficePlans | None) -> str:
     """Medical then routine vision plans, grouped by company under level 3 and 4 headings.
 
     Headings are level 3 because the list sits under the prompt's `## Insurance list`.
     """
+    if plans is None:
+        return UNAVAILABLE
     return "\n\n".join(
         (
             _section("Medical visits", plans.medical),
@@ -46,10 +53,10 @@ def render_insurance_list(plans: OfficePlans) -> str:
     )
 
 
-async def read_insurance_list(
+async def read_office_plans(
     middleware: RegistrationMiddleware, office_key: str
-) -> str:
-    """Both coverages' plans as prompt text, or the unavailable notice with each cause logged."""
+) -> OfficePlans | None:
+    """Both coverages' plans, or None with each cause logged."""
     medical, routine_vision = await asyncio.gather(
         middleware.plans(office_key, "medical"),
         middleware.plans(office_key, "routine_vision"),
@@ -65,16 +72,34 @@ async def read_insurance_list(
                 if isinstance(cause, str)
             ),
         )
-        return UNAVAILABLE
+        return None
     logger.info(
         "Insurance list loaded office=%s medical=%d routine_vision=%d",
         office_key,
         len(medical.plans),
         len(routine_vision.plans),
     )
-    return render_insurance_list(
-        OfficePlans(medical=medical.plans, routine_vision=routine_vision.plans)
-    )
+    return OfficePlans(medical=medical.plans, routine_vision=routine_vision.plans)
+
+
+def listed_plan(
+    state: CallState, plan_id: str, coverage: CoverageType
+) -> PlanSummary | dict:
+    """The plan a tool names from this visit type's list, or the reply refusing it."""
+    plans = state.insurance.plans
+    if plans is None:
+        return reply(
+            "insurance_list_unavailable",
+            "blocked: The insurance list could not be loaded for this call, so the plan cannot be confirmed. Offer a staff request or transfer.",
+        )
+    listed = plans.medical if coverage == "medical" else plans.routine_vision
+    plan = next((plan for plan in listed if plan.planId == plan_id.strip()), None)
+    if plan is None:
+        return reply(
+            "unknown_plan",
+            f"needs_input: Use a plan ID from the Insurance list section for {VISITS[coverage]}. If the caller's plan is not listed, say you could not confirm it and offer a staff request.",
+        )
+    return plan
 
 
 def _section(title: str, plans: Sequence[PlanSummary]) -> str:

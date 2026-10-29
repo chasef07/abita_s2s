@@ -25,7 +25,7 @@ class CallStateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(patient.revision, 1)
         self.assertEqual(patient.active.appointments, [booked])
         self.assertEqual(patient.active.appointmentsStatus, "error")
-        patient.update_insurance("Other Plan", jane.insuranceDecision)
+        patient.update_insurance("Other Plan")
         self.assertEqual(patient.revision, 2)
         patient.activate(Receipt.model_validate(receipt("chart-john", "John")))
         self.assertEqual(patient.revision, 3)

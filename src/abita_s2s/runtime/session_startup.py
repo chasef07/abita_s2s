@@ -20,7 +20,7 @@ from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.insurance_list import (
     OfficePlans,
-    read_insurance_list,
+    read_office_plans,
     render_insurance_list,
 )
 from abita_s2s.knowledge import read_office_knowledge, render_office_knowledge
@@ -74,13 +74,13 @@ async def office_knowledge_text(
     return render_office_knowledge(KNOWLEDGE_ENTRIES.validate_python(scenario))
 
 
-async def insurance_list_text(
+async def office_plans(
     middleware: RegistrationMiddleware, office_key: str, scenario: object | None
-) -> str:
-    """The office's insurance list, or a simulation scenario's synthetic plans."""
+) -> OfficePlans | None:
+    """The office's insurance plans, or a simulation scenario's synthetic plans."""
     if scenario is None:
-        return await read_insurance_list(middleware, office_key)
-    return render_insurance_list(OfficePlans.model_validate(scenario))
+        return await read_office_plans(middleware, office_key)
+    return OfficePlans.model_validate(scenario)
 
 
 async def wait_for_sip(ctx):
@@ -262,10 +262,11 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
     ctx.add_shutdown_callback(close_client)
     product = Product(client, config)
     registration = RegistrationMiddleware(client, config)
-    office_knowledge, insurance_list = await asyncio.gather(
+    office_knowledge, plans = await asyncio.gather(
         office_knowledge_text(product, office.key, scenario_knowledge),
-        insurance_list_text(registration, office.key, scenario_plans),
+        office_plans(registration, office.key, scenario_plans),
     )
+    state.insurance.plans = plans
     if config.interaction_url and not ctx.is_fake_job():
         if call.caller_phone:
             state.reporter = CallReporter(
@@ -274,7 +275,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         else:
             logger.error("Product call reporting unavailable: caller phone missing")
     try:
-        model = create_model(config, office_knowledge, insurance_list)
+        model = create_model(config, office_knowledge, render_insurance_list(plans))
         session = AgentSession[CallState](
             userdata=state,
             llm=model,

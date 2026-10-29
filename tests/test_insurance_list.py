@@ -8,11 +8,13 @@ from abita_s2s.config import Config
 from abita_s2s.insurance_list import (
     UNAVAILABLE,
     OfficePlans,
-    read_insurance_list,
+    listed_plan,
+    read_office_plans,
     render_insurance_list,
 )
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
 from abita_s2s.prompt import thinker_instructions
+from test_patient_resolution import call_state
 
 CONFIG = Config(
     "offline", middleware_url="https://middleware.test", middleware_token="test-auth"
@@ -35,6 +37,7 @@ def plan(plan_id, family="Aetna", **fields):
         "callerNotice": "",
         "note": "internal routing note",
         "acceptedAt": [],
+        "selfPay": False,
         **fields,
     }
 
@@ -239,13 +242,9 @@ class ReadTests(unittest.IsolatedAsyncioTestCase):
                 200, json=plans_reply("spring_hill", coverage, replies[coverage])
             )
 
-        text = await read_insurance_list(self.middleware(handler), "spring-hill")
-        self.assertEqual(
-            text,
-            render(
-                medical=replies["medical"], routine_vision=replies["routine_vision"]
-            ),
-        )
+        plans = await read_office_plans(self.middleware(handler), "spring-hill")
+        self.assertEqual(plans, OfficePlans.model_validate(replies))
+        text = render_insurance_list(plans)
         self.assertEqual(
             sorted((r.method, r.url.path, r.url.query.decode()) for r in requests),
             [
@@ -261,7 +260,7 @@ class ReadTests(unittest.IsolatedAsyncioTestCase):
             thinker_instructions(STARTED, "Office facts.", text),
         )
 
-    async def test_any_failed_read_yields_only_the_notice_and_logs_its_cause(self):
+    async def test_any_failed_read_yields_no_plans_and_logs_its_cause(self):
         medical = plans_reply("spring_hill", "medical", [plan("aetna-hmo")])
 
         def offline(request):
@@ -314,12 +313,40 @@ class ReadTests(unittest.IsolatedAsyncioTestCase):
                 self.subTest(cause=cause),
                 self.assertLogs("abita_s2s.insurance_list", level="ERROR") as logs,
             ):
-                text = await read_insurance_list(
+                plans = await read_office_plans(
                     self.middleware(handler, config), "spring-hill"
                 )
-                self.assertEqual(text, UNAVAILABLE)
+                self.assertIsNone(plans)
+                self.assertEqual(render_insurance_list(plans), UNAVAILABLE)
                 self.assertEqual(len(logs.output), 1)
                 self.assertIn(f"cause={cause}", logs.output[0])
                 self.assertIn("office=spring-hill", logs.output[0])
                 self.assertNotIn("private", str(logs.output))
                 self.assertNotIn("test-auth", str(logs.output))
+
+
+class ListedPlanTests(unittest.TestCase):
+    def test_tools_take_only_a_plan_id_from_the_visit_types_list(self):
+        state = call_state()
+        self.assertEqual(listed_plan(state, " vsp ", "routine_vision").label, "VSP")
+        self.assertTrue(listed_plan(state, "self-pay-medical", "medical").selfPay)
+        for plan_id, coverage in (
+            ("vsp", "medical"),
+            ("Aetna", "medical"),
+            ("aetna-hmo", "medical"),
+        ):
+            with self.subTest(plan_id=plan_id, coverage=coverage):
+                result = listed_plan(state, plan_id, coverage)
+                self.assertEqual(result["outcome"], "unknown_plan")
+                self.assertTrue(result["answer"].startswith("needs_input: "))
+                self.assertIn(
+                    "Insurance list section for medical visits", result["answer"]
+                )
+
+    def test_unloaded_list_blocks_instead_of_trusting_plan_words(self):
+        state = call_state()
+        state.insurance.plans = None
+        result = listed_plan(state, "aetna", "medical")
+        self.assertEqual(result["outcome"], "insurance_list_unavailable")
+        self.assertTrue(result["answer"].startswith("blocked: "))
+        self.assertIn("staff request or transfer", result["answer"])

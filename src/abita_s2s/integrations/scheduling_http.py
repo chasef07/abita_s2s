@@ -12,7 +12,7 @@ from pydantic import (
     model_validator,
 )
 
-from abita_s2s.insurance_contract import CoverageType
+from abita_s2s.insurance_contract import CoverageType, InsuranceDecision
 from abita_s2s.integrations.middleware import Middleware, OfficeKey
 from abita_s2s.integrations.transport import Request
 from abita_s2s.records import Record, Text
@@ -42,6 +42,7 @@ class SlotSearch(Request):
     startDate: str
     patientId: str
     visitType: CoverageType
+    insurancePlanId: str
     dob: str
 
 
@@ -97,8 +98,10 @@ class Inventory(Record):
         "no_availability",
         "no_eligible_providers",
         "availability_search_incomplete",
+        "insurance_not_cleared",
     ]
     slots: list[Slot]
+    insuranceDecision: InsuranceDecision | None = None
     searchedFrom: str | None = None
     searchedThrough: str | None = None
     bookingTokenExpiresAt: AwareDatetime | None = None
@@ -118,6 +121,12 @@ class Inventory(Record):
             or not self.message.strip()
         ):
             raise ValueError("Invalid search failure")
+        if self.outcome == "insurance_not_cleared" and (
+            self.status != "success"
+            or self.insuranceDecision is None
+            or self.insuranceDecision.canSchedule
+        ):
+            raise ValueError("Uncleared insurance needs its decision")
         found = self.outcome == "availability_found"
         if found != bool(self.slots) or (
             found and (self.status != "success" or self.bookingTokenExpiresAt is None)

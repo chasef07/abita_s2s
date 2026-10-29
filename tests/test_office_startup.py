@@ -304,6 +304,11 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Fax records requests to 555-0142.", args["office_knowledge"])
         self.assertIn("`aetna-medical`: accepted", args["insurance_list"])
         self.assertIn("`aetna-routine_vision`: accepted", args["insurance_list"])
+        plans = args["userdata"].insurance.plans
+        self.assertEqual(
+            [plan.planId for plan in (*plans.medical, *plans.routine_vision)],
+            ["aetna-medical", "aetna-routine_vision"],
+        )
         self.assertEqual(
             {(r.url.host, r.url.params.get("office")) for r in requests},
             {("product.test", None), ("middleware.test", "spring-hill")},
@@ -313,6 +318,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         with self.assertLogs("abita_s2s.insurance_list", "ERROR") as logs:
             _, args = await self.run_startup(False)
         self.assertEqual(args["insurance_list"], INSURANCE_UNAVAILABLE)
+        self.assertIsNone(args["userdata"].insurance.plans)
         self.assertIn("cause=medical:not_configured", logs.output[0])
 
     async def test_office_knowledge_reaches_the_model_and_a_failed_read_continues(
@@ -397,6 +403,9 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             "This office does not accept insurance for routine vision exams.",
         )
         self.assertNotIn("/api/insurance/plans", [r.url.path for r in requests])
+        self.assertEqual(
+            args["userdata"].insurance.plans.medical[0].planId, "aetna-hmo"
+        )
 
     async def test_named_deployment_sandboxes_call_control(self):
         for deployment, sandbox in ((None, False), ("staging", True)):

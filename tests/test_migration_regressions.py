@@ -5,23 +5,13 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
-from insurance_fixtures import decision
-from abita_s2s.insurance_contract import InsuranceDecision
-from unittest.mock import AsyncMock
 import httpx
-from test_patient_resolution import CONFIG, call_state, receipt, search
-from test_scheduling import NOW
+from test_patient_resolution import call_state
 
 from abita_s2s.call_control import CallControl
 from abita_s2s.config import load_config
 from abita_s2s.handoff import AdmissionRejected
-from abita_s2s.identity import PatientResolver
-from abita_s2s.insurance import InsuranceRegistration
-from abita_s2s.insurance_state import insurance_ready
-from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.integrations.product import Product
-from abita_s2s.scheduling.appointments import Scheduling
-from abita_s2s.integrations.scheduling_http import SchedulingHTTP
 from abita_s2s.runtime.silence import BackendResponses
 
 
@@ -66,96 +56,6 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(target.admitted)
         self.assertEqual(str(requests[0].url), "http://127.0.0.1:8000/v1/handoffs")
         self.assertEqual(requests[0].headers["Authorization"], "Bearer offline")
-
-    async def resolved_owner(self, responses, **fields):
-        state = call_state(None)
-        responses = [
-            receipt(**fields),
-            *responses,
-        ]
-        requests = []
-
-        def handler(request):
-            requests.append(request)
-            return httpx.Response(200, json=responses.pop(0))
-
-        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-        self.addAsyncCleanup(client.aclose)
-        resolver = PatientResolver(state, PatientMiddleware(client, CONFIG))
-        scheduling = Scheduling(state, SchedulingHTTP(client, CONFIG), now=lambda: NOW)
-        self.addAsyncCleanup(resolver.aclose)
-        self.addAsyncCleanup(scheduling.aclose)
-        self.assertEqual(
-            (await resolver.resolve("Jane", "01/02/1980"))["outcome"], "verified"
-        )
-        self.assertIsNone(state.insurance.accepted)
-        return scheduling, resolver, requests
-
-    async def test_previous_patients_check_does_not_clear_returning_patient(self):
-        for plan, self_pay in (("", True), ("Unknown corrected plan", False)):
-            with self.subTest(plan=plan, self_pay=self_pay):
-                owner, resolver, requests = await self.resolved_owner(
-                    [
-                        receipt(
-                            "chart-john",
-                            "John",
-                            "03/04/1981",
-                        ),
-                        receipt(),
-                    ]
-                )
-                insurance = InsuranceRegistration(
-                    owner.state, resolver, AsyncMock(check=AsyncMock(return_value=None))
-                )
-                await insurance.check(plan, "medical", self_pay=self_pay)
-                await resolver.resolve("John", "03/04/1981")
-                self.assertEqual(owner.state.patient.active.patientId, "chart-john")
-                self.assertEqual(
-                    (await owner.availability("medical"))["outcome"], "needs_insurance"
-                )
-                self.assertEqual(len(requests), 2)
-                await resolver.resolve("Jane", "01/02/1980")
-                self.assertEqual(owner.state.patient.active.patientId, "chart-jane")
-                self.assertTrue(insurance_ready(owner.state))
-
-    async def test_absent_patients_check_does_not_clear_returning_patient(self):
-        state = call_state(None)
-        responses = [
-            search(),
-            receipt(),
-        ]
-        async with httpx.AsyncClient(
-            transport=httpx.MockTransport(
-                lambda request: httpx.Response(200, json=responses.pop(0))
-            )
-        ) as client:
-            resolver = PatientResolver(state, PatientMiddleware(client, CONFIG))
-            owner = Scheduling(state, SchedulingHTTP(client, CONFIG), now=lambda: NOW)
-            self.addAsyncCleanup(resolver.aclose)
-            self.addAsyncCleanup(owner.aclose)
-            self.assertEqual(
-                (await resolver.resolve("John", "03/04/1981"))["outcome"], "not_found"
-            )
-            insurance = InsuranceRegistration(
-                state,
-                resolver,
-                AsyncMock(
-                    check=AsyncMock(
-                        return_value=InsuranceDecision.model_validate(
-                            decision("Self Pay")
-                        )
-                    )
-                ),
-            )
-            await insurance.check("", "medical", self_pay=True)
-            self.assertIsNone(state.insurance.accepted.patient_id)
-            self.assertEqual(
-                (await resolver.resolve("Jane", "01/02/1980"))["outcome"], "verified"
-            )
-            self.assertEqual(
-                (await owner.availability("medical"))["outcome"], "needs_insurance"
-            )
-            self.assertEqual(responses, [])
 
     async def test_optional_practice_does_not_block_staff_tasks_or_direct_office(self):
         for practice in ("", "invalid"):

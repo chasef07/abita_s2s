@@ -5,6 +5,7 @@ from typing import Literal
 from livekit.agents import RunContext, function_tool
 
 from abita_s2s.identity import PatientResolver
+from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.insurance import InsuranceRegistration, Registration, staff
 from abita_s2s.scheduling.appointments import Scheduling
 from abita_s2s.state import CallState
@@ -64,14 +65,16 @@ class PatientTools:
         state: str,
         zip: str,
         sex: Literal["male", "female"],
+        visitType: CoverageType,
+        insurancePlanId: str,
         subscriberName: str,
         insuranceMemberId: str,
         readBack: Literal[True] | None,
     ) -> str:
         """Create a new patient chart and attach insurance from completed intake.
 
-        Requires accepted insurance for the visit type and caller confirmation of
-        the final read-back. No existing-chart lookup is required.
+        Requires the patient's plan ID from the Insurance list for the triaged visit
+        type and caller confirmation of the final read-back. No existing-chart lookup is required.
         Returns a plain-text status and result. A blocked result may mean the
         chart exists but insurance is not confirmed. Do not repeat chart creation
         after successful creation, partial creation, or an uncertain result.
@@ -89,8 +92,10 @@ class PatientTools:
             state: Two-letter state abbreviation.
             zip: ZIP code of the patient's address.
             sex: Patient's sex for registration.
+            visitType: The triaged visit type: medical or routine_vision.
+            insurancePlanId: The patient's plan ID from the Insurance list for visitType.
             subscriberName: Name on the insurance card; reuse the patient's name if confirmed as theirs.
-            insuranceMemberId: Member ID on the insurance card; use "self pay" for self-pay.
+            insuranceMemberId: Member ID on the insurance card; empty for a self-pay plan.
             readBack: True only after the caller confirms the complete final read-back; otherwise null.
         """
         if not bound(self._insurance, context):
@@ -108,6 +113,8 @@ class PatientTools:
             state=state,
             zip=zip,
             sex=sex,
+            visitType=visitType,
+            insurancePlanId=insurancePlanId,
             subscriberName=subscriberName,
             insuranceMemberId=insuranceMemberId,
             readBack=readBack,

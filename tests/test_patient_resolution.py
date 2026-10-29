@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import httpx
-from insurance_fixtures import decision
+from insurance_fixtures import decision, office_plans
 from livekit.agents.llm.tool_context import ToolContext
 from livekit.agents.llm.utils import build_strict_openai_schema
 
@@ -52,9 +52,11 @@ CONFIG = Config(
 
 
 def call_state(phone="+15555550101", office=SPRING_HILL):
-    return CallState(
+    state = CallState(
         CallContext("call", datetime.now(UTC), "abita", office.key, caller_phone=phone)
     )
+    state.insurance.plans = office_plans()
+    return state
 
 
 def candidate(patient_id="chart-jane", name="Jane", dob="01/02/1980"):
@@ -160,9 +162,6 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(r.state.patient.active.phone, r.state.call.caller_phone)
         self.assertNotIn("insPlanId", r.state.patient.active.model_dump())
         self.assertNotIn("respPartyId", r.state.patient.active.model_dump())
-        self.assertEqual(
-            r.state.patient.active.insuranceDecision.canonicalPlan, "Aetna"
-        )
         for private in (
             "chart-jane",
             "private-plan",

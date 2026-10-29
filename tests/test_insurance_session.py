@@ -1,4 +1,4 @@
-"""Exercise all three registered tools through LiveKit AgentSession, without APIs."""
+"""Exercise the registered patient and insurance tools through LiveKit AgentSession, without APIs."""
 
 import asyncio
 import json
@@ -14,7 +14,7 @@ from test_patient_resolution import CONFIG, call_state, search
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.identity import PatientResolver
-from insurance_fixtures import check_response, decision
+from insurance_fixtures import decision
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
@@ -68,8 +68,6 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
         requests = []
 
         def handler(request):
-            if request.url.path == "/api/insurance/decision":
-                return check_response(request)
             requests.append((request.url.path, json.loads(request.content)))
             return httpx.Response(200, json=bodies.pop(0))
 
@@ -86,12 +84,16 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
             async with AgentSession(llm=model, userdata=state) as session:
                 with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
                     await session.start(agent=agent)
+                change = {
+                    "insurancePlanId": "vsp",
+                    "visitType": "routine_vision",
+                    "insuranceMemberId": "member-private",
+                }
                 cases = [
-                    ("add_patient", registration().model_dump(), "needs_input"),
                     (
-                        "check_insurance",
-                        {"plan": "Aetna", "coverageType": "medical", "selfPay": False},
-                        "accepted",
+                        "add_patient",
+                        registration(insurancePlanId="Aetna").model_dump(),
+                        "needs_input",
                     ),
                     (
                         "add_patient",
@@ -100,35 +102,14 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                     ),
                     ("add_patient", registration().model_dump(), "success"),
                     ("add_patient", registration().model_dump(), "success"),
-                    (
-                        "check_insurance",
-                        {
-                            "plan": "VSP",
-                            "coverageType": "routine_vision",
-                            "selfPay": False,
-                        },
-                        "accepted",
-                    ),
-                    (
-                        "update_insurance",
-                        {"insuranceMemberId": "member-private"},
-                        "success",
-                    ),
-                    (
-                        "update_insurance",
-                        {"insuranceMemberId": "member-private"},
-                        "success",
-                    ),
+                    ("update_insurance", change, "success"),
+                    ("update_insurance", change, "success"),
                     (
                         "resolve_patient",
                         {"firstName": "John", "dob": None},
                         "needs_input",
                     ),
-                    (
-                        "update_insurance",
-                        {"insuranceMemberId": "member-private"},
-                        "needs_input",
-                    ),
+                    ("update_insurance", change, "needs_input"),
                 ]
                 for name, args, outcome in cases:
                     await asyncio.wait_for(
@@ -139,12 +120,9 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                         for item in model.requests[-1].items
                         if item.type == "function_call_output"
                     ][-1]
-                    if name == "check_insurance":
-                        self.assertIn("is accepted for", output.output)
-                    else:
-                        self.assertTrue(
-                            output.output.startswith(outcome + ": "), output.output
-                        )
+                    self.assertTrue(
+                        output.output.startswith(outcome + ": "), output.output
+                    )
                     self.assertNotIn("new-chart", output.output)
             self.assertEqual(
                 [r[0] for r in requests],
@@ -154,6 +132,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                 ],
             )
             self.assertEqual(requests[-1][1]["patientId"], "new-chart")
+            self.assertEqual(requests[-1][1]["insurancePlanId"], "vsp")
             self.assertFalse(insurance_ready(state))
 
     async def test_partial_and_uncertain_creation_through_session(self):
@@ -165,8 +144,6 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
             requests = []
 
             def handler(request, requests=requests, bodies=bodies):
-                if request.url.path == "/api/insurance/decision":
-                    return check_response(request)
                 requests.append(request.url.path)
                 return httpx.Response(200, json=bodies.pop(0))
 
@@ -192,14 +169,11 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                                 )
                             )
                         )
+                    self_pay = registration(insurancePlanId="self-pay-medical")
                     for name, args in [
                         ("resolve_patient", {"firstName": "Jane", "dob": "01/02/1980"}),
-                        (
-                            "check_insurance",
-                            {"plan": "", "coverageType": "medical", "selfPay": True},
-                        ),
-                        ("add_patient", registration().model_dump()),
-                        ("add_patient", registration().model_dump()),
+                        ("add_patient", self_pay.model_dump()),
+                        ("add_patient", self_pay.model_dump()),
                     ]:
                         await asyncio.wait_for(
                             session.run(user_input=json.dumps([name, args])), 5
@@ -220,56 +194,11 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                     self.assertFalse(insurance_ready(state))
                 self.assertEqual(len(requests), 2)
 
-    async def test_self_pay_tool_call_sends_flag_and_drops_plan_words(self):
-        bodies = []
-
-        def handler(request):
-            bodies.append(json.loads(request.content))
-            return check_response(request)
-
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            state = call_state()
-            resolver = PatientResolver(state, PatientMiddleware(client, CONFIG))
-            owner = InsuranceRegistration(
-                state, resolver, RegistrationMiddleware(client, CONFIG)
-            )
-            self.addAsyncCleanup(resolver.aclose)
-            self.addAsyncCleanup(owner.aclose)
-            model = InsuranceModel()
-            async with AgentSession(llm=model, userdata=state) as session:
-                with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
-                    await session.start(
-                        agent=AbitaAgent(
-                            Owners(SPRING_HILL, resolver=resolver, insurance=owner)
-                        )
-                    )
-                args = {
-                    "plan": "I don't have insurance",
-                    "coverageType": "medical",
-                    "selfPay": True,
-                }
-                await asyncio.wait_for(
-                    session.run(user_input=json.dumps(["check_insurance", args])), 5
-                )
-        self.assertEqual(
-            bodies,
-            [
-                {
-                    "office": "spring-hill",
-                    "plan": "",
-                    "coverageType": "medical",
-                    "dob": "",
-                    "selfPay": True,
-                }
-            ],
-        )
-        self.assertTrue(state.insurance.accepted.decision.selfPay)
-
     def test_schema_preserves_top_level_inputs_and_nullable_identity(self):
         agent = AbitaAgent(Owners(SPRING_HILL))
         tools = ToolContext(agent.tools).function_tools
+        self.assertNotIn("check_insurance", tools)
         for tool in [
-            tools["check_insurance"],
             tools["add_patient"],
             tools["update_insurance"],
             tools["resolve_patient"],
@@ -283,14 +212,19 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("registration", schema["properties"])
         self.assertNotIn("ssnLast4", schema["properties"])
         self.assertNotIn("newPatientConfirmed", schema["properties"])
+        schema = build_strict_openai_schema(tools["update_insurance"])["function"][
+            "parameters"
+        ]
+        self.assertEqual(
+            set(schema["properties"]),
+            {"insurancePlanId", "visitType", "insuranceMemberId"},
+        )
 
     async def test_registered_creation_survives_session_interruption(self):
         entered, finish = asyncio.Event(), asyncio.Event()
         writes = []
 
         async def handler(request):
-            if request.url.path == "/api/insurance/decision":
-                return check_response(request)
             if request.url.path == "/api/patient/resolve":
                 return httpx.Response(200, json=search())
             writes.append(request.url.path)
@@ -316,18 +250,20 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                             Owners(SPRING_HILL, resolver=resolver, insurance=owner)
                         )
                     )
-                for name, args in [
-                    ("resolve_patient", {"firstName": "Jane", "dob": "01/02/1980"}),
-                    (
-                        "check_insurance",
-                        {"plan": "", "coverageType": "medical", "selfPay": True},
+                await asyncio.wait_for(
+                    session.run(
+                        user_input=json.dumps(
+                            [
+                                "resolve_patient",
+                                {"firstName": "Jane", "dob": "01/02/1980"},
+                            ]
+                        )
                     ),
-                ]:
-                    await asyncio.wait_for(
-                        session.run(user_input=json.dumps([name, args])), 5
-                    )
+                    5,
+                )
+                self_pay = registration(insurancePlanId="self-pay-medical")
                 run = session.run(
-                    user_input=json.dumps(["add_patient", registration().model_dump()])
+                    user_input=json.dumps(["add_patient", self_pay.model_dump()])
                 )
                 await asyncio.wait_for(entered.wait(), 5)
                 interrupted = session.interrupt(force=True)
