@@ -81,7 +81,10 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
                         failures.pop(0), json={"error": "private body"}
                     )
                 return httpx.Response(
-                    200, content=json.dumps({"answers": answers}).encode()
+                    200,
+                    content=json.dumps(
+                        {"answers": answers, "model": f"{MODEL}-20261014"}
+                    ).encode(),
                 )
             return httpx.Response(
                 200,
@@ -142,6 +145,7 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
             {
                 "version": VERSION,
                 "model": MODEL,
+                "servedModel": f"{MODEL}-20261014",
                 "status": "complete",
                 "intent": "cancel_appointment",
                 "outcome": "resolved",

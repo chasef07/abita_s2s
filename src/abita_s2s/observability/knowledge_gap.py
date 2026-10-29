@@ -32,10 +32,10 @@ def picked_line(question: dict, replies: dict, seated: int) -> str | None:
     """The caller's words on the line most seated jurors chose, or None without a majority."""
     picks = Counter()
     for reply in replies.values():
-        if not isinstance(reply, dict):
+        if not isinstance(reply, tuple):
             continue
         try:
-            picks[parse(question, reply.get(KEY))] += 1
+            picks[parse(question, reply[0].get(KEY))] += 1
         except ValueError:
             continue
     picks.pop(NONE, None)

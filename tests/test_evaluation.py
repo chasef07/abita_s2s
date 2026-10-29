@@ -1,6 +1,7 @@
 """Exercise the real evaluator through a synthetic HTTP boundary."""
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -19,8 +20,8 @@ from abita_s2s.observability.evaluation import (
     EVALUATOR_VERSION,
     PUBLISHED_VERSIONS,
     evaluate_call,
-    judge_state,
 )
+from abita_s2s.observability.judge_state import judge_state
 from abita_s2s.observability.judges import DEFINITIONS_HASH, JURORS, QUESTIONS
 from abita_s2s.prompt import load_prompt
 
@@ -32,7 +33,7 @@ def scratch_version(edit):
     with tempfile.TemporaryDirectory() as scratch:
         package = Path(scratch) / "abita_s2s"
         shutil.copytree(SOURCE / "abita_s2s", package)
-        edit(package / "observability" / "judges")
+        edit(package)
         return subprocess.run(
             [
                 sys.executable,
@@ -157,7 +158,12 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 if response is not None:
                     return response
             return httpx.Response(
-                200, json={"answers": answers, "usage": {"inputTokens": 100}}
+                200,
+                json={
+                    "answers": answers,
+                    "model": f"{juror}-20261014",
+                    "usage": {"inputTokens": 100},
+                },
             )
 
         client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
@@ -348,10 +354,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(set(question["criteria"]), {"true", "false"})
                 self.assertFalse(result["results"]["knowledge_available"]["verdict"])
                 self.assertIn("office_question_answered", requests[0]["questions"])
-                self.assertIn(
-                    f"<office-knowledge>\n{knowledge}\n</office-knowledge>",
-                    requests[0]["state"]["agent_instructions"],
-                )
+                self.assertEqual(requests[0]["state"]["office_knowledge"], knowledge)
 
     async def test_a_knowledge_gap_names_the_caller_line_most_jurors_picked(self):
         jurors = ("juror-a", "juror-b", "juror-c")
@@ -428,6 +431,16 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(question["type"], "noul")
             self.assertEqual(set(question["criteria"]), {"true", "false"})
 
+    async def test_the_model_version_that_answered_is_kept_per_juror(self):
+        async def unnamed(juror, attempt, request, answers):
+            if juror == "juror-b":
+                return httpx.Response(200, json={"answers": answers})
+
+        _, result = await self.run_evaluation(unnamed, jurors=("juror-a", "juror-b"))
+        self.assertEqual(
+            result["servedModels"], {"juror-a": "juror-a-20261014", "juror-b": None}
+        )
+
     async def test_judges_receive_full_history_and_return_verdicts(self):
         requests, result = await self.run_evaluation(
             values={
@@ -449,7 +462,10 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         state = requests[0]["state"]
         for request in requests:
             self.assertEqual(request["state"], state)
-        self.assertEqual(set(state), {"agent_instructions", "transcript"})
+        self.assertEqual(
+            set(state),
+            {"transcript", "call_started", "office_knowledge", "transfer_policy"},
+        )
         self.assertEqual(
             state["transcript"],
             [
@@ -649,7 +665,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
 
 
 class JudgeStateTests(unittest.TestCase):
-    def test_call_reads_as_lines_with_the_agents_rules_once(self):
+    def test_call_reads_as_lines_beside_the_policies_judges_read(self):
         history = ChatContext()
         history.items.append(
             AgentConfigUpdate(instructions="Speaker prompt.", created_at=1_791_475_200)
@@ -681,17 +697,22 @@ class JudgeStateTests(unittest.TestCase):
                 "tool transfer_call({}) -> no result",
             ],
         )
-        instructions = state["agent_instructions"]
-        self.assertTrue(
-            instructions.startswith(
-                load_prompt("thinker").format(office_knowledge=OFFICE_KNOWLEDGE)
-            )
+        self.assertEqual(
+            state["call_started"], "Thursday, 2026-10-08 12:00 EDT (America/New_York)"
         )
-        self.assertIn(
-            "Call started: Thursday, 2026-10-08 12:00 EDT (America/New_York)",
-            instructions,
-        )
-        self.assertTrue(instructions.endswith(load_prompt("speaker")))
+        self.assertEqual(state["office_knowledge"], OFFICE_KNOWLEDGE)
+        self.assertEqual(state["transfer_policy"], load_prompt("transfer_policy"))
+
+    def test_every_state_field_is_named_by_a_question_and_every_named_field_is_sent(
+        self,
+    ):
+        history = ChatContext()
+        history.add_message(role="user", content="Hi.")
+        named = set()
+        for question in QUESTIONS.values():
+            text = json.dumps(question)
+            named.update(re.findall(r"`([a-z_]+)`", text))
+        self.assertEqual(named, set(judge_state(history, OFFICE_KNOWLEDGE)))
 
 
 class DecisionsAnswerTests(unittest.TestCase):
@@ -720,7 +741,7 @@ class DecisionsAnswerTests(unittest.TestCase):
     def test_response_over_one_megabyte_is_rejected(self):
         body = b'{"answers": {}}'
         at_cap = body + b" " * (1024 * 1024 - len(body))
-        self.assertEqual(read_answers(at_cap), {})
+        self.assertEqual(read_answers(at_cap), ({}, None))
         with self.assertRaises(ValueError):
             read_answers(at_cap + b" ")
 
@@ -743,8 +764,8 @@ class EvaluatorVersionTests(unittest.TestCase):
         self.assertEqual(EVALUATOR_VERSION, PUBLISHED_VERSIONS[DEFINITIONS_HASH])
 
     def test_editing_one_judge_question_changes_the_version(self):
-        def reword(judges):
-            judge = judges / "call_ended_correctly.py"
+        def reword(package):
+            judge = package / "observability" / "judges" / "call_ended_correctly.py"
             text = judge.read_text()
             judge.write_text(
                 text.replace('"instructions": "', '"instructions": "Reworded. ')
@@ -756,8 +777,27 @@ class EvaluatorVersionTests(unittest.TestCase):
         self.assertNotEqual(version, EVALUATOR_VERSION)
 
     def test_line_endings_do_not_change_the_version(self):
-        def crlf(judges):
-            for judge in judges.glob("*.py"):
-                judge.write_bytes(judge.read_bytes().replace(b"\n", b"\r\n"))
+        def crlf(package):
+            for source in (
+                *(package / "observability" / "judges").glob("*.py"),
+                package / "observability" / "judge_state.py",
+                package / "prompts" / "transfer_policy.md",
+            ):
+                source.write_bytes(source.read_bytes().replace(b"\n", b"\r\n"))
 
         self.assertEqual(scratch_version(crlf), EVALUATOR_VERSION)
+
+    def test_editing_what_judges_are_shown_changes_the_version(self):
+        for source in (
+            Path("observability") / "judge_state.py",
+            Path("prompts") / "transfer_policy.md",
+        ):
+            with self.subTest(source=source):
+
+                def append(package, source=source):
+                    path = package / source
+                    path.write_text(path.read_text() + "\n")
+
+                version = scratch_version(append)
+                self.assertTrue(version)
+                self.assertNotEqual(version, EVALUATOR_VERSION)
