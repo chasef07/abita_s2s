@@ -25,7 +25,6 @@ from abita_s2s.integrations.product import (
     StaffTaskReceipt,
 )
 from abita_s2s.integrations.registration_middleware import (
-    DecisionRequest,
     InsuranceChange,
     NewPatient,
     RegistrationMiddleware,
@@ -62,21 +61,24 @@ def wire(body: dict) -> bytes:
 
 def new_patient(**changes):
     return NewPatient(
-        firstName="Jane",
-        lastName="Doe",
-        dob="01/02/1980",
-        street="1 Example Street",
-        city="Example",
-        state="FL",
-        zip="12345",
-        sex="female",
-        phone="5555550101",
-        aptSuite="",
-        insurance="Aetna",
-        subscriberName="Jane Doe",
-        subscriberNum="member-example",
-        office="spring-hill",
-        **changes,
+        **{
+            "firstName": "Jane",
+            "lastName": "Doe",
+            "dob": "01/02/1980",
+            "street": "1 Example Street",
+            "city": "Example",
+            "state": "FL",
+            "zip": "12345",
+            "sex": "female",
+            "phone": "5555550101",
+            "aptSuite": "",
+            "subscriberName": "Jane Doe",
+            "subscriberNum": "member-example",
+            "insurancePlanId": "aetna",
+            "coverageType": "medical",
+            "office": "spring-hill",
+        }
+        | changes
     )
 
 
@@ -145,44 +147,6 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
                 {"patientId": "chart-jane", "office": "spring-hill"},
             ),
             (
-                lambda c: RegistrationMiddleware(c, CONFIG).check(
-                    DecisionRequest(
-                        office="spring-hill",
-                        plan="Aetna",
-                        coverageType="medical",
-                        dob="",
-                        selfPay=False,
-                    )
-                ),
-                {
-                    "office": "spring-hill",
-                    "plan": "Aetna",
-                    "coverageType": "medical",
-                    "dob": "",
-                    "selfPay": False,
-                },
-            ),
-            (
-                lambda c: RegistrationMiddleware(c, CONFIG).check(
-                    DecisionRequest(
-                        office="spring-hill",
-                        plan="Aetna",
-                        coverageType="routine_vision",
-                        dob="01/02/1980",
-                        selfPay=False,
-                        offeredPlanIds=["aetna", "vsp"],
-                    )
-                ),
-                {
-                    "office": "spring-hill",
-                    "plan": "Aetna",
-                    "coverageType": "routine_vision",
-                    "dob": "01/02/1980",
-                    "selfPay": False,
-                    "offeredPlanIds": ["aetna", "vsp"],
-                },
-            ),
-            (
                 lambda c: RegistrationMiddleware(c, CONFIG).create(new_patient()),
                 {
                     "firstName": "Jane",
@@ -195,9 +159,10 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
                     "sex": "female",
                     "phone": "5555550101",
                     "aptSuite": "",
-                    "insurance": "Aetna",
                     "subscriberName": "Jane Doe",
                     "subscriberNum": "member-example",
+                    "insurancePlanId": "aetna",
+                    "coverageType": "medical",
                     "office": "spring-hill",
                 },
             ),
@@ -220,7 +185,6 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
                     "sex": "female",
                     "phone": "5555550101",
                     "aptSuite": "",
-                    "insurance": "Aetna",
                     "subscriberName": "Jane Doe",
                     "subscriberNum": "member-example",
                     "insurancePlanId": "vsp",
@@ -234,7 +198,6 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
                     InsuranceChange(
                         patientId="chart-jane",
                         dob="01/02/1980",
-                        insurance="Aetna",
                         coverageType="medical",
                         subscriberNum="member-example",
                         insurancePlanId="aetna",
@@ -244,7 +207,6 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
                 {
                     "patientId": "chart-jane",
                     "dob": "01/02/1980",
-                    "insurance": "Aetna",
                     "coverageType": "medical",
                     "subscriberNum": "member-example",
                     "insurancePlanId": "aetna",
@@ -258,6 +220,7 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
                         startDate="2026-06-03",
                         patientId="chart-jane",
                         visitType="medical",
+                        insurancePlanId="aetna",
                         dob="01/02/1980",
                     )
                 ),
@@ -266,6 +229,7 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
                     "startDate": "2026-06-03",
                     "patientId": "chart-jane",
                     "visitType": "medical",
+                    "insurancePlanId": "aetna",
                     "dob": "01/02/1980",
                 },
             ),
@@ -410,9 +374,9 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
                     **{
                         "patientId": "chart-jane",
                         "dob": "01/02/1980",
-                        "insurance": "Aetna",
                         "coverageType": "medical",
                         "subscriberNum": "member-example",
+                        "insurancePlanId": "aetna",
                         "office": "spring-hill",
                     }
                     | changes
@@ -499,9 +463,9 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
             InsuranceChange(
                 patientId="chart-jane",
                 dob="01/02/1980",
-                insurance="Aetna",
                 coverageType="medical",
                 subscriberNum="member-example",
+                insurancePlanId="aetna",
                 office="spring-hill",
             )
         )

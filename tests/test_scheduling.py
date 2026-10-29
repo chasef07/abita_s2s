@@ -18,14 +18,12 @@ from test_patient_resolution import CONFIG, call_state, receipt
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.tools.registry import Owners
 from abita_s2s.identity import PatientResolver
-from abita_s2s.insurance_state import AcceptedInsurance
 from abita_s2s.integrations.patient_middleware import (
     PatientMiddleware,
     Receipt,
 )
 from abita_s2s.state import CandidateLookup
 from insurance_fixtures import decision
-from abita_s2s.insurance_contract import InsuranceDecision
 from abita_s2s.offices import (
     HOLLYWOOD_ROUTINE_OFFICE_CHOICE,
     HOLLYWOOD_ROUTINE_OFFICE_FOLLOW_UP,
@@ -48,6 +46,7 @@ from abita_s2s.integrations.scheduling_http import (
 NOW = datetime(2026, 9, 14, 17, tzinfo=UTC)
 REF = r"[A-Z]{3}[0-9]{2}-[0-9]{4}-[A-Z]+(?:-[0-9]+)?"
 REF_0900 = "SEP15-0900-BACH"
+PLAN = "test-insurance"
 
 
 def soonest(output):
@@ -129,19 +128,8 @@ def rescheduled(status="cancelled", appointment_id=888, old_id=77):
     }
 
 
-def verified(state, patient_id="chart-jane", visit="medical", **extra):
+def verified(state, patient_id="chart-jane", **extra):
     state.patient.active = Receipt.model_validate(receipt(patient_id, **extra))
-    state.insurance.accepted = AcceptedInsurance(
-        state.call.called_office_key,
-        state.patient.revision,
-        patient_id,
-        None,
-        InsuranceDecision.model_validate(
-            decision(
-                "Test Insurance", visit, state.call.called_office_key.replace("-", "_")
-            )
-        ),
-    )
 
 
 def speech_context(state):
@@ -180,6 +168,8 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         return owner, requests
 
     async def tool(self, owner, name, **args):
+        if name == "list_available_appointments":
+            args.setdefault("insurancePlanId", PLAN)
         output = await getattr(SchedulingTools(owner), name)(
             speech_context(owner.state),
             **args,
@@ -279,18 +269,38 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(owner.state.patient.active.appointments, [])
                 self.assertEqual(len(requests), 2)
 
-    async def test_existing_vision_patient_schedules_without_acceptance_check(self):
-        state = call_state(None, get_office_profile("north-miami-beach-optical"))
-        state.patient.active = Receipt.model_validate(
-            receipt(
-                insuranceDecision=decision(
-                    "Chart vision plan",
-                    "medical",
-                    "north_miami_beach_optical",
-                    canSchedule=False,
-                ),
-            )
+    async def test_search_sends_the_listed_plan_id_with_the_visit_type(self):
+        owner, requests = self.owner([inventory()])
+        await self.slots(owner, insurancePlanId=" aetna ")
+        self.assertEqual(
+            (requests[0][1]["visitType"], requests[0][1]["insurancePlanId"]),
+            ("medical", "aetna"),
         )
+
+    async def test_plan_outside_the_visit_types_list_is_rejected_before_search(self):
+        for plan, unloaded in (("vsp", False), ("Aetna", False), ("aetna", True)):
+            with self.subTest(plan=plan, unloaded=unloaded):
+                owner, requests = self.owner([inventory()])
+                if unloaded:
+                    owner.state.insurance.plans = None
+                result = await self.tool(
+                    owner,
+                    "list_available_appointments",
+                    visitType="medical",
+                    insurancePlanId=plan,
+                )
+                self.assertTrue(
+                    result.startswith("blocked: " if unloaded else "needs_input: "),
+                    result,
+                )
+                self.assertIn(
+                    "Insurance list" if not unloaded else "insurance list", result
+                )
+                self.assertEqual(requests, [])
+
+    async def test_existing_patient_routine_vision_books_from_the_planned_search(self):
+        state = call_state(None, get_office_profile("north-miami-beach-optical"))
+        verified(state)
         owner, requests = self.owner([inventory(), booking()], state=state)
         result = await self.tool(
             owner, "list_available_appointments", visitType="routine_vision"
@@ -347,16 +357,18 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 "patientId": "chart-jane",
                 "startDate": "2026-09-15",
                 "visitType": "medical",
+                "insurancePlanId": PLAN,
                 "dob": "01/02/1980",
             },
         )
         self.assertEqual(requests[0][2]["authorization"], "test-auth")
-        cached = await owner.availability("medical", office="hollywood")
+        cached = await owner.availability("medical", PLAN, office="hollywood")
         self.assertEqual(len(requests), 1)
         self.assertNotIn("private-signed-slot", json.dumps(cached))
 
     async def test_hollywood_routine_vision_announces_north_miami_beach_once(self):
         state = call_state(None, get_office_profile("hollywood"))
+        verified(state)
         owner, requests = self.owner([inventory(), inventory()], state=state)
 
         async def routine(**args):
@@ -382,6 +394,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_hollywood_caller_choosing_sweetwater_skips_announcement(self):
         state = call_state(None, get_office_profile("hollywood"))
+        verified(state)
         owner, requests = self.owner([inventory()], state=state)
         result = await self.tool(
             owner,
@@ -705,7 +718,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             else:
                 owner.state.patient.active = None
             self.assertEqual(
-                (await owner.availability("medical"))["outcome"], "needs_input"
+                (await owner.availability("medical", PLAN))["outcome"], "needs_input"
             )
         self.assertEqual(requests, [])
         for key, visit in (
@@ -713,7 +726,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             ("north-miami-beach-optical", "medical"),
         ):
             state = call_state(None, get_office_profile(key))
-            verified(state, visit=visit)
+            verified(state)
             owner, requests = self.owner(
                 [inventory(outcome="no_eligible_providers", slots=[])], state=state
             )
@@ -729,7 +742,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("Searched", result)
             self.assertNotIn("other dates", result)
             self.assertEqual(
-                (await owner.availability(visit))["outcome"], "unsupported"
+                (await owner.availability(visit, PLAN))["outcome"], "unsupported"
             )
             self.assertEqual(len(requests), 1)
             self.assertEqual(requests[0][1]["visitType"], visit)
@@ -851,7 +864,8 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         ref = await self.slots(owner)
         for start in ("2026-09-14", "20260916", "bad"):
             self.assertEqual(
-                (await owner.availability("medical", start))["outcome"], "needs_input"
+                (await owner.availability("medical", PLAN, start))["outcome"],
+                "needs_input",
             )
         self.assertEqual((await self.book(owner, ref)).split(":", 1)[0], "needs_input")
         self.assertEqual(len(requests), 1)
@@ -865,9 +879,9 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, json=inventory())
 
         owner, requests = self.owner([delayed])
-        first = asyncio.create_task(owner.availability("medical"))
+        first = asyncio.create_task(owner.availability("medical", PLAN))
         await entered.wait()
-        second = asyncio.create_task(owner.availability("medical"))
+        second = asyncio.create_task(owner.availability("medical", PLAN))
         await asyncio.sleep(0)
         first.cancel()
         with self.assertRaises(asyncio.CancelledError):
@@ -890,12 +904,12 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, json=inventory())
 
         owner, requests = self.owner([delayed, inventory()])
-        first = asyncio.create_task(owner.availability("medical"))
+        first = asyncio.create_task(owner.availability("medical", PLAN))
         await entered.wait()
         self.assertEqual(
-            (await owner.availability("medical", "bad"))["outcome"], "needs_input"
+            (await owner.availability("medical", PLAN, "bad"))["outcome"], "needs_input"
         )
-        corrected = asyncio.create_task(owner.availability("medical"))
+        corrected = asyncio.create_task(owner.availability("medical", PLAN))
         await asyncio.sleep(0)
         release.set()
         self.assertEqual((await first)["outcome"], "stale")
@@ -915,7 +929,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 cancelled.set()
 
         owner, requests = self.owner([delayed, inventory()])
-        task = asyncio.create_task(owner.availability("medical"))
+        task = asyncio.create_task(owner.availability("medical", PLAN))
         await entered.wait()
         task.cancel()
         with self.assertRaises(asyncio.CancelledError):
@@ -941,17 +955,19 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             shouldRetrySameSearch=True,
         )
         owner, requests = self.owner([delayed, incomplete, incomplete])
-        first = asyncio.create_task(owner.availability("medical"))
+        first = asyncio.create_task(owner.availability("medical", PLAN))
         await entered.wait()
-        result = await owner.availability("medical", "2026-09-16")
+        result = await owner.availability("medical", PLAN, "2026-09-16")
         self.assertTrue(result["retry_same_search"])
         release.set()
         self.assertEqual((await first)["outcome"], "stale")
         self.assertFalse(
-            (await owner.availability("medical", "2026-09-16"))["retry_same_search"]
+            (await owner.availability("medical", PLAN, "2026-09-16"))[
+                "retry_same_search"
+            ]
         )
         self.assertEqual(
-            (await owner.availability("medical", "2026-09-16"))["outcome"],
+            (await owner.availability("medical", PLAN, "2026-09-16"))["outcome"],
             "availability_failed",
         )
         self.assertIn(
@@ -1128,7 +1144,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 owner, requests = self.owner(
                     [rejected] if phase == "search" else [inventory(), rejected]
                 )
-                owner.state.insurance.accepted = None
                 if phase == "search":
                     result = await self.tool(
                         owner, "list_available_appointments", visitType="medical"
@@ -1374,19 +1389,21 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     )
 
                 owner, requests = self.owner([rejected, rejected, inventory()])
-                result = await owner.availability("medical")
+                result = await owner.availability("medical", PLAN)
                 self.assertEqual(
                     result["outcome"],
                     "needs_input",
                 )
                 self.assertIn("Confirm the requested coverage type", result["answer"])
                 self.assertFalse(result["retry_same_search"])
-                self.assertEqual(await owner.availability("medical"), result)
+                self.assertEqual(await owner.availability("medical", PLAN), result)
                 owner.now = lambda: NOW + timedelta(seconds=61)
-                self.assertEqual(await owner.availability("medical"), result)
+                self.assertEqual(await owner.availability("medical", PLAN), result)
                 self.assertEqual(len(requests), 2)
+                verified(owner.state)
                 self.assertEqual(
-                    (await owner.availability("routine_vision"))["outcome"], "found"
+                    (await owner.availability("routine_vision", PLAN))["outcome"],
+                    "found",
                 )
                 self.assertEqual(len(requests), 3)
 
@@ -1405,10 +1422,12 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         self.assertEqual(
-            (await owner.availability("medical"))["outcome"], "needs_input"
+            (await owner.availability("medical", PLAN))["outcome"], "needs_input"
         )
         owner.now = lambda: NOW + timedelta(seconds=61)
-        self.assertEqual((await owner.availability("medical"))["outcome"], "found")
+        self.assertEqual(
+            (await owner.availability("medical", PLAN))["outcome"], "found"
+        )
         self.assertEqual(len(requests), 2)
 
     async def test_known_cancellation_rejections_are_recoverable(self):
@@ -2176,7 +2195,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         owner, requests = self.owner([])
         await owner.aclose()
         self.assertEqual(
-            (await owner.availability("medical"))["outcome"], "unavailable"
+            (await owner.availability("medical", PLAN))["outcome"], "unavailable"
         )
         self.assertEqual((await self.book(owner, "S1")).split(":", 1)[0], "blocked")
         self.assertEqual(requests, [])
@@ -2188,15 +2207,17 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 2)
         owner, requests = self.owner([expired, expired])
         self.assertEqual(
-            (await owner.availability("medical"))["outcome"], "availability_failed"
+            (await owner.availability("medical", PLAN))["outcome"],
+            "availability_failed",
         )
         self.assertEqual(
-            (await owner.availability("medical"))["outcome"], "availability_failed"
+            (await owner.availability("medical", PLAN))["outcome"],
+            "availability_failed",
         )
         self.assertEqual(len(requests), 2)
         owner, requests = self.owner([inventory(outcome="no_availability", slots=[])])
-        self.assertEqual((await owner.availability("medical"))["outcome"], "none")
-        self.assertEqual((await owner.availability("medical"))["outcome"], "none")
+        self.assertEqual((await owner.availability("medical", PLAN))["outcome"], "none")
+        self.assertEqual((await owner.availability("medical", PLAN))["outcome"], "none")
         self.assertEqual(len(requests), 1)
 
     async def test_reschedule_patient_switch_preserves_middleware_result_for_original_patient(
@@ -2309,15 +2330,91 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 context.session.generate_reply.assert_not_called()
         self.assertEqual(requests, [])
 
-    async def test_clearing_inactive_acceptance_keeps_offered_slots(self):
-        state = call_state(None)
-        verified(state)
-        state.insurance.registrations["chart-jane"] = "created"
-        state.patient.revision += 1
-        owner, _ = self.owner([inventory(), booking()], state=state)
+    async def test_changing_plan_retires_offered_slots_before_booking(self):
+        owner, requests = self.owner([inventory(), inventory()])
         ref = await self.slots(owner)
-        state.insurance.accepted = None
-        self.assertTrue((await self.book(owner, ref)).startswith("success:"))
+        self.assertEqual(await self.slots(owner), ref)
+        await self.slots(owner, insurancePlanId="aetna")
+        self.assertEqual(
+            [body["insurancePlanId"] for _, body, _ in requests], [PLAN, "aetna"]
+        )
+        rejected = await self.tool(
+            owner,
+            "list_available_appointments",
+            visitType="medical",
+            insurancePlanId="vsp",
+        )
+        self.assertTrue(rejected.startswith("needs_input: "), rejected)
+        stale = await self.book(owner, ref)
+        self.assertTrue(stale.startswith("needs_input:"), stale)
+        self.assertEqual(len(requests), 2)
+
+    async def test_uncleared_plan_blocks_with_the_decision_and_offers_nothing(self):
+        uncleared = decision(
+            "Test Insurance",
+            outcome="needs_staff_task",
+            canSchedule=False,
+            reason="requirement",
+            requirements=[dict(kind="pcp_referral", verification="unverified")],
+            planId=PLAN,
+        )
+        owner, requests = self.owner(
+            [
+                inventory(),
+                {
+                    "status": "success",
+                    "outcome": "insurance_not_cleared",
+                    "availabilityFound": False,
+                    "slots": [],
+                    "message": "Backend wording.",
+                    "insuranceDecision": uncleared,
+                },
+            ]
+        )
+        ref = await self.slots(owner)
+        result = await self.tool(
+            owner,
+            "list_available_appointments",
+            visitType="medical",
+            startDate="2026-09-16",
+        )
+        self.assertEqual(
+            result,
+            "blocked: Office staff must verify a referral from the patient's primary"
+            " care doctor before scheduling medical visits. Test Insurance is accepted."
+            " Offer a staff request or transfer; do not schedule.",
+        )
+        self.assertFalse((await self.book(owner, ref)).startswith("success:"))
+        self.assertEqual(len(requests), 2)
+
+    async def test_uncleared_result_must_carry_a_matching_decision(self):
+        uncleared = dict(
+            outcome="needs_staff_task", canSchedule=False, reason="pending_confirmation"
+        )
+        for body in (
+            {"insuranceDecision": None},
+            {"insuranceDecision": decision("Aetna", **uncleared)},
+            {"insuranceDecision": decision("VSP", "routine_vision", **uncleared)},
+            {"insuranceDecision": decision("Test Insurance")},
+        ):
+            with self.subTest(body=body):
+                owner, requests = self.owner(
+                    [
+                        {
+                            "status": "success",
+                            "outcome": "insurance_not_cleared",
+                            "slots": [],
+                        }
+                        | body
+                    ]
+                )
+                result = await self.tool(
+                    owner, "list_available_appointments", visitType="medical"
+                )
+                self.assertTrue(
+                    result.startswith("blocked: Availability could not be verified"),
+                    result,
+                )
 
     async def write_effects(self, owner, write, sent):
         first = await write()
@@ -2723,7 +2820,12 @@ class SchedulingStream(llm.LLMStream):
             if user == "search":
                 name, args = (
                     "list_available_appointments",
-                    {"visitType": "medical", "startDate": None, "office": None},
+                    {
+                        "visitType": "medical",
+                        "insurancePlanId": PLAN,
+                        "startDate": None,
+                        "office": None,
+                    },
                 )
             elif user == "cancel":
                 name, args = (

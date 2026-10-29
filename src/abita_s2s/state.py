@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Literal
 from abita_s2s.insurance_state import InsuranceState
 
 if TYPE_CHECKING:
-    from abita_s2s.insurance_contract import InsuranceDecision
     from abita_s2s.integrations.patient_middleware import (
         Appointment,
         Candidate,
@@ -70,11 +69,9 @@ class PatientState:
         self.absence = None
         self.revision += 1
 
-    def update_insurance(self, carrier: str, decision: "InsuranceDecision") -> None:
+    def update_insurance(self, carrier: str) -> None:
         """Record a completed insurance write on the active chart."""
-        self.active = self._chart().model_copy(
-            update={"insuranceCarrier": carrier, "insuranceDecision": decision}
-        )
+        self.active = self._chart().model_copy(update={"insuranceCarrier": carrier})
         self.revision += 1
 
     def update_appointments(self, appointments: "list[Appointment]") -> None:

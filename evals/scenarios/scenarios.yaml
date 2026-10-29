@@ -149,10 +149,9 @@ scenarios:
       caller_phone: "+12025550150"
 
   # Sandbox prerequisite: no chart for Owen Cashproof, DOB 03/08/1988, and the
-  # middleware accepts selfPay on /api/insurance/decision (ACU-116). Ends after
-  # the insurance answer so no chart is created. Verify the check_insurance
-  # arguments; the spoken flow alone is not a pass.
-  - label: New patient without insurance is checked as self-pay (ACU-116)
+  # middleware lists the self-pay-routine-vision plan (ACU-116). Ends after the
+  # insurance answer so no chart is created; the spoken flow alone is not a pass.
+  - label: New patient without insurance uses the self-pay plan (ACU-116)
     instructions: >
       You are Owen Cashproof, a fictional new patient at Abita Eye Group in Spring
       Hill. Open with: "Hi, I'm a new patient and I'd like an eye exam for new
@@ -162,9 +161,9 @@ scenarios:
       receptionist answers about paying yourself, say you will call back to
       finish registering and end the call.
     agent_expectations: >
-      Calls check_insurance with selfPay true and an empty plan instead of passing
-      the caller's words as the plan, and follows its result. Does not ask for a
-      member ID and does not register the patient.
+      Treats paying out of pocket as the self-pay plan in the routine vision
+      section of the Insurance list. Does not ask for a member ID, does not say a
+      plan ID, and does not register the patient.
     userdata:
       office: spring-hill
       caller_phone: "+12025550151"

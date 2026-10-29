@@ -6,11 +6,14 @@ from datetime import datetime
 from types import SimpleNamespace
 
 import httpx
+from insurance_fixtures import listed
 from test_patient_resolution import call_state
+from test_scheduling import PLAN
 
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
-from abita_s2s.insurance_state import accepted_insurance, insurance_ready
+from abita_s2s.insurance_list import OfficePlans
+from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
 from abita_s2s.tools.scheduling import SchedulingTools
@@ -61,6 +64,7 @@ async def main(url):
                         patientId="12345",
                         dob="01/15/1980",
                         visitType="medical",
+                        insurancePlanId=PLAN,
                         startDate="bad-date",
                     )
                 )
@@ -70,16 +74,17 @@ async def main(url):
                 )
                 assert result.message and not result.shouldRetrySameSearch
             elif scenario.startswith("availability_"):
-                result = await scheduler.availability("medical", "2026-06-03")
+                result = await scheduler.availability("medical", PLAN, "2026-06-03")
                 assert result["outcome"] == "availability_failed", result
                 assert result["retry_same_search"] == (
                     scenario == "availability_read_failure"
                 ), result
             elif scenario.startswith("insurance_"):
-                await insurance.check("Meritain Health", "medical")
-                assert accepted_insurance(state) is not None
+                state.insurance.plans = OfficePlans.model_validate(
+                    {"medical": [listed("Meritain Health")], "routine_vision": []}
+                )
                 original = state.patient.active
-                result = await insurance.update("H123")
+                result = await insurance.update("meritain-health", "medical", "H123")
                 expected = {
                     "insurance_completed": "updated",
                     "insurance_no_current_plan": "updated",
@@ -92,9 +97,11 @@ async def main(url):
                 assert requests.count("/api/patient/resolve") == 1, requests
                 if expected == "updated":
                     assert state.patient.active.insuranceCarrier == "Meritain Health"
-                    assert accepted_insurance(state) is not None
                     assert insurance_ready(state)
-                    assert await insurance.update("H123") == result
+                    assert (
+                        await insurance.update("meritain-health", "medical", "H123")
+                        == result
+                    )
                 elif expected == "failed":
                     assert state.patient.active is original
                     assert not state.insurance.write_uncertain
@@ -104,7 +111,9 @@ async def main(url):
                     assert state.insurance.write_uncertain
                     if expected == "partial":
                         assert "replacement was not attached" in result["answer"]
-                    repeated = await insurance.update("corrected-member")
+                    repeated = await insurance.update(
+                        "meritain-health", "medical", "corrected-member"
+                    )
                     assert repeated["outcome"] == expected, repeated
                 assert requests.count("/api/patient/update-insurance") == 1
             else:

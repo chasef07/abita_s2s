@@ -11,11 +11,13 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, PropertyMock, patch
 
 import httpx
+from test_insurance_list import plan, plans_reply
 from test_knowledge import KNOWLEDGE
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.tools.registry import Owners
 from abita_s2s.config import Config
+from abita_s2s.insurance_list import UNAVAILABLE as INSURANCE_UNAVAILABLE
 from abita_s2s.knowledge import UNAVAILABLE
 from abita_s2s.integrations.patient_middleware import NotFound
 from abita_s2s.offices import (
@@ -270,7 +272,54 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         args["userdata"] = session_type.call_args.kwargs["userdata"]
         args["dependencies"] = agent_factory.call_args.args[0]
         args["office_knowledge"] = create_model.call_args.args[1]
+        args["insurance_list"] = create_model.call_args.args[2]
         return ctx, args
+
+    async def test_office_knowledge_and_insurance_list_load_concurrently(self):
+        config = Config(
+            "offline",
+            product_secret="product-token",
+            knowledge_url="https://product.test/v1/agent/knowledge/read",
+            middleware_url="https://middleware.test",
+            middleware_token="middleware-token",
+        )
+        requests, all_arrived = [], asyncio.Event()
+
+        async def handler(request):
+            if request.method == "POST" and request.url.host == "middleware.test":
+                return httpx.Response(404, json={"status": "not_found"})
+            requests.append(request)
+            if len(requests) == 3:
+                all_arrived.set()
+            await asyncio.wait_for(all_arrived.wait(), 1)
+            if request.url.host == "product.test":
+                return httpx.Response(200, json=KNOWLEDGE["spring-hill"])
+            coverage = request.url.params["coverage"]
+            return httpx.Response(
+                200,
+                json=plans_reply("spring_hill", coverage, [plan(f"aetna-{coverage}")]),
+            )
+
+        _, args = await self.run_startup(False, config=config, product=handler)
+        self.assertIn("Fax records requests to 555-0142.", args["office_knowledge"])
+        self.assertIn("`aetna-medical`: accepted", args["insurance_list"])
+        self.assertIn("`aetna-routine_vision`: accepted", args["insurance_list"])
+        plans = args["userdata"].insurance.plans
+        self.assertEqual(
+            [plan.planId for plan in (*plans.medical, *plans.routine_vision)],
+            ["aetna-medical", "aetna-routine_vision"],
+        )
+        self.assertEqual(
+            {(r.url.host, r.url.params.get("office")) for r in requests},
+            {("product.test", None), ("middleware.test", "spring-hill")},
+        )
+
+    async def test_failed_insurance_list_read_continues_with_the_notice(self):
+        with self.assertLogs("abita_s2s.insurance_list", "ERROR") as logs:
+            _, args = await self.run_startup(False)
+        self.assertEqual(args["insurance_list"], INSURANCE_UNAVAILABLE)
+        self.assertIsNone(args["userdata"].insurance.plans)
+        self.assertIn("cause=medical:not_configured", logs.output[0])
 
     async def test_office_knowledge_reaches_the_model_and_a_failed_read_continues(
         self,
@@ -324,6 +373,39 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         self.assertEqual(args["office_knowledge"], "### Hours\n\nDaily 7 AM to 9 PM.")
+
+    async def test_simulation_takes_synthetic_insurance_plans_from_userdata(self):
+        requests = []
+        sim = SimpleNamespace(
+            userdata=lambda: {
+                "office": "spring-hill",
+                "insurance_plans": {
+                    "medical": [plan("aetna-hmo")],
+                    "routine_vision": [],
+                },
+            },
+            simulation_job_id="simulation-insurance",
+        )
+        _, args = await self.run_startup(
+            False,
+            trunk="",
+            simulation=sim,
+            env={
+                "SANDBOX_AMD_API_URL": "https://abita-middleware-sandbox-test.run.app",
+                "SANDBOX_AMD_API_TOKEN": "sandbox-token",
+            },
+            product=lambda request: requests.append(request) or httpx.Response(503),
+        )
+        self.assertEqual(
+            args["insurance_list"],
+            "### Medical visits\n\n#### Aetna\n\n- Aetna Hmo `aetna-hmo`: accepted\n\n"
+            "### Routine vision exams\n\n"
+            "This office does not accept insurance for routine vision exams.",
+        )
+        self.assertNotIn("/api/insurance/plans", [r.url.path for r in requests])
+        self.assertEqual(
+            args["userdata"].insurance.plans.medical[0].planId, "aetna-hmo"
+        )
 
     async def test_named_deployment_sandboxes_call_control(self):
         for deployment, sandbox in ((None, False), ("staging", True)):

@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, TypeAdapter
 
-from abita_s2s.insurance_contract import CoverageType, InsuranceDecision
+from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.integrations.middleware import Middleware, OfficeKey
 from abita_s2s.integrations.transport import Request
 from abita_s2s.records import Record, Text
@@ -36,13 +36,14 @@ class Candidate(Record):
 
 
 class Receipt(Record):
-    insuranceDecision: InsuranceDecision | None = None
     status: Literal["verified"]
     patientId: Text
     name: Text
     dob: Text
     phone: str | None = None
     insuranceCarrier: str | None = None
+    insuranceCarrierId: str | None = None
+    insuranceNote: str | None = None
     appointmentsStatus: Literal["found", "none", "error"]
     appointments: list[Appointment]
 

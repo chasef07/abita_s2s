@@ -24,9 +24,7 @@ OWNERS = {
     "active": "state",
     "revision": "state",
     "absence": "state",
-    "accepted": "insurance_state",
-    "check_revision": "insurance_state",
-    "offered": "insurance",
+    "plans": "runtime",
     "registrations": "insurance",
     "write_pending": "insurance",
     "write_uncertain": "insurance",
@@ -40,8 +38,6 @@ CALLERS = {
     "update_appointments": ("scheduling",),
     "mark_appointments_stale": ("scheduling",),
 }
-ACCEPTANCE = "grant_acceptance, rebind_acceptance or clear_acceptance"
-PRIVATE_READS = {"accepted": "accepted_insurance(state)"}
 SETTERS = ("setattr", "delattr", "object.__setattr__")
 MUTATORS = {
     "add",
@@ -66,8 +62,6 @@ def fix(field: str, module: str) -> str:
     if FIELD_CLASS[field] == "PatientState":
         methods = [m for m, callers in CALLERS.items() if module in callers]
         return f"call PatientState.{' or '.join(methods)}" if methods else RESOLVER
-    if OWNERS[field] == "insurance_state":
-        return f"call {ACCEPTANCE} in insurance_state.py"
     return f"only {OWNERS[field]} writes it; move the change there"
 
 
@@ -90,15 +84,6 @@ def violations(module: str, tree: ast.AST) -> list[tuple[int, str]]:
                 (line, f"{verb} {FIELD_CLASS[field]}.{field}; {fix(field, module)}")
             )
 
-    def reads(line: int, field: str):
-        if field in PRIVATE_READS and OWNERS[field] != module:
-            found.append(
-                (
-                    line,
-                    f"reads {FIELD_CLASS[field]}.{field}; call {PRIVATE_READS[field]}",
-                )
-            )
-
     for node in ast.walk(tree):
         if isinstance(node, (ast.Assign, ast.Delete)):
             verb = "assigns" if isinstance(node, ast.Assign) else "deletes"
@@ -111,16 +96,12 @@ def violations(module: str, tree: ast.AST) -> list[tuple[int, str]]:
         elif isinstance(node, ast.AnnAssign) and node.value is not None:
             for field in attributes(node.target):
                 changes(node.lineno, "assigns", field)
-        elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
-            reads(node.lineno, node.attr)
         elif isinstance(node, ast.Call):
             func, name = node.func, ast.unparse(node.func)
             named = node.args[1] if len(node.args) > 1 else None
             field = named.value if isinstance(named, ast.Constant) else None
             if isinstance(field, str) and name in SETTERS:
                 changes(node.lineno, name, field)
-            elif isinstance(field, str) and name == "getattr":
-                reads(node.lineno, field)
             elif not isinstance(func, ast.Attribute):
                 continue
             elif func.attr in CALLERS and module not in CALLERS[func.attr]:
@@ -177,14 +158,13 @@ def change(self, patient, context):
     patient.revision += 1
     self.state.insurance.registrations["1"] = "created"
     self.state.insurance.registrations.pop("1")
-    del self.state.insurance.offered
+    del self.state.insurance.plans
     setattr(self.state.insurance, "write_pending", True)
     self.state.patient.active.model_copy(update={})
     context.userdata.patient = None
     self.state.patient.activate(None)
     self.state.patient.mark_appointments_stale()
     held, ins = self.state.patient, self.state.insurance
-    ins.accepted = getattr(ins, "accepted")
 """
         self.assertEqual(
             [
@@ -200,8 +180,8 @@ def change(self, patient, context):
                 " only insurance writes it; move the change there",
                 "6 calls pop on InsuranceState.registrations;"
                 " only insurance writes it; move the change there",
-                "7 deletes InsuranceState.offered;"
-                " only insurance writes it; move the change there",
+                "7 deletes InsuranceState.plans;"
+                " only runtime writes it; move the change there",
                 "8 setattr InsuranceState.write_pending;"
                 " only insurance writes it; move the change there",
                 "9 copies PatientState.active;"
@@ -209,8 +189,5 @@ def change(self, patient, context):
                 "10 assigns CallState.patient; only state writes it; move the change there",
                 "11 calls PatientState.activate, which only identity may call;"
                 f" {RESOLVER}",
-                "14 assigns InsuranceState.accepted;"
-                f" call {ACCEPTANCE} in insurance_state.py",
-                "14 reads InsuranceState.accepted; call accepted_insurance(state)",
             ],
         )

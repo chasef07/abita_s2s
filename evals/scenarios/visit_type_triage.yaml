@@ -2,10 +2,10 @@ name: Abita visit type triage
 # Sandbox fixtures: Maya Singleproof, DOB 05/12/1985, +12025550148 must resolve
 # uniquely with accepted medical and routine vision insurance and eligible future
 # medical and routine vision slots. The call ends once openings are offered, or
-# after the insurance check for new patients, so no visit or chart is created.
+# after the insurance answer for new patients, so no visit or chart is created.
 # Userdata does not seed fixtures.
-# Verify the coverageType and visitType tool arguments; the spoken flow alone is
-# not a pass.
+# Verify the visitType and insurancePlanId tool arguments; the spoken flow alone
+# is not a pass.
 scenarios:
   - label: Ambiguous yearly eye exam triages as medical for a known condition
     instructions: >
@@ -74,8 +74,8 @@ scenarios:
       will call back to finish and end. Do not approve any registration.
     agent_expectations: >
       Treats the request as routine vision without the caller mentioning glasses,
-      despite the referral's label, and calls check_insurance with coverageType
-      routine_vision. Does not ask the caller to choose a specialist and does not
-      register the patient.
+      despite the referral's label, and answers about Simply from the routine
+      vision section of the Insurance list. Does not ask the caller to choose a
+      specialist and does not register the patient.
     userdata:
       office: spring-hill

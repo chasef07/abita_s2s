@@ -5,12 +5,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
+from abita_s2s.insurance import decision_answer
 from abita_s2s.insurance_contract import COVERAGE_TYPES, CoverageType
-from abita_s2s.insurance_state import (
-    AcceptedInsurance,
-    accepted_insurance,
-    insurance_ready,
-)
+from abita_s2s.insurance_list import listed_plan
+from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.integrations.scheduling_http import (
     SchedulingFailure,
     SchedulingHTTP,
@@ -90,8 +88,6 @@ class SchedulingContext:
     patient_revision: int
     patient_id: str | None
     dob: str | None
-    accepted_insurance: AcceptedInsurance | None
-    acceptance_id: int
     insurance_write_pending: bool
     insurance_write_uncertain: bool
     registration: str | None
@@ -102,13 +98,10 @@ def scheduling_context(state: CallState) -> SchedulingContext:
     p = state.patient.active
     insurance = state.insurance
     registration = insurance.registrations.get(p.patientId) if p else None
-    accepted = accepted_insurance(state) if registration is not None else None
     return SchedulingContext(
         patient_revision=state.patient.revision,
         patient_id=p.patientId if p else None,
         dob=p.dob if p else None,
-        accepted_insurance=accepted,
-        acceptance_id=id(accepted),
         insurance_write_pending=insurance.write_pending,
         insurance_write_uncertain=insurance.write_uncertain,
         registration=registration,
@@ -120,6 +113,7 @@ class AvailabilitySearch:
     context: SchedulingContext
     office: str
     visit: CoverageType
+    plan_id: str
     start: date
     today: date
 
@@ -199,7 +193,9 @@ class Offers:
             return office.key, None
         return None, SHARED_OFFICE_CHOICE
 
-    async def search(self, visit, start=None, office=None, *, writing: bool) -> dict:
+    async def search(
+        self, visit, plan_id: str, start=None, office=None, *, writing: bool
+    ) -> dict:
         context = scheduling_context(self.state)
         today = self._now().astimezone(EASTERN).date()
         try:
@@ -229,12 +225,16 @@ class Offers:
                 "needs_input",
                 "needs_input: Verify the patient, finish new-patient registration, or resolve the pending or uncertain insurance update before scheduling.",
             )
+        plan = listed_plan(self.state, plan_id, visit)
+        if isinstance(plan, dict):
+            self.invalidate()
+            return plan
         if writing:
             return reply(
                 "in_progress",
                 "blocked: An appointment change is in progress. Wait for its result.",
             )
-        key = AvailabilitySearch(context, selected, visit, first, today)
+        key = AvailabilitySearch(context, selected, visit, plan.planId, first, today)
         if self._search_key != key:
             self.invalidate()
             self._search_key = key
@@ -254,6 +254,7 @@ class Offers:
                 startDate=first.isoformat(),
                 patientId=p.patientId,
                 visitType=visit,
+                insurancePlanId=plan.planId,
                 dob=p.dob,
             )
             task = asyncio.create_task(self._load(search, key, self._generation))
@@ -286,6 +287,7 @@ class Offers:
         through = (key.start + timedelta(days=13)).isoformat()
         expired = False
         if not isinstance(result, SchedulingFailure):
+            decision = result.insuranceDecision
             if (
                 (result.searchedFrom is not None and result.searchedFrom != first)
                 or (
@@ -295,6 +297,18 @@ class Offers:
                 or any(not first <= slot.date <= through for slot in result.slots)
             ):
                 result = SchedulingFailure(reason="invalid_search_window")
+            elif decision is not None and (
+                decision.coverageType != key.visit
+                or decision.planId not in ("", key.plan_id)
+            ):
+                result = SchedulingFailure(reason="mismatched_insurance_decision")
+            elif decision is not None and result.outcome == "insurance_not_cleared":
+                self._failures.pop(key, None)
+                self.invalidate()
+                return reply(
+                    "insurance_not_cleared",
+                    f"blocked: {decision_answer(decision)} Offer a staff request or transfer; do not schedule.",
+                )
             elif result.outcome == "availability_found":
                 expiry = result.bookingTokenExpiresAt
                 if expiry is not None and expiry > self._now():

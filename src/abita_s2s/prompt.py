@@ -26,12 +26,15 @@ def load_prompt(name: Prompt) -> str:
     return content
 
 
-def thinker_instructions(started: datetime, office_knowledge: str) -> str:
-    """The thinker's rules with the office's knowledge, plus the clinic-local call start."""
+def thinker_instructions(
+    started: datetime, office_knowledge: str, insurance_list: str
+) -> str:
+    """The thinker's rules with the office's knowledge and insurance list, plus the clinic-local call start."""
     return (
         load_prompt("thinker").format(
             transfer_policy=load_prompt("transfer_policy"),
             office_knowledge=office_knowledge,
+            insurance_list=insurance_list,
         )
         + "\n\n"
         + load_prompt("call_started").format(started=started)

@@ -29,6 +29,7 @@ LAYERS = {
         "handoff",
         "identity",
         "insurance",
+        "insurance_list",
         "knowledge",
         "scheduling",
         "staff_tasks",

@@ -127,11 +127,6 @@ TOOLS: tuple[Entry, ...] = (
         action=True,
     ),
     Entry(
-        ("Insurance",),
-        lambda o: InsuranceTools(o.insurance).check_insurance,
-        action=False,
-    ),
-    Entry(
         ("Patients",),
         lambda o: PatientTools(o.resolver, o.insurance, o.scheduling).resolve_patient,
         action=False,

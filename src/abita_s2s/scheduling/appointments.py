@@ -227,11 +227,12 @@ class Scheduling:
             )
         return "\n" + "\n".join(lines)
 
-    async def availability(self, visit, start=None, office=None):
+    async def availability(self, visit, plan_id: str, start=None, office=None):
         if self._closed:
             return reply("unavailable", "blocked: Scheduling has closed for this call.")
         return await self._offers.search(
             visit,
+            plan_id,
             start,
             office,
             writing=bool(self._write_task and not self._write_task.done()),

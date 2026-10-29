@@ -40,6 +40,9 @@ against. A scenario can set `office_knowledge` in its userdata to a list of
 `title`/`text` entries; the simulation worker then uses those entries instead of
 reading Product, which keeps synthetic facts and their expectations together
 (see [office_knowledge_in_prompt.yaml](scenarios/office_knowledge_in_prompt.yaml)).
+The office's insurance list is read the same way from middleware; a scenario can
+set `insurance_plans` to `{medical: [...], routine_vision: [...]}` with plan
+records shaped like `GET /api/insurance/plans` returns them.
 Without `ACUITY_PRODUCT_KNOWLEDGE_URL` and the product secret, other scenarios
 run with the could-not-be-loaded notice in place of office knowledge; compare
 those suites before and after, not absolutely.
