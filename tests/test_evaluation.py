@@ -15,6 +15,7 @@ from livekit.agents import ChatContext
 from livekit.agents.llm import AgentConfigUpdate, FunctionCall, FunctionCallOutput
 
 from abita_s2s.knowledge import UNAVAILABLE
+from abita_s2s.observability import knowledge_gap
 from abita_s2s.observability.decisions import parse, read_answers
 from abita_s2s.observability.evaluation import (
     EVALUATOR_VERSION,
@@ -709,7 +710,7 @@ class JudgeStateTests(unittest.TestCase):
         history = ChatContext()
         history.add_message(role="user", content="Hi.")
         named = set()
-        for question in QUESTIONS.values():
+        for question in (*QUESTIONS.values(), knowledge_gap.line_question([])):
             text = json.dumps(question)
             named.update(re.findall(r"`([a-z_]+)`", text))
         self.assertEqual(named, set(judge_state(history, OFFICE_KNOWLEDGE)))
