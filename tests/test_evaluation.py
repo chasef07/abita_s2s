@@ -388,7 +388,6 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         for picks in (
             {"juror-a": "3", "juror-b": "4", "juror-c": "0"},
             {"juror-a": "none", "juror-b": "none", "juror-c": "3"},
-            {"juror-a": "3", "juror-b": "7", "juror-c": "7"},
         ):
             with self.subTest(picks=picks):
                 _, result = await self.run_evaluation(
@@ -398,6 +397,30 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["status"], "complete")
                 self.assertEqual(result["errors"], {})
                 self.assertNotIn("line", result["results"]["knowledge_available"])
+
+    async def test_an_invalid_line_pick_is_logged_and_not_counted(self):
+        with self.assertLogs("abita_s2s.observability.knowledge_gap", "ERROR") as logs:
+            _, result = await self.run_evaluation(
+                values={
+                    "knowledge_available": 0.1,
+                    "knowledge_gap_line": {
+                        "juror-a": "3",
+                        "juror-b": "7",
+                        "juror-c": "7",
+                    },
+                },
+                jurors=("juror-a", "juror-b", "juror-c"),
+            )
+        self.assertEqual(
+            [record.getMessage() for record in logs.records],
+            [
+                f"Call evaluation answer invalid judge=knowledge_gap_line juror={juror}"
+                for juror in ("juror-b", "juror-c")
+            ],
+        )
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["errors"], {})
+        self.assertNotIn("line", result["results"]["knowledge_available"])
 
     async def test_answered_knowledge_names_no_line(self):
         _, result = await self.run_evaluation(

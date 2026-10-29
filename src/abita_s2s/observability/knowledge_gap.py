@@ -3,10 +3,12 @@
 Kept outside ``judges``: it is a pointer, not a scorecard question, so the scorecard version stays.
 """
 
+import logging
 from collections import Counter
 
 from abita_s2s.observability.decisions import parse
 
+logger = logging.getLogger(__name__)
 KEY = "knowledge_gap_line"
 NONE = "none"
 CALLER = "caller: "
@@ -31,13 +33,13 @@ def line_question(transcript: list[str]) -> dict:
 def picked_line(question: dict, replies: dict, seated: int) -> str | None:
     """The caller's words on the line most seated jurors chose, or None without a majority."""
     picks = Counter()
-    for reply in replies.values():
+    for juror, reply in replies.items():
         if not isinstance(reply, tuple):
             continue
         try:
             picks[parse(question, reply[0].get(KEY))] += 1
         except ValueError:
-            continue
+            logger.error("Call evaluation answer invalid judge=%s juror=%s", KEY, juror)
     picks.pop(NONE, None)
     label, votes = picks.most_common(1)[0] if picks else (None, 0)
     if votes <= seated // 2:
