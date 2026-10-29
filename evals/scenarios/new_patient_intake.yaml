@@ -1,0 +1,70 @@
+name: Abita new patient intake
+# Writes: each scenario registers a new sandbox chart at Spring Hill, so run each
+# once (-k 1) per identity; a second run with the same first name, DOB, and phone
+# is refused as an existing chart. Spring Hill must list Humana Medicare PPO as
+# accepted for medical visits and have eligible future medical slots. Calls end
+# once openings are offered, so no visit is booked. Userdata does not seed
+# fixtures. Verify the add_patient arguments (insurancePlanId, visitType,
+# subscriberName, insuranceMemberId) and count the agent's intake questions.
+scenarios:
+  - label: New patient registers with their own insurance in grouped turns
+    instructions: >
+      You are Tessa Streamline, a new patient, born February 14, 1962. Open with:
+      "Hi, I'm a new patient. My eyes have been red and itchy for about a week and
+      I'd like to be seen." Answer each question fully and briefly: your insurance
+      is Humana Medicare PPO and the card is in your name; your member ID is
+      H 4 8 2 7 1 9 3 3; spell your name as T-E-S-S-A, S-T-R-E-A-M-L-I-N-E; your
+      address is 1420 Mariner Boulevard, Spring Hill, Florida 34609, no apartment;
+      the number you are calling from is fine to keep; your email is
+      tessa.streamline@example.com; you are female. Confirm the read-back if it
+      is correct. Once actual appointment times are offered, say you will check
+      your calendar and call back, then end.
+    agent_expectations: >
+      Collects intake in grouped turns: name with DOB, card holder with member ID,
+      full address in one ask, phone with email, then sex, without asking for each
+      detail separately or reconfirming each answer. Gives one full read-back,
+      then calls add_patient with insurancePlanId humana-medicare-ppo and visitType
+      medical. Confirms registration only after success and offers medical
+      openings. Does not book anything.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550171'
+
+  - label: New patient registers on a spouse's insurance
+    instructions: >
+      You are Omar Spousal, a new patient, born June 3, 1958. Open with: "Hi, I'm
+      new and I need a glaucoma check, my doctor says my eye pressure is high."
+      Answer each question briefly. Your insurance is Humana Medicare PPO, but the
+      card is in your wife's name, Leila Spousal. The member ID is H 5 5 1 2 0 8 4 7.
+      Spell your name as O-M-A-R, S-P-O-U-S-A-L. Your address is 88 Coral Way,
+      Apartment 4B, Spring Hill, Florida 34606. Keep the number you are calling
+      from. You have no email. You are male. Confirm the read-back if correct.
+      Once actual appointment times are offered, say you will check your calendar
+      and call back, then end.
+    agent_expectations: >
+      Collects intake in grouped turns and does not insist on an email. Calls
+      add_patient with insurancePlanId humana-medicare-ppo, visitType medical, and
+      subscriberName Leila Spousal. Offers medical openings after a successful
+      registration. Does not book anything.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550172'
+
+  - label: New self-pay patient skips the member ID
+    instructions: >
+      You are Pia Cashwell, a new patient, born October 22, 1990. Open with: "Hi, I
+      don't have insurance, I'll pay myself. My eyes have been dry and gritty
+      for a few months." Answer each question briefly.
+      Spell your name as P-I-A, C-A-S-H-W-E-L-L. Your address is 5 Lark Lane,
+      Spring Hill, Florida 34608. Keep the number you are calling from. Your email
+      is pia.cashwell@example.com. You are female. Confirm the read-back if
+      correct. Once actual appointment times are offered, say you will check your
+      calendar and call back, then end.
+    agent_expectations: >
+      Uses the self-pay plan and never asks for a member ID or card holder. Calls
+      add_patient with insurancePlanId self-pay-medical and visitType medical.
+      Offers medical openings after a successful registration. Does not book
+      anything.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550173'
