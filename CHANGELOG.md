@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0](https://github.com/chasef07/abita_s2s/compare/v0.23.2...v0.24.0) (2026-10-29)
+
+
+### Features
+
+* **judges:** name the caller line behind a knowledge gap ([#236](https://github.com/chasef07/abita_s2s/issues/236)) ([0dbf1af](https://github.com/chasef07/abita_s2s/commit/0dbf1af43e38ca6eb0db9e0649d9e458cdc8b118))
+
 ## [0.23.2](https://github.com/chasef07/abita_s2s/compare/v0.23.1...v0.23.2) (2026-10-29)
 
 
