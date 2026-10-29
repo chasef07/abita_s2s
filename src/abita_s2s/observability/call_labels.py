@@ -27,7 +27,7 @@ def classification(status: str, reason: str | None = None) -> dict:
 
 
 async def classify_labels(
-    ask: Callable[[str, dict, dict], Awaitable[dict]],
+    ask: Callable[[str, dict, dict], Awaitable[tuple[dict, str | None]]],
     state: dict,
     closeout: dict,
     *,
@@ -45,7 +45,9 @@ async def classify_labels(
         if not (transferred and name == "outcome")
     }
     try:
-        answers = await ask(MODEL, {**state, "closeout": closeout}, questions)
+        answers, result["servedModel"] = await ask(
+            MODEL, {**state, "closeout": closeout}, questions
+        )
         result["answers"] = answers
         errors = []
         for name, question in questions.items():

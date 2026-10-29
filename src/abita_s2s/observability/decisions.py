@@ -8,15 +8,16 @@ MAX_RESPONSE_BYTES = 1024 * 1024
 ROUNDING = 0.005
 
 
-def read_answers(content: bytes) -> dict:
-    """Return the response's answers by question name, or raise ``ValueError``."""
+def read_answers(content: bytes) -> tuple[dict, str | None]:
+    """Return the response's answers by question name and the model version that served them, or raise ``ValueError``."""
     if len(content) > MAX_RESPONSE_BYTES:
         raise ValueError("Response too large")
     body = json.loads(content, parse_constant=_reject_constant)
     answers = body.get("answers") if isinstance(body, dict) else None
     if not isinstance(answers, dict):
         raise ValueError("Missing answers")
-    return answers
+    served = body.get("model")
+    return answers, served if isinstance(served, str) else None
 
 
 def parse(question: dict, answer) -> float | str:

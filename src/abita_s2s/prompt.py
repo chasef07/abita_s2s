@@ -8,6 +8,7 @@ PROMPTS_DIR = Path(__file__).parent / "prompts"
 Prompt = Literal[
     "speaker",
     "thinker",
+    "transfer_policy",
     "call_started",
     "greeting",
     "check_in",
@@ -28,7 +29,10 @@ def load_prompt(name: Prompt) -> str:
 def thinker_instructions(started: datetime, office_knowledge: str) -> str:
     """The thinker's rules with the office's knowledge, plus the clinic-local call start."""
     return (
-        load_prompt("thinker").format(office_knowledge=office_knowledge)
+        load_prompt("thinker").format(
+            transfer_policy=load_prompt("transfer_policy"),
+            office_knowledge=office_knowledge,
+        )
         + "\n\n"
         + load_prompt("call_started").format(started=started)
     )
