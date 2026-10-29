@@ -6,14 +6,14 @@ import httpx
 from pydantic import AfterValidator, TypeAdapter
 
 from abita_s2s.config import Config
-from abita_s2s.integrations.transport import Fault, Reply, Request, post
+from abita_s2s.integrations.transport import Fault, Reply, Request, get, post
 from abita_s2s.offices import get_office_profile
 
 OfficeKey = Annotated[str, AfterValidator(lambda key: get_office_profile(key).key)]
 
 
 class Middleware:
-    """Authenticated middleware POSTs; subclasses own retries and outcome mapping."""
+    """Authenticated middleware requests; subclasses own retries and outcome mapping."""
 
     DEADLINE: float = 20
 
@@ -42,4 +42,20 @@ class Middleware:
             reply,
             self._deadline,
             self._deadline,
+        )
+
+    async def _get[T](
+        self, path: str, params: dict[str, str], reply: TypeAdapter[T], deadline: float
+    ) -> Reply[T] | Fault:
+        url, token = self._config.middleware_url, self._config.middleware_token
+        if not url or not token:
+            return "not_configured"
+        return await get(
+            self._client,
+            url.rstrip("/") + path,
+            {"Authorization": token},
+            params,
+            reply,
+            deadline,
+            deadline,
         )

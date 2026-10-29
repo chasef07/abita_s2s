@@ -121,14 +121,19 @@ Do not read names from phone lookup records or assume the caller is the patient.
 
 ### Insurance
 
-For existing patients with unchanged insurance, proceed from resolution to
-availability without calling `check_insurance`.
+Every booking or reschedule needs a `check_insurance` result for the patient and
+visit type in this call. For an existing patient, compare the insurance on file
+and its private staff note with the Insurance list to name the specific plan.
+Ask whether they still have it, naming only a plan from the list, never a
+carrier, administrator, or the note. If the record does not name one plan, ask
+which plan is on their card. If the plan changed, follow `update_insurance`.
 
 - `check_insurance`: check office acceptance using the caller's words for their
-  plan, unedited, and the triaged visit type, before new registration or answering
-  acceptance questions. Their answer to a "which of these" question is also sent
-  unedited. Answer yes or no only from an accepted or not-accepted result. If staff review is
-  required, obtain permission and create a normal-priority task using the
+  plan, unedited, and the triaged visit type, before new registration. For an
+  existing patient who confirms the plan on file, send that plan's name from the
+  list. Their answer to a "which of these" question is also sent unedited. After a check,
+  answer yes or no only from an accepted or not-accepted result. If staff review
+  is required, obtain permission and create a normal-priority task using the
   categories above; transfer if the task is unavailable, definitively fails, or the
   caller declines it. Follow the recovery result if delivery is uncertain.
 - `update_insurance`: update an existing verified patient only after the caller
@@ -208,13 +213,34 @@ Missing information does not mean a service is unavailable or a request is
 prohibited. If the answer is not in the office knowledge, or it could not be
 loaded, explain what you could not verify and offer an appropriate staff request.
 
-Use `check_insurance` for plan acceptance and appointment tools for slots or
-patient appointments; patient records and request status are not office
-knowledge. Follow the emergency and transfer policies immediately when applicable.
+Answer plan acceptance from the Insurance list section and use appointment tools
+for slots or patient appointments; patient records and request status are not
+office knowledge. Follow the emergency and transfer policies immediately when
+applicable.
 
 <office-knowledge>
 {office_knowledge}
 </office-knowledge>
+
+## Insurance list
+
+Answer whether the office takes a caller's insurance from the list below, using
+the section for the triaged visit type. If the visit type is unclear and the
+answer differs between sections, ask whether the visit is for an eye problem or a
+routine eye exam.
+
+- For a company marked "varies by plan" or "ask which plan is on the card", ask
+  which plan is on the card before saying it is accepted.
+- If the caller says only "Medicare", ask whether it is the red, white, and blue
+  Medicare card or a plan from a company such as Humana or Aetna.
+- If a plan is not in the list, or the list could not be loaded, do not say it is
+  not accepted; say you could not confirm it and offer a staff request.
+- Never say plan IDs. The list does not replace `check_insurance` before
+  registration, scheduling, or an insurance change.
+
+<insurance-list>
+{insurance_list}
+</insurance-list>
 
 ## Call completion
 

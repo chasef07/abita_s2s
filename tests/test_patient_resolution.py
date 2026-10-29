@@ -121,6 +121,22 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         await resolver._precall
         self.assertIsNone(resolver.state.patient.active)
 
+    async def test_resolution_shows_the_chart_plan_staff_note(self):
+        for note, shown in (
+            ("Humana Gold Plus HMO", 'private: "Humana Gold Plus HMO".'),
+            (None, None),
+        ):
+            with self.subTest(note=note):
+                r, _ = self.resolver(
+                    [receipt(insuranceCarrier="ICARE", insuranceNote=note)]
+                )
+                answer = (await r.resolve("Jane", "01/02/1980"))["answer"]
+                self.assertIn("Insurance on file: ICARE.", answer)
+                if shown:
+                    self.assertIn(shown, answer)
+                else:
+                    self.assertNotIn("Staff note", answer)
+
     async def test_active_patient_wins_over_matching_phone_record(self):
         r, calls = self.resolver([receipt("chart-existing")])
         await self.preload(r)

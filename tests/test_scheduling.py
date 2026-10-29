@@ -279,19 +279,26 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(owner.state.patient.active.appointments, [])
                 self.assertEqual(len(requests), 2)
 
-    async def test_existing_vision_patient_schedules_without_acceptance_check(self):
+    async def test_existing_patient_needs_this_calls_check_before_scheduling(self):
         state = call_state(None, get_office_profile("north-miami-beach-optical"))
         state.patient.active = Receipt.model_validate(
             receipt(
                 insuranceDecision=decision(
                     "Chart vision plan",
-                    "medical",
+                    "routine_vision",
                     "north_miami_beach_optical",
-                    canSchedule=False,
                 ),
             )
         )
         owner, requests = self.owner([inventory(), booking()], state=state)
+        result = await self.tool(
+            owner, "list_available_appointments", visitType="routine_vision"
+        )
+        self.assertTrue(
+            result.startswith("needs_input: Confirm which insurance"), result
+        )
+        self.assertEqual(requests, [])
+        verified(state, visit="routine_vision")
         result = await self.tool(
             owner, "list_available_appointments", visitType="routine_vision"
         )
@@ -357,6 +364,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_hollywood_routine_vision_announces_north_miami_beach_once(self):
         state = call_state(None, get_office_profile("hollywood"))
+        verified(state, visit="routine_vision")
         owner, requests = self.owner([inventory(), inventory()], state=state)
 
         async def routine(**args):
@@ -382,6 +390,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_hollywood_caller_choosing_sweetwater_skips_announcement(self):
         state = call_state(None, get_office_profile("hollywood"))
+        verified(state, visit="routine_vision")
         owner, requests = self.owner([inventory()], state=state)
         result = await self.tool(
             owner,
@@ -1128,7 +1137,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 owner, requests = self.owner(
                     [rejected] if phase == "search" else [inventory(), rejected]
                 )
-                owner.state.insurance.accepted = None
                 if phase == "search":
                     result = await self.tool(
                         owner, "list_available_appointments", visitType="medical"
@@ -1385,6 +1393,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 owner.now = lambda: NOW + timedelta(seconds=61)
                 self.assertEqual(await owner.availability("medical"), result)
                 self.assertEqual(len(requests), 2)
+                verified(owner.state, visit="routine_vision")
                 self.assertEqual(
                     (await owner.availability("routine_vision"))["outcome"], "found"
                 )
@@ -2309,15 +2318,44 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 context.session.generate_reply.assert_not_called()
         self.assertEqual(requests, [])
 
-    async def test_clearing_inactive_acceptance_keeps_offered_slots(self):
-        state = call_state(None)
-        verified(state)
-        state.insurance.registrations["chart-jane"] = "created"
-        state.patient.revision += 1
-        owner, _ = self.owner([inventory(), booking()], state=state)
-        ref = await self.slots(owner)
-        state.insurance.accepted = None
-        self.assertTrue((await self.book(owner, ref)).startswith("success:"))
+    async def test_offered_slots_need_the_check_they_were_offered_under(self):
+        for change in ("cleared", "blocked", "rechecked"):
+            with self.subTest(change=change):
+                owner, requests = self.owner([inventory(), booking()])
+                ref = await self.slots(owner)
+                if change == "cleared":
+                    owner.state.insurance.accepted = None
+                elif change == "blocked":
+                    owner.state.insurance.accepted = AcceptedInsurance(
+                        "spring-hill",
+                        owner.state.patient.revision,
+                        "chart-jane",
+                        None,
+                        InsuranceDecision.model_validate(
+                            decision("Test Insurance", canSchedule=False)
+                        ),
+                    )
+                else:
+                    verified(owner.state)
+                self.assertFalse((await self.book(owner, ref)).startswith("success:"))
+                self.assertEqual(len(requests), 1)
+
+    async def test_check_that_needs_staff_blocks_scheduling(self):
+        owner, requests = self.owner([inventory()])
+        owner.state.insurance.accepted = AcceptedInsurance(
+            "spring-hill",
+            owner.state.patient.revision,
+            "chart-jane",
+            None,
+            InsuranceDecision.model_validate(
+                decision("Test Insurance", canSchedule=False)
+            ),
+        )
+        result = await self.tool(
+            owner, "list_available_appointments", visitType="medical"
+        )
+        self.assertTrue(result.startswith("blocked: The insurance check"), result)
+        self.assertEqual(requests, [])
 
     async def write_effects(self, owner, write, sent):
         first = await write()

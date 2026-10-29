@@ -10,7 +10,7 @@ from abita_s2s.insurance_contract import InsuranceDecision
 from unittest.mock import AsyncMock
 import httpx
 from test_patient_resolution import CONFIG, call_state, receipt, search
-from test_scheduling import NOW, inventory
+from test_scheduling import NOW
 
 from abita_s2s.call_control import CallControl
 from abita_s2s.config import load_config
@@ -91,7 +91,7 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(state.insurance.accepted)
         return scheduling, resolver, requests
 
-    async def test_previous_patients_check_does_not_block_returning_patient(self):
+    async def test_previous_patients_check_does_not_clear_returning_patient(self):
         for plan, self_pay in (("", True), ("Unknown corrected plan", False)):
             with self.subTest(plan=plan, self_pay=self_pay):
                 owner, resolver, requests = await self.resolved_owner(
@@ -101,7 +101,6 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
                             "John",
                             "03/04/1981",
                         ),
-                        inventory(),
                         receipt(),
                     ]
                 )
@@ -112,19 +111,18 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
                 await resolver.resolve("John", "03/04/1981")
                 self.assertEqual(owner.state.patient.active.patientId, "chart-john")
                 self.assertEqual(
-                    (await owner.availability("medical"))["outcome"], "found"
+                    (await owner.availability("medical"))["outcome"], "needs_insurance"
                 )
-                self.assertEqual(len(requests), 3)
+                self.assertEqual(len(requests), 2)
                 await resolver.resolve("Jane", "01/02/1980")
                 self.assertEqual(owner.state.patient.active.patientId, "chart-jane")
                 self.assertTrue(insurance_ready(owner.state))
 
-    async def test_absent_patients_check_does_not_block_returning_patient(self):
+    async def test_absent_patients_check_does_not_clear_returning_patient(self):
         state = call_state(None)
         responses = [
             search(),
             receipt(),
-            inventory(),
         ]
         async with httpx.AsyncClient(
             transport=httpx.MockTransport(
@@ -154,7 +152,9 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 (await resolver.resolve("Jane", "01/02/1980"))["outcome"], "verified"
             )
-            self.assertEqual((await owner.availability("medical"))["outcome"], "found")
+            self.assertEqual(
+                (await owner.availability("medical"))["outcome"], "needs_insurance"
+            )
             self.assertEqual(responses, [])
 
     async def test_optional_practice_does_not_block_staff_tasks_or_direct_office(self):

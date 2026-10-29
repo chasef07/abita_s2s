@@ -36,7 +36,11 @@ class ModelConfigTests(unittest.TestCase):
                     clock.now.side_effect = lambda tz: datetime.fromisoformat(
                         instant
                     ).astimezone(tz)
-                    create_model(Config(openai_api_key="offline"), "Hours\nWeekdays.")
+                    create_model(
+                        Config(openai_api_key="offline"),
+                        "Hours\nWeekdays.",
+                        "### Medical visits",
+                    )
                     instructions = model.call_args.kwargs["responses_options"][
                         "instructions"
                     ]
@@ -45,6 +49,7 @@ class ModelConfigTests(unittest.TestCase):
                         load_prompt("thinker").format(
                             transfer_policy=load_prompt("transfer_policy"),
                             office_knowledge="Hours\nWeekdays.",
+                            insurance_list="### Medical visits",
                         )
                         + f"\n\n## Call start\n\nCall started: {expected} (America/New_York). "
                         "Use this clinic-local date to interpret relative dates.",
@@ -53,14 +58,14 @@ class ModelConfigTests(unittest.TestCase):
 
     def test_thinker_reasons_at_high_effort(self):
         with patch("abita_s2s.model_config.CallModel") as model:
-            create_model(Config(openai_api_key="offline"), "")
+            create_model(Config(openai_api_key="offline"), "", "")
         options = model.call_args.kwargs["responses_options"]
         self.assertEqual(options["model"], "gpt-6-luna")
         self.assertEqual(options["reasoning"], {"effort": "high"})
 
     def test_thinker_calls_one_tool_at_a_time(self):
         with patch("abita_s2s.model_config.CallModel") as model:
-            create_model(Config(openai_api_key="offline"), "")
+            create_model(Config(openai_api_key="offline"), "", "")
         options = model.call_args.kwargs["responses_options"]
         self.assertIs(options["parallel_tool_calls"], False)
 

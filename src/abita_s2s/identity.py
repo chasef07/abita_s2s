@@ -396,7 +396,12 @@ class PatientResolver:
         result = reply(
             outcome,
             f"success: I found the patient record for {receipt.name}. DOB is on file; do not ask for DOB."
-            f" Insurance on file: {receipt.insuranceCarrier or 'none recorded'}.",
+            f" Insurance on file: {receipt.insuranceCarrier or 'none recorded'}."
+            + (
+                f' Staff note on that plan, private: "{receipt.insuranceNote}".'
+                if receipt.insuranceNote
+                else ""
+            ),
         )
         if receipt.appointmentsStatus == "error":
             result["answer"] += (

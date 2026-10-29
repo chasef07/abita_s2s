@@ -298,7 +298,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("insurancePlan", requests[0][1])
                 self.assertEqual(requests[0][1]["patientId"], "new-chart")
 
-    async def test_completed_chart_visit_change_uses_backend_policy(self):
+    async def test_completed_chart_visit_change_needs_a_new_check(self):
         from datetime import datetime, UTC
         from abita_s2s.scheduling.appointments import Scheduling
         from abita_s2s.integrations.scheduling_http import SchedulingHTTP
@@ -331,11 +331,8 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             )
             self.addAsyncCleanup(scheduling.aclose)
             result = await scheduling.availability("medical", "2026-09-15")
-        self.assertEqual(result["outcome"], "needs_input")
-        self.assertIn("accepted medical coverage", result["answer"])
-        self.assertEqual(len(requests), 1)
-        self.assertEqual(requests[0]["patientId"], "new-chart")
-        self.assertNotIn("insurancePlan", requests[0])
+        self.assertEqual(result["outcome"], "needs_insurance")
+        self.assertEqual(requests, [])
 
     async def test_write_decision_must_match_requested_plan_office_and_coverage(self):
         for changed in (

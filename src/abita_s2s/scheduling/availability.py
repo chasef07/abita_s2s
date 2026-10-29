@@ -10,6 +10,7 @@ from abita_s2s.insurance_state import (
     AcceptedInsurance,
     accepted_insurance,
     insurance_ready,
+    scheduling_clearance,
 )
 from abita_s2s.integrations.scheduling_http import (
     SchedulingFailure,
@@ -102,7 +103,7 @@ def scheduling_context(state: CallState) -> SchedulingContext:
     p = state.patient.active
     insurance = state.insurance
     registration = insurance.registrations.get(p.patientId) if p else None
-    accepted = accepted_insurance(state) if registration is not None else None
+    accepted = accepted_insurance(state)
     return SchedulingContext(
         patient_revision=state.patient.revision,
         patient_id=p.patientId if p else None,
@@ -228,6 +229,19 @@ class Offers:
             return reply(
                 "needs_input",
                 "needs_input: Verify the patient, finish new-patient registration, or resolve the pending or uncertain insurance update before scheduling.",
+            )
+        clearance = scheduling_clearance(self.state, visit)
+        if clearance == "unchecked":
+            self.invalidate()
+            return reply(
+                "needs_insurance",
+                "needs_input: Confirm which insurance plan the patient is using for this visit, then check it with check_insurance for this visit type before scheduling.",
+            )
+        if clearance == "blocked":
+            self.invalidate()
+            return reply(
+                "needs_staff_review",
+                "blocked: The insurance check did not clear this visit for scheduling. Follow that check's result; offer a staff request or transfer instead of scheduling.",
             )
         if writing:
             return reply(

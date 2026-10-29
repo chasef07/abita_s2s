@@ -84,7 +84,7 @@ class OfficeKnowledgeTests(unittest.IsolatedAsyncioTestCase):
         for office, other in ((SPRING_HILL, SWEETWATER), (SWEETWATER, SPRING_HILL)):
             with self.subTest(office=office.key):
                 text = await read_office_knowledge(product, office.key)
-                instructions = thinker_instructions(STARTED, text)
+                instructions = thinker_instructions(STARTED, text, "")
                 request = requests[-1]
                 self.assertEqual(str(request.url), CONFIG.knowledge_url)
                 self.assertEqual(request.headers["authorization"], "Bearer test-secret")
@@ -139,7 +139,7 @@ class OfficeKnowledgeTests(unittest.IsolatedAsyncioTestCase):
                     self.product(handler, config), SPRING_HILL.key
                 )
                 self.assertEqual(text, UNAVAILABLE)
-                self.assertIn(UNAVAILABLE, thinker_instructions(STARTED, text))
+                self.assertIn(UNAVAILABLE, thinker_instructions(STARTED, text, ""))
                 self.assertIn(f"cause={cause}", logs.output[0])
                 self.assertIn("office=spring-hill", logs.output[0])
                 self.assertNotIn("private", str(logs.output))

@@ -1,4 +1,4 @@
-"""One attempt per chart/insurance write; ambiguous responses are never retried."""
+"""Insurance reads, and one attempt per chart/insurance write; ambiguous writes are never retried."""
 
 from typing import Annotated, Literal
 
@@ -17,6 +17,30 @@ class CreationReceipt(Record):
     patientId: Text
     name: Text
     dob: Text
+
+
+PLAN_LIST_TIMEOUT = 2.0
+
+
+class PlanSummary(Record):
+    """One plan's standing at an office, as middleware lists it."""
+
+    planId: Text
+    label: Text
+    family: Text
+    names: list[str]
+    carrierId: str
+    allowedProviders: list[str]
+    outcome: Literal["accepted", "not_accepted", "needs_staff_task"]
+    requirements: list[Literal["pcp_referral", "prior_authorization", "staff_verify"]]
+    callerNotice: str
+    acceptedAt: list[str]
+
+
+class PlanList(Record):
+    officeId: str
+    coverage: CoverageType
+    plans: list[PlanSummary]
 
 
 class UpdatedReceipt(Record):
@@ -73,6 +97,7 @@ UPDATED = TypeAdapter(
     Annotated[UpdatedReceipt | UpdateRejection, Field(discriminator="status")]
 )
 DECISION = TypeAdapter(InsuranceDecision)
+PLAN_LIST = TypeAdapter(PlanList)
 
 
 class DecisionRequest(Request):
@@ -126,6 +151,27 @@ class RegistrationMiddleware(Middleware):
         ):
             return None
         return decision
+
+    async def plans(self, office: str, coverage: CoverageType) -> PlanList | str:
+        """Every plan's standing at the office for one coverage in one attempt, or a log-safe cause."""
+        reply = await self._get(
+            "/api/insurance/plans",
+            {"office": office, "coverage": coverage},
+            PLAN_LIST,
+            PLAN_LIST_TIMEOUT,
+        )
+        if isinstance(reply, str):
+            return reply
+        if not reply.ok:
+            return f"http_{reply.code}"
+        if reply.body is None:
+            return "invalid_response"
+        if (
+            not same_office(reply.body.officeId, office)
+            or reply.body.coverage != coverage
+        ):
+            return "mismatched_response"
+        return reply.body
 
     async def create(self, request: NewPatient) -> CreationReceipt | WriteFailure:
         reply = await self._post("/api/add-patient", request, CREATED)

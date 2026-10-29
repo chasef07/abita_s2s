@@ -129,6 +129,20 @@ def rebind_acceptance(
     )
 
 
+def scheduling_clearance(
+    state: "CallState", coverage_type: CoverageType
+) -> Literal["cleared", "unchecked", "blocked"]:
+    """Every booking needs this patient's plan checked for the visit type this call.
+
+    A chart's carrier is often shared by plans with different referral or
+    authorization rules, so a chart alone never clears scheduling.
+    """
+    checked = accepted_insurance(state, coverage_type)
+    if checked is None:
+        return "unchecked"
+    return "cleared" if checked.decision.canSchedule else "blocked"
+
+
 def insurance_ready(state: "CallState") -> bool:
     """Guard unfinished writes; middleware evaluates every completed chart."""
     if state.insurance.write_pending or state.insurance.write_uncertain:

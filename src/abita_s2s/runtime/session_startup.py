@@ -18,6 +18,11 @@ from abita_s2s.call_control import CallControl
 from abita_s2s.config import load_config
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
+from abita_s2s.insurance_list import (
+    OfficePlans,
+    read_insurance_list,
+    render_insurance_list,
+)
 from abita_s2s.knowledge import read_office_knowledge, render_office_knowledge
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.integrations.product import KNOWLEDGE_ENTRIES, Product
@@ -58,6 +63,24 @@ async def _gather_raising(*steps, cancelled: str | None = None):
             raise RuntimeError(cancelled)
         if isinstance(result, BaseException):
             raise result
+
+
+async def office_knowledge_text(
+    product: Product, office_key: str, scenario: object | None
+) -> str:
+    """The office's knowledge, or a simulation scenario's synthetic entries."""
+    if scenario is None:
+        return await read_office_knowledge(product, office_key)
+    return render_office_knowledge(KNOWLEDGE_ENTRIES.validate_python(scenario))
+
+
+async def insurance_list_text(
+    middleware: RegistrationMiddleware, office_key: str, scenario: object | None
+) -> str:
+    """The office's insurance list, or a simulation scenario's synthetic plans."""
+    if scenario is None:
+        return await read_insurance_list(middleware, office_key)
+    return render_insurance_list(OfficePlans.model_validate(scenario))
 
 
 async def wait_for_sip(ctx):
@@ -123,7 +146,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         close_on_disconnect=True,
         delete_room_on_close=True,
     )
-    scenario_knowledge = None
+    scenario_knowledge = scenario_plans = None
     if simulation is not None:
         sandbox_url = os.environ.get("SANDBOX_AMD_API_URL", "").strip()
         sandbox_token = os.environ.get("SANDBOX_AMD_API_TOKEN", "").strip()
@@ -147,6 +170,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         data = simulation.userdata()
         office = get_office_profile(data["office"])
         scenario_knowledge = data.get("office_knowledge")
+        scenario_plans = data.get("insurance_plans")
         await ctx.connect()
         participant = await ctx.wait_for_participant()
         room_options.participant_identity = participant.identity
@@ -237,12 +261,11 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
 
     ctx.add_shutdown_callback(close_client)
     product = Product(client, config)
-    if scenario_knowledge is None:
-        office_knowledge = await read_office_knowledge(product, office.key)
-    else:
-        office_knowledge = render_office_knowledge(
-            KNOWLEDGE_ENTRIES.validate_python(scenario_knowledge)
-        )
+    registration = RegistrationMiddleware(client, config)
+    office_knowledge, insurance_list = await asyncio.gather(
+        office_knowledge_text(product, office.key, scenario_knowledge),
+        insurance_list_text(registration, office.key, scenario_plans),
+    )
     if config.interaction_url and not ctx.is_fake_job():
         if call.caller_phone:
             state.reporter = CallReporter(
@@ -251,7 +274,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         else:
             logger.error("Product call reporting unavailable: caller phone missing")
     try:
-        model = create_model(config, office_knowledge)
+        model = create_model(config, office_knowledge, insurance_list)
         session = AgentSession[CallState](
             userdata=state,
             llm=model,
@@ -285,9 +308,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             office,
             resolver=resolver,
             scheduling=Scheduling(state, SchedulingHTTP(client, config)),
-            insurance=InsuranceRegistration(
-                state, resolver, RegistrationMiddleware(client, config)
-            ),
+            insurance=InsuranceRegistration(state, resolver, registration),
             staff_tasks=StaffTasks(state, resolver, product),
             call_control=control,
         )
