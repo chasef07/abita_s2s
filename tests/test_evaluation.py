@@ -15,6 +15,7 @@ from livekit.agents import ChatContext
 from livekit.agents.llm import AgentConfigUpdate, FunctionCall, FunctionCallOutput
 
 from abita_s2s.knowledge import UNAVAILABLE
+from abita_s2s.observability import knowledge_gap
 from abita_s2s.observability.decisions import parse, read_answers
 from abita_s2s.observability.evaluation import (
     EVALUATOR_VERSION,
@@ -135,6 +136,19 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 value = (values or {}).get(name, default)
                 if isinstance(value, dict):
                     value = value.get(juror, default)
+                if question["type"] == "choice":
+                    pick = (values or {}).get(name, "none")
+                    if isinstance(pick, dict):
+                        pick = pick.get(juror, "none")
+                    answers[name] = {
+                        "type": "choice",
+                        "choice": pick,
+                        "probabilities": {
+                            label: float(label == pick)
+                            for label in question["criteria"]
+                        },
+                    }
+                    continue
                 answers[name] = (
                     {"type": "score", "score": value, "probabilities": {str(value): 1}}
                     if question["type"] == "score"
@@ -343,6 +357,78 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("office_question_answered", requests[0]["questions"])
                 self.assertEqual(requests[0]["state"]["office_knowledge"], knowledge)
 
+    async def test_a_knowledge_gap_names_the_caller_line_most_jurors_picked(self):
+        jurors = ("juror-a", "juror-b", "juror-c")
+        requests, result = await self.run_evaluation(
+            values={
+                "knowledge_available": 0.1,
+                "knowledge_gap_line": {"juror-a": "3", "juror-b": "3", "juror-c": "0"},
+            },
+            jurors=jurors,
+        )
+        question = requests[0]["questions"]["knowledge_gap_line"]
+        self.assertEqual(question["type"], "choice")
+        self.assertEqual(
+            question["criteria"],
+            {
+                "0": "caller: Move Tuesday at 9 to Wednesday at 10.",
+                "3": "caller: This is frustrating. Please get a person.",
+                "4": "caller: Thanks.",
+                "none": "No caller office question went unanswered for missing office knowledge.",
+            },
+        )
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(
+            result["results"]["knowledge_available"]["line"],
+            "This is frustrating. Please get a person.",
+        )
+
+    async def test_a_knowledge_gap_without_a_majority_line_names_none(self):
+        jurors = ("juror-a", "juror-b", "juror-c")
+        for picks in (
+            {"juror-a": "3", "juror-b": "4", "juror-c": "0"},
+            {"juror-a": "none", "juror-b": "none", "juror-c": "3"},
+        ):
+            with self.subTest(picks=picks):
+                _, result = await self.run_evaluation(
+                    values={"knowledge_available": 0.1, "knowledge_gap_line": picks},
+                    jurors=jurors,
+                )
+                self.assertEqual(result["status"], "complete")
+                self.assertEqual(result["errors"], {})
+                self.assertNotIn("line", result["results"]["knowledge_available"])
+
+    async def test_an_invalid_line_pick_is_logged_and_not_counted(self):
+        with self.assertLogs("abita_s2s.observability.knowledge_gap", "ERROR") as logs:
+            _, result = await self.run_evaluation(
+                values={
+                    "knowledge_available": 0.1,
+                    "knowledge_gap_line": {
+                        "juror-a": "3",
+                        "juror-b": "7",
+                        "juror-c": "7",
+                    },
+                },
+                jurors=("juror-a", "juror-b", "juror-c"),
+            )
+        self.assertEqual(
+            [record.getMessage() for record in logs.records],
+            [
+                f"Call evaluation answer invalid judge=knowledge_gap_line juror={juror}"
+                for juror in ("juror-b", "juror-c")
+            ],
+        )
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["errors"], {})
+        self.assertNotIn("line", result["results"]["knowledge_available"])
+
+    async def test_answered_knowledge_names_no_line(self):
+        _, result = await self.run_evaluation(
+            values={"knowledge_available": 0.9, "knowledge_gap_line": "3"}
+        )
+        self.assertTrue(result["results"]["knowledge_available"]["verdict"])
+        self.assertNotIn("line", result["results"]["knowledge_available"])
+
     async def test_each_juror_gets_every_question_in_one_request_with_zero_retention(
         self,
     ):
@@ -355,16 +441,16 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(request["model"], "juror-a")
             self.assertEqual(request["provider"], {"zdr": True})
             sent.update(request["questions"])
-        self.assertEqual(set(sent), set(QUESTIONS))
+        self.assertEqual(set(sent), {*QUESTIONS, "knowledge_gap_line"})
         self.assertEqual(len(requests), 1)
         self.assertEqual(result["evaluator"], "jury")
         self.assertEqual(result["evaluatorVersion"], EVALUATOR_VERSION)
         self.assertEqual(result["jurors"], ["juror-a"])
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["errors"], {})
-        self.assertEqual(set(result["results"]), set(sent))
+        self.assertEqual(set(result["results"]), set(QUESTIONS))
         for name, question in sent.items():
-            if name == "expressed_sentiment":
+            if name in ("expressed_sentiment", "knowledge_gap_line"):
                 continue
             self.assertEqual(question["type"], "noul")
             self.assertEqual(set(question["criteria"]), {"true", "false"})
@@ -388,7 +474,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.assertEqual(len(requests), 1)
-        self.assertEqual(len(requests[0]["questions"]), 7)
+        self.assertEqual(len(requests[0]["questions"]), 8)
         self.assertEqual(result["status"], "complete")
         jev = "juror-a"
         self.assertEqual(
@@ -493,9 +579,9 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                     )
                     self.assertEqual(result["status"], "complete")
                     self.assertEqual(result["errors"], {})
-                    self.assertEqual(len(requests[0]["questions"]), count + 1)
+                    self.assertEqual(len(requests[0]["questions"]), count + 2)
                     for name in requests[0]["questions"]:
-                        if name == "expressed_sentiment":
+                        if name in ("expressed_sentiment", "knowledge_gap_line"):
                             continue
                         answer = result["results"][name]
                         self.assertEqual(answer["verdict"], value > 0.4)
@@ -647,7 +733,7 @@ class JudgeStateTests(unittest.TestCase):
         history = ChatContext()
         history.add_message(role="user", content="Hi.")
         named = set()
-        for question in QUESTIONS.values():
+        for question in (*QUESTIONS.values(), knowledge_gap.line_question([])):
             text = json.dumps(question)
             named.update(re.findall(r"`([a-z_]+)`", text))
         self.assertEqual(named, set(judge_state(history, OFFICE_KNOWLEDGE)))
