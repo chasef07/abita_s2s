@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM ghcr.io/astral-sh/uv:0.13.5 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.6 AS uv
 FROM python:3.13.17-slim-bookworm
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy LIVEKIT_AGENTS_PRELOAD_LOCAL_INFERENCE=0
 ENV ABITA_S2S_DEPLOYED=1
