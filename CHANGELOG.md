@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.2](https://github.com/chasef07/abita_s2s/compare/v0.23.1...v0.23.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* **evaluation:** judge calls against named policy fields, not the whole agent prompt ([#235](https://github.com/chasef07/abita_s2s/issues/235)) ([42ceabc](https://github.com/chasef07/abita_s2s/commit/42ceabc2618e941e8fb426aef244b2c33b5e737e))
+
 ## [0.23.1](https://github.com/chasef07/abita_s2s/compare/v0.23.0...v0.23.1) (2026-10-28)
 
 
