@@ -44,7 +44,6 @@ class Receipt(Record):
     insuranceCarrier: str | None = None
     insuranceCarrierId: str | None = None
     insuranceNote: str | None = None
-    insuranceNotePlanIds: list[str] = []
     appointmentsStatus: Literal["found", "none", "error"]
     appointments: list[Appointment]
 

@@ -103,42 +103,36 @@ def listed_plan(
 
 
 def chart_plans(
-    plans: OfficePlans | None,
-    carrier_id: str | None,
-    note_plan_ids: Sequence[str],
-    note: str | None,
+    plans: OfficePlans | None, carrier_id: str | None, note: str | None
 ) -> str:
-    """The plan a chart names: the staff note's plan, else the carrier's only plan."""
+    """The listed plans on a chart's carrier, per visit type, beside the staff note."""
     shown_note = f' Staff note, private: "{note}".' if note else ""
     if plans is None or not carrier_id:
         return shown_note
-    by_coverage = (("medical", plans.medical), ("routine_vision", plans.routine_vision))
-    named = [
-        f"{plan.label} `{plan.planId}` ({VISITS[coverage]})"
-        for coverage, listed in by_coverage
-        for plan in listed
-        if plan.planId in note_plan_ids
-    ]
-    if named:
-        return " The staff note names: " + "; ".join(named) + "." + shown_note
-    on_carrier = [
-        (coverage, [plan for plan in listed if plan.carrierId == carrier_id])
-        for coverage, listed in by_coverage
-    ]
-    if not any(found for _, found in on_carrier):
-        return (
-            " No plan in the Insurance list uses this carrier; ask which plan is on the card."
-            + shown_note
-        )
+    pick = (
+        "Confirm the one the staff note names; if it names none of them, ask which plan is on the card."
+        if note
+        else "Ask which plan is on the card."
+    )
     lines = []
-    for coverage, found in on_carrier:
-        if len(found) == 1:
+    for coverage, listed in (
+        ("medical", plans.medical),
+        ("routine_vision", plans.routine_vision),
+    ):
+        found = [plan for plan in listed if plan.carrierId == carrier_id]
+        visits = VISITS[coverage]
+        if not found:
             lines.append(
-                f" The carrier's only plan for {VISITS[coverage]}: {found[0].label} `{found[0].planId}`."
+                f" No plan in the Insurance list uses this carrier for {visits}; ask which plan is on the card."
             )
-        elif found:
+        elif len(found) == 1:
             lines.append(
-                f" This carrier pays for several plans for {VISITS[coverage]}; ask which plan is on the card."
+                f" The carrier's only plan for {visits}: {found[0].label} `{found[0].planId}`."
+            )
+        else:
+            names = "; ".join(f"{plan.label} `{plan.planId}`" for plan in found)
+            lines.append(
+                f" This carrier pays for several plans for {visits}: {names}. {pick}"
             )
     return "".join(lines) + shown_note
 

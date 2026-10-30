@@ -382,7 +382,6 @@ class PatientResolver:
             + chart_plans(
                 self.state.insurance.plans,
                 receipt.insuranceCarrierId,
-                receipt.insuranceNotePlanIds,
                 receipt.insuranceNote,
             ),
         )
