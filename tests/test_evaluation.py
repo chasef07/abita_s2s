@@ -747,8 +747,12 @@ class JudgeStateTests(unittest.TestCase):
         self,
     ):
         scope = knowledge_available.OFFICE_QUESTION
-        for excluded in ("insurance", "appointment availability", "medical advice"):
-            self.assertIn(excluded, scope.split("These are not office questions:")[1])
+        for excluded in (
+            "insurance acceptance",
+            "open appointment times",
+            "medical advice",
+        ):
+            self.assertIn(excluded, scope.split("Not office questions:")[1])
         self.assertIn(scope, QUESTIONS["knowledge_available"]["instructions"])
         self.assertIn(scope, knowledge_gap.line_question([])["instructions"])
 
