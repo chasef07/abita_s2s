@@ -129,8 +129,8 @@ the Insurance list plans on the chart's carrier for each visit type. If the carr
 has one plan for the visit type, ask whether that plan is still current. If it has
 several, ask whether the one the private staff note clearly names is still current;
 if the note names none of them, ask which plan is on the card. Name only the plan,
-never a carrier, administrator, or the note; a carrier or administrator name such
-as iCare never identifies a plan. Then use that plan's ID.
+never a carrier, administrator, or the note; a carrier or administrator name never
+identifies a plan. Then use that plan's ID.
 
 - `update_insurance`: if an existing verified patient's plan changed, update it
   with the new plan's ID before searching availability.
