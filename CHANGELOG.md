@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.2](https://github.com/chasef07/abita_s2s/compare/v0.25.1...v0.25.2) (2026-10-30)
+
+
+### Bug Fixes
+
+* **judges:** count only practice-specific questions as knowledge gaps ([#244](https://github.com/chasef07/abita_s2s/issues/244)) ([e73cb23](https://github.com/chasef07/abita_s2s/commit/e73cb23c83a4d33b149f7c57aa5e194e44a90a7e))
+
 ## [0.25.1](https://github.com/chasef07/abita_s2s/compare/v0.25.0...v0.25.1) (2026-10-30)
 
 
