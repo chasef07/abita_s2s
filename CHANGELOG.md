@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.1](https://github.com/chasef07/abita_s2s/compare/v0.25.0...v0.25.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* **insurance:** list the carrier's plans per visit type and confirm the one the staff note names ([#242](https://github.com/chasef07/abita_s2s/issues/242)) ([4f415df](https://github.com/chasef07/abita_s2s/commit/4f415df2e0b81e831c97213c15bfc6a6fd054fa1))
+
 ## [0.25.0](https://github.com/chasef07/abita_s2s/compare/v0.24.0...v0.25.0) (2026-10-29)
 
 
