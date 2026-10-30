@@ -2,7 +2,7 @@
 
 import asyncio
 
-from abita_s2s.insurance_list import carrier_plans
+from abita_s2s.insurance_list import chart_plans
 from abita_s2s.integrations.patient_middleware import (
     Candidate,
     Multiple,
@@ -379,11 +379,10 @@ class PatientResolver:
             outcome,
             f"success: I found the patient record for {receipt.name}. DOB is on file; do not ask for DOB."
             f" Insurance on file: {receipt.insuranceCarrier or 'none recorded'}."
-            + carrier_plans(self.state.insurance.plans, receipt.insuranceCarrierId)
-            + (
-                f' Staff note on that plan, private: "{receipt.insuranceNote}".'
-                if receipt.insuranceNote
-                else ""
+            + chart_plans(
+                self.state.insurance.plans,
+                receipt.insuranceCarrierId,
+                receipt.insuranceNote,
             ),
         )
         if receipt.appointmentsStatus == "error":

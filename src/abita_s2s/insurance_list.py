@@ -102,22 +102,39 @@ def listed_plan(
     return plan
 
 
-def carrier_plans(plans: OfficePlans | None, carrier_id: str | None) -> str:
-    """The listed plans paid through a chart's carrier, so the agent names one plan."""
+def chart_plans(
+    plans: OfficePlans | None, carrier_id: str | None, note: str | None
+) -> str:
+    """The listed plans on a chart's carrier, per visit type, beside the staff note."""
+    shown_note = f' Staff note, private: "{note}".' if note else ""
     if plans is None or not carrier_id:
-        return ""
-    matches = [
-        f"{plan.label} `{plan.planId}` ({VISITS[coverage]})"
-        for coverage, listed in (
-            ("medical", plans.medical),
-            ("routine_vision", plans.routine_vision),
-        )
-        for plan in listed
-        if plan.carrierId == carrier_id
-    ]
-    if not matches:
-        return " No plan in the Insurance list uses this carrier; ask which plan is on the card."
-    return " Insurance list plans on this carrier: " + "; ".join(matches) + "."
+        return shown_note
+    pick = (
+        "Confirm the one the staff note names; if it names none of them, ask which plan is on the card."
+        if note
+        else "Ask which plan is on the card."
+    )
+    lines = []
+    for coverage, listed in (
+        ("medical", plans.medical),
+        ("routine_vision", plans.routine_vision),
+    ):
+        found = [plan for plan in listed if plan.carrierId == carrier_id]
+        visits = VISITS[coverage]
+        if not found:
+            lines.append(
+                f" No plan in the Insurance list uses this carrier for {visits}; ask which plan is on the card."
+            )
+        elif len(found) == 1:
+            lines.append(
+                f" The carrier's only plan for {visits}: {found[0].label} `{found[0].planId}`."
+            )
+        else:
+            names = "; ".join(f"{plan.label} `{plan.planId}`" for plan in found)
+            lines.append(
+                f" This carrier pays for several plans for {visits}: {names}. {pick}"
+            )
+    return "".join(lines) + shown_note
 
 
 def _section(title: str, plans: Sequence[PlanSummary]) -> str:
