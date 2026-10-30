@@ -52,7 +52,6 @@ class Booking(Request):
     dob: str
     bookingToken: str
     visitCategory: CoverageType
-    patientStatus: Literal["new", "established"]
     appointmentReason: str
     visitReason: str
     referringDoctor: str

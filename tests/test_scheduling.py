@@ -1016,7 +1016,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["bookingToken"], "private-signed-slot")
         self.assertEqual(body["patientId"], "chart-jane")
         self.assertNotIn("office", body)
-        self.assertEqual(body["patientStatus"], "established")
+        self.assertNotIn("patientStatus", body)
         cancel_ref = owner.appointments()[0]["appointmentRef"]
         self.assertEqual(
             (
