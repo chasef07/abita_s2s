@@ -51,7 +51,12 @@ def render(medical=(), routine_vision=()):
 
 
 def plans_reply(office_id, coverage, plans):
-    return {"officeId": office_id, "coverage": coverage, "plans": plans}
+    return {
+        "officeId": office_id,
+        "coverage": coverage,
+        "catalogRevisionId": f"rev-{coverage}",
+        "plans": plans,
+    }
 
 
 class RenderTests(unittest.TestCase):
@@ -242,8 +247,16 @@ class ReadTests(unittest.IsolatedAsyncioTestCase):
                 200, json=plans_reply("spring_hill", coverage, replies[coverage])
             )
 
-        plans = await read_office_plans(self.middleware(handler), "spring-hill")
+        with self.assertLogs("abita_s2s.insurance_list", level="INFO") as logs:
+            plans = await read_office_plans(self.middleware(handler), "spring-hill")
         self.assertEqual(plans, OfficePlans.model_validate(replies))
+        self.assertEqual(
+            sorted(record.getMessage() for record in logs.records),
+            [
+                "Insurance plans loaded office=spring-hill coverage=medical revision=rev-medical plans=1",
+                "Insurance plans loaded office=spring-hill coverage=routine_vision revision=rev-routine_vision plans=1",
+            ],
+        )
         text = render_insurance_list(plans)
         self.assertEqual(
             sorted((r.method, r.url.path, r.url.query.decode()) for r in requests),
@@ -288,6 +301,14 @@ class ReadTests(unittest.IsolatedAsyncioTestCase):
             ),
             (
                 vision(200, {**valid, "plans": [{**plan("x"), "family": None}]}),
+                CONFIG,
+                "routine_vision:invalid_response",
+            ),
+            (
+                vision(
+                    200,
+                    {k: v for k, v in valid.items() if k != "catalogRevisionId"},
+                ),
                 CONFIG,
                 "routine_vision:invalid_response",
             ),
