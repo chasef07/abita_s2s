@@ -23,7 +23,12 @@ from abita_s2s.observability.evaluation import (
     evaluate_call,
 )
 from abita_s2s.observability.judge_state import judge_state
-from abita_s2s.observability.judges import DEFINITIONS_HASH, JURORS, QUESTIONS
+from abita_s2s.observability.judges import (
+    DEFINITIONS_HASH,
+    JURORS,
+    QUESTIONS,
+    knowledge_available,
+)
 from abita_s2s.prompt import load_prompt
 
 OFFICE_KNOWLEDGE = "Hours\nMonday to Friday, 9 to 5."
@@ -737,6 +742,15 @@ class JudgeStateTests(unittest.TestCase):
             text = json.dumps(question)
             named.update(re.findall(r"`([a-z_]+)`", text))
         self.assertEqual(named, set(judge_state(history, OFFICE_KNOWLEDGE)))
+
+    def test_a_knowledge_gap_and_its_caller_line_share_one_office_question_scope(
+        self,
+    ):
+        scope = knowledge_available.OFFICE_QUESTION
+        for excluded in ("insurance", "appointment availability", "medical advice"):
+            self.assertIn(excluded, scope.split("These are not office questions:")[1])
+        self.assertIn(scope, QUESTIONS["knowledge_available"]["instructions"])
+        self.assertIn(scope, knowledge_gap.line_question([])["instructions"])
 
 
 class DecisionsAnswerTests(unittest.TestCase):
