@@ -126,7 +126,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_resolution_shows_the_chart_plan_staff_note(self):
         for note, shown in (
-            ("Humana Gold Plus HMO", 'private: "Humana Gold Plus HMO".'),
+            ("Humana Gold Plus HMO", 'Staff note, private: "Humana Gold Plus HMO".'),
             (None, None),
         ):
             with self.subTest(note=note):
@@ -140,7 +140,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
                 else:
                     self.assertNotIn("Staff note", answer)
 
-    async def test_resolution_lists_the_plans_on_the_chart_carrier(self):
+    def icare_state(self):
         state = call_state()
         state.insurance.plans = OfficePlans.model_validate(
             {
@@ -149,29 +149,87 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
                     listed("Aetna Medicare HMO", carrierId="car40907"),
                     listed("Simply Medicaid", carrierId="car40907"),
                 ],
-                "routine_vision": [listed("Humana Vision", carrierId="car40907")],
+                "routine_vision": [
+                    listed(
+                        "Simply Medicaid Vision", "routine_vision", carrierId="car40907"
+                    )
+                ],
             }
         )
-        for carrier, shown in (
+        return state
+
+    async def answer(self, state, **fields):
+        state.patient.active = None
+        r, _ = self.resolver([receipt(**fields)], state=state)
+        return (await r.resolve("Jane", "01/02/1980"))["answer"]
+
+    async def test_resolution_names_the_plan_the_staff_note_names(self):
+        answer = await self.answer(
+            self.icare_state(),
+            insuranceCarrier="ICARE HEALTH OPTIONS TPA",
+            insuranceCarrierId="car40907",
+            insuranceNote="Simply Medicaid Vision:Icare",
+            insuranceNotePlanIds=["simply-medicaid", "simply-medicaid-vision"],
+        )
+        self.assertIn(
+            "The staff note names: Simply Medicaid `simply-medicaid` (medical visits);"
+            " Simply Medicaid Vision `simply-medicaid-vision` (routine vision exams).",
+            answer,
+        )
+        self.assertIn('Staff note, private: "Simply Medicaid Vision:Icare".', answer)
+        self.assertNotIn("Aetna Medicare HMO", answer)
+
+    async def test_resolution_ignores_note_plans_missing_from_the_list(self):
+        answer = await self.answer(
+            self.icare_state(),
+            insuranceCarrierId="car40907",
+            insuranceNotePlanIds=["not-listed"],
+        )
+        self.assertNotIn("not-listed", answer)
+        self.assertIn("several plans for medical visits", answer)
+
+    async def test_resolution_names_only_the_note_plan_when_it_covers_one_visit_type(
+        self,
+    ):
+        answer = await self.answer(
+            self.icare_state(),
+            insuranceCarrierId="car40907",
+            insuranceNotePlanIds=["simply-medicaid"],
+        )
+        self.assertIn(
+            "The staff note names: Simply Medicaid `simply-medicaid` (medical visits).",
+            answer,
+        )
+        self.assertNotIn("Simply Medicaid Vision", answer)
+        self.assertNotIn("several plans", answer)
+
+    async def test_resolution_names_a_carrier_plan_only_when_it_is_the_only_one(self):
+        state = self.icare_state()
+        for carrier, shown, hidden in (
             (
                 "car303033",
-                "Insurance list plans on this carrier: Humana Medicaid HMO "
-                "`humana-medicaid-hmo` (medical visits).",
+                "The carrier's only plan for medical visits: Humana Medicaid HMO "
+                "`humana-medicaid-hmo`.",
+                ("several plans",),
             ),
             (
                 "car40907",
-                "Insurance list plans on this carrier: Aetna Medicare HMO "
-                "`aetna-medicare-hmo` (medical visits); Simply Medicaid "
-                "`simply-medicaid` (medical visits); Humana Vision "
-                "`humana-vision` (routine vision exams).",
+                "This carrier pays for several plans for medical visits; ask which"
+                " plan is on the card. The carrier's only plan for routine vision"
+                " exams: Simply Medicaid Vision `simply-medicaid-vision`.",
+                ("Aetna Medicare HMO",),
             ),
-            ("car999", "No plan in the Insurance list uses this carrier"),
+            (
+                "car999",
+                "No plan in the Insurance list uses this carrier",
+                ("staff note names", "carrier's only plan"),
+            ),
         ):
             with self.subTest(carrier=carrier):
-                state.patient.active = None
-                r, _ = self.resolver([receipt(insuranceCarrierId=carrier)], state=state)
-                answer = (await r.resolve("Jane", "01/02/1980"))["answer"]
+                answer = await self.answer(state, insuranceCarrierId=carrier)
                 self.assertIn(shown, answer)
+                for text in hidden:
+                    self.assertNotIn(text, answer)
 
     async def test_resolution_omits_carrier_plans_without_a_list_or_carrier(self):
         for plans, carrier in ((None, "car1"), (office_plans(), None)):

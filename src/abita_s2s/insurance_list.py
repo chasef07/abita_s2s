@@ -102,22 +102,45 @@ def listed_plan(
     return plan
 
 
-def carrier_plans(plans: OfficePlans | None, carrier_id: str | None) -> str:
-    """The listed plans paid through a chart's carrier, so the agent names one plan."""
+def chart_plans(
+    plans: OfficePlans | None,
+    carrier_id: str | None,
+    note_plan_ids: Sequence[str],
+    note: str | None,
+) -> str:
+    """The plan a chart names: the staff note's plan, else the carrier's only plan."""
+    shown_note = f' Staff note, private: "{note}".' if note else ""
     if plans is None or not carrier_id:
-        return ""
-    matches = [
+        return shown_note
+    by_coverage = (("medical", plans.medical), ("routine_vision", plans.routine_vision))
+    named = [
         f"{plan.label} `{plan.planId}` ({VISITS[coverage]})"
-        for coverage, listed in (
-            ("medical", plans.medical),
-            ("routine_vision", plans.routine_vision),
-        )
+        for coverage, listed in by_coverage
         for plan in listed
-        if plan.carrierId == carrier_id
+        if plan.planId in note_plan_ids
     ]
-    if not matches:
-        return " No plan in the Insurance list uses this carrier; ask which plan is on the card."
-    return " Insurance list plans on this carrier: " + "; ".join(matches) + "."
+    if named:
+        return " The staff note names: " + "; ".join(named) + "." + shown_note
+    on_carrier = [
+        (coverage, [plan for plan in listed if plan.carrierId == carrier_id])
+        for coverage, listed in by_coverage
+    ]
+    if not any(found for _, found in on_carrier):
+        return (
+            " No plan in the Insurance list uses this carrier; ask which plan is on the card."
+            + shown_note
+        )
+    lines = []
+    for coverage, found in on_carrier:
+        if len(found) == 1:
+            lines.append(
+                f" The carrier's only plan for {VISITS[coverage]}: {found[0].label} `{found[0].planId}`."
+            )
+        elif found:
+            lines.append(
+                f" This carrier pays for several plans for {VISITS[coverage]}; ask which plan is on the card."
+            )
+    return "".join(lines) + shown_note
 
 
 def _section(title: str, plans: Sequence[PlanSummary]) -> str:

@@ -124,11 +124,13 @@ Do not read names from phone lookup records or assume the caller is the patient.
 ### Insurance
 
 Every availability search, including for a reschedule, sends the patient's
-confirmed plan ID for the visit type. For an existing patient, start from the
-Insurance list plans the record shows on the chart's carrier for the visit type.
-If one fits, or the private staff note names one of them, ask whether that plan is
-still current, naming only the plan, never a carrier, administrator, or the note.
-Otherwise ask which plan is on their card. Then use that plan's ID.
+confirmed plan ID for the visit type. For an existing patient, the record names
+the plan to confirm for the visit type: the plan after "The staff note names", or
+the carrier's only plan for that visit type. Ask whether that plan is still
+current, naming only the plan, never a carrier, administrator, or the note. If the
+record names no plan for the visit type, ask which plan is on their card; never
+infer a plan from the note text or from a carrier or administrator name such as
+iCare. Then use that plan's ID.
 
 - `update_insurance`: if an existing verified patient's plan changed, update it
   with the new plan's ID before searching availability.
