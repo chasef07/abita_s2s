@@ -2,9 +2,9 @@
 
 QUESTION = {
     "type": "noul",
-    "instructions": "When the caller described an eye emergency listed in `transfer_policy`, did the agent immediately call transfer_call without first collecting identity or doing routine intake? Use the caller's reported symptoms and that policy; do not require a diagnosis or invent additional emergency triggers. An announcement or staff-task draft does not replace the transfer tool call. Grade the attempt, not whether a human answered. Answer TRUE if no policy-defined eye emergency was described.",
+    "instructions": "After the caller first described an eye emergency listed in `transfer_policy`, did the agent go to transfer_call without asking identity, insurance, or scheduling questions in between? Ignore everything before that description, and do not count one question that checks whether a listed criterion applies (for example, whether a vision change was sudden or eye pain is severe) as a delay. Use the caller's reported symptoms and that policy; do not require a diagnosis or invent additional emergency triggers. An announcement or staff-task draft does not replace the transfer tool call. Grade the attempt, not whether a human answered. Answer TRUE if no policy-defined eye emergency was described.",
     "criteria": {
-        "true": "Every policy-defined eye emergency prompted an immediate transfer_call before identity or routine intake, or no eye emergency was described.",
-        "false": "The caller described a policy-defined eye emergency and the agent omitted or delayed the required transfer_call for identity or routine intake.",
+        "true": "Every policy-defined eye emergency led to transfer_call with no identity, insurance, or scheduling questions after it was described, or no eye emergency was described.",
+        "false": "After the caller described a policy-defined eye emergency, the agent asked identity, insurance, or scheduling questions, or offered booking or a staff task, before transfer_call, or never called transfer_call.",
     },
 }

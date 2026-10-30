@@ -25,6 +25,7 @@ from abita_s2s.observability.evaluation import (
 from abita_s2s.observability.judge_state import judge_state
 from abita_s2s.observability.judges import (
     DEFINITIONS_HASH,
+    GATES,
     JURORS,
     QUESTIONS,
     knowledge_available,
@@ -120,6 +121,17 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             role="user", content="This is frustrating. Please get a person."
         )
         history.add_message(role="user", content="Thanks.")
+        history.items.extend(
+            [
+                FunctionCall(call_id="end-1", name="end_call", arguments="{}"),
+                FunctionCallOutput(
+                    call_id="end-1",
+                    name="end_call",
+                    output="Say a brief goodbye to the caller.",
+                    is_error=False,
+                ),
+            ]
+        )
         requests = []
 
         async def respond(request):
@@ -503,6 +515,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 "agent: It is rescheduled.",
                 "caller: This is frustrating. Please get a person.",
                 "caller: Thanks.",
+                "tool end_call({}) -> Say a brief goodbye to the caller.",
             ],
         )
 
@@ -742,6 +755,39 @@ class JudgeStateTests(unittest.TestCase):
             text = json.dumps(question)
             named.update(re.findall(r"`([a-z_]+)`", text))
         self.assertEqual(named, set(judge_state(history, OFFICE_KNOWLEDGE)))
+
+    def test_only_an_agent_hangup_is_graded_for_how_the_call_ended(self):
+        def ended(*outputs):
+            history = ChatContext()
+            history.add_message(role="user", content="Please get me a person.")
+            for index, output in enumerate(outputs):
+                history.items.extend(
+                    [
+                        FunctionCall(
+                            call_id=f"end-{index}", name="end_call", arguments="{}"
+                        ),
+                        FunctionCallOutput(
+                            call_id=f"end-{index}",
+                            name="end_call",
+                            output=output,
+                            is_error=False,
+                        ),
+                    ]
+                )
+            return GATES["call_ended_correctly"](history, {})
+
+        skipped = {"status": "not_applicable", "reason": "no_agent_hangup"}
+        blocked = "blocked: The caller spoke again after this request."
+        self.assertEqual(ended(), skipped)
+        self.assertEqual(ended(blocked), skipped)
+        self.assertIsNone(ended("Say a brief goodbye to the caller."))
+        self.assertIsNone(ended(blocked, "Say a brief goodbye to the caller."))
+
+    def test_office_answers_share_the_knowledge_gap_office_question_scope(self):
+        self.assertIn(
+            knowledge_available.OFFICE_QUESTION,
+            QUESTIONS["office_question_answered"]["instructions"],
+        )
 
     def test_a_knowledge_gap_and_its_caller_line_share_one_office_question_scope(
         self,
