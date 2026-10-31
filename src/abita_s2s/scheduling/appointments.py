@@ -518,18 +518,12 @@ class Scheduling:
                 "needs_confirmation",
                 f"needs_input: Confirm {description} with the caller before booking.",
             )
-        status = (
-            "new"
-            if p.patientId in self.state.insurance.registrations
-            else "established"
-        )
         booking = Booking(
             patientId=p.patientId,
             patientName=p.name,
             dob=p.dob,
             bookingToken=slot.bookingToken,
             visitCategory=offered.visit,
-            patientStatus=status,
             appointmentReason=reason.strip(),
             visitReason=reason.strip(),
             referringDoctor=referrer.strip(),
