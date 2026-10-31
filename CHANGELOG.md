@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.26.1](https://github.com/chasef07/abita_s2s/compare/v0.26.0...v0.26.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **judges:** stop false flags from the emergency, transfer, office and call-ending judges ([#247](https://github.com/chasef07/abita_s2s/issues/247)) ([b242608](https://github.com/chasef07/abita_s2s/commit/b242608d85891927eaee3f026994df49c716ce57))
+* **scheduling:** stop sending patientStatus to the middleware ([#248](https://github.com/chasef07/abita_s2s/issues/248)) ([35b3afd](https://github.com/chasef07/abita_s2s/commit/35b3afd8384ce56d4e7b43612a0f3070d1f9d430))
+
 ## [0.26.0](https://github.com/chasef07/abita_s2s/compare/v0.25.2...v0.26.0) (2026-10-31)
 
 
