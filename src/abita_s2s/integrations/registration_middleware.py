@@ -41,6 +41,7 @@ class PlanSummary(Record):
 class PlanList(Record):
     officeId: str
     coverage: CoverageType
+    catalogRevisionId: Text
     plans: list[PlanSummary]
 
 

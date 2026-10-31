@@ -73,12 +73,14 @@ async def read_office_plans(
             ),
         )
         return None
-    logger.info(
-        "Insurance list loaded office=%s medical=%d routine_vision=%d",
-        office_key,
-        len(medical.plans),
-        len(routine_vision.plans),
-    )
+    for plan_list in (medical, routine_vision):
+        logger.info(
+            "Insurance plans loaded office=%s coverage=%s revision=%s plans=%d",
+            office_key,
+            plan_list.coverage,
+            plan_list.catalogRevisionId,
+            len(plan_list.plans),
+        )
     return OfficePlans(medical=medical.plans, routine_vision=routine_vision.plans)
 
 
