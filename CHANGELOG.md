@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.0](https://github.com/chasef07/abita_s2s/compare/v0.26.1...v0.27.0) (2026-10-31)
+
+
+### Features
+
+* **judges:** flag a caller's insurance that is not on the office's insurance list ([#251](https://github.com/chasef07/abita_s2s/issues/251)) ([abbdda7](https://github.com/chasef07/abita_s2s/commit/abbdda7beb9dcb521f2ef164859f95c9cc7fe109))
+
 ## [0.26.1](https://github.com/chasef07/abita_s2s/compare/v0.26.0...v0.26.1) (2026-10-31)
 
 
