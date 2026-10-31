@@ -15,7 +15,7 @@ from livekit.agents import ChatContext
 from livekit.agents.llm import AgentConfigUpdate, FunctionCall, FunctionCallOutput
 
 from abita_s2s.knowledge import UNAVAILABLE
-from abita_s2s.observability import knowledge_gap
+from abita_s2s.observability import gap_lines
 from abita_s2s.observability.decisions import parse, read_answers
 from abita_s2s.observability.evaluation import (
     EVALUATOR_VERSION,
@@ -33,6 +33,7 @@ from abita_s2s.observability.judges import (
 from abita_s2s.prompt import load_prompt
 
 OFFICE_KNOWLEDGE = "Hours\nMonday to Friday, 9 to 5."
+INSURANCE_LIST = "### Medical visits\n\n#### Aetna\n\n- Aetna PPO `aetna-ppo`: accepted"
 SOURCE = Path(__file__).parents[1] / "src"
 
 
@@ -75,6 +76,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         action_output="success: The appointment was moved to Wednesday at 10:00.",
         action_error=False,
         office_knowledge=OFFICE_KNOWLEDGE,
+        insurance_list=INSURANCE_LIST,
         jurors=("juror-a",),
         closeout=None,
     ):
@@ -199,6 +201,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 "synthetic-secret",
                 60,
                 office_knowledge=office_knowledge,
+                insurance_list=insurance_list,
                 closeout=confirmed("rescheduled") if closeout is None else closeout,
             )
         return requests, result
@@ -416,7 +419,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("line", result["results"]["knowledge_available"])
 
     async def test_an_invalid_line_pick_is_logged_and_not_counted(self):
-        with self.assertLogs("abita_s2s.observability.knowledge_gap", "ERROR") as logs:
+        with self.assertLogs("abita_s2s.observability.gap_lines", "ERROR") as logs:
             _, result = await self.run_evaluation(
                 values={
                     "knowledge_available": 0.1,
@@ -446,6 +449,45 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["results"]["knowledge_available"]["verdict"])
         self.assertNotIn("line", result["results"]["knowledge_available"])
 
+    async def test_call_insurance_list_is_sent_to_the_yes_no_jury(self):
+        requests, result = await self.run_evaluation(values={"insurance_listed": 0.1})
+        question = requests[0]["questions"]["insurance_listed"]
+        self.assertEqual(question["type"], "noul")
+        self.assertEqual(set(question["criteria"]), {"true", "false"})
+        self.assertEqual(requests[0]["state"]["insurance_list"], INSURANCE_LIST)
+        self.assertFalse(result["results"]["insurance_listed"]["verdict"])
+
+    async def test_an_insurance_gap_names_the_caller_line_most_jurors_picked(self):
+        jurors = ("juror-a", "juror-b", "juror-c")
+        requests, result = await self.run_evaluation(
+            values={
+                "insurance_listed": 0.1,
+                "knowledge_available": 0.9,
+                "insurance_gap_line": {"juror-a": "0", "juror-b": "0", "juror-c": "3"},
+            },
+            jurors=jurors,
+        )
+        question = requests[0]["questions"]["insurance_gap_line"]
+        self.assertEqual(question["type"], "choice")
+        self.assertEqual(
+            question["criteria"]["none"],
+            "Every insurance the caller named is on the insurance list.",
+        )
+        self.assertIn("`insurance_list`", question["instructions"])
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(
+            result["results"]["insurance_listed"]["line"],
+            "Move Tuesday at 9 to Wednesday at 10.",
+        )
+        self.assertNotIn("line", result["results"]["knowledge_available"])
+
+    async def test_listed_insurance_names_no_line(self):
+        _, result = await self.run_evaluation(
+            values={"insurance_listed": 0.9, "insurance_gap_line": "0"}
+        )
+        self.assertTrue(result["results"]["insurance_listed"]["verdict"])
+        self.assertNotIn("line", result["results"]["insurance_listed"])
+
     async def test_each_juror_gets_every_question_in_one_request_with_zero_retention(
         self,
     ):
@@ -458,7 +500,9 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(request["model"], "juror-a")
             self.assertEqual(request["provider"], {"zdr": True})
             sent.update(request["questions"])
-        self.assertEqual(set(sent), {*QUESTIONS, "knowledge_gap_line"})
+        self.assertEqual(
+            set(sent), {*QUESTIONS, "knowledge_gap_line", "insurance_gap_line"}
+        )
         self.assertEqual(len(requests), 1)
         self.assertEqual(result["evaluator"], "jury")
         self.assertEqual(result["evaluatorVersion"], EVALUATOR_VERSION)
@@ -467,7 +511,11 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["errors"], {})
         self.assertEqual(set(result["results"]), set(QUESTIONS))
         for name, question in sent.items():
-            if name in ("expressed_sentiment", "knowledge_gap_line"):
+            if name in (
+                "expressed_sentiment",
+                "knowledge_gap_line",
+                "insurance_gap_line",
+            ):
                 continue
             self.assertEqual(question["type"], "noul")
             self.assertEqual(set(question["criteria"]), {"true", "false"})
@@ -491,7 +539,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             }
         )
         self.assertEqual(len(requests), 1)
-        self.assertEqual(len(requests[0]["questions"]), 8)
+        self.assertEqual(len(requests[0]["questions"]), 10)
         self.assertEqual(result["status"], "complete")
         jev = "juror-a"
         self.assertEqual(
@@ -505,7 +553,13 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(request["state"], state)
         self.assertEqual(
             set(state),
-            {"transcript", "call_started", "office_knowledge", "transfer_policy"},
+            {
+                "transcript",
+                "call_started",
+                "office_knowledge",
+                "insurance_list",
+                "transfer_policy",
+            },
         )
         self.assertEqual(
             state["transcript"],
@@ -581,10 +635,11 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             "call_ended_correctly",
             "transfer_policy_followed",
             "emergency_policy_followed",
+            "insurance_listed",
         )
         for tool, extra_tools, facts, count in (
-            ("list_available_appointments", (), (), 5),
-            ("reschedule_appointment", (), ("rescheduled",), 6),
+            ("list_available_appointments", (), (), 6),
+            ("reschedule_appointment", (), ("rescheduled",), 7),
         ):
             for value in (0.0, 0.5, 1.0):
                 with self.subTest(tool=tool, value=value):
@@ -597,9 +652,13 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                     )
                     self.assertEqual(result["status"], "complete")
                     self.assertEqual(result["errors"], {})
-                    self.assertEqual(len(requests[0]["questions"]), count + 2)
+                    self.assertEqual(len(requests[0]["questions"]), count + 3)
                     for name in requests[0]["questions"]:
-                        if name in ("expressed_sentiment", "knowledge_gap_line"):
+                        if name in (
+                            "expressed_sentiment",
+                            "knowledge_gap_line",
+                            "insurance_gap_line",
+                        ):
                             continue
                         answer = result["results"][name]
                         self.assertEqual(answer["verdict"], value > 0.4)
@@ -654,7 +713,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLogs("abita_s2s.observability.evaluation", "ERROR"),
             ):
                 _, result = await self.run_evaluation(behavior)
-                self.assertEqual(len(result["results"]), 6)
+                self.assertEqual(len(result["results"]), 7)
                 self.assertNotIn("emergency_policy_followed", result["results"])
                 self.assertEqual(
                     result["errors"]["emergency_policy_followed"],
@@ -677,7 +736,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             {"juror-a": "TimeoutError"},
         )
         self.assertIn("http_status=429", str(logs.output))
-        self.assertEqual(len(result["errors"]), 7)
+        self.assertEqual(len(result["errors"]), 8)
         self.assertEqual(result["results"], {})
 
     async def test_exhausted_http_and_transport_retries_remain_visible(self):
@@ -729,7 +788,7 @@ class JudgeStateTests(unittest.TestCase):
         history.items.append(
             FunctionCall(call_id="t-1", name="transfer_call", arguments="{}")
         )
-        state = judge_state(history, OFFICE_KNOWLEDGE)
+        state = judge_state(history, OFFICE_KNOWLEDGE, INSURANCE_LIST)
         self.assertEqual(
             state["transcript"],
             [
@@ -743,6 +802,7 @@ class JudgeStateTests(unittest.TestCase):
             state["call_started"], "Thursday, 2026-10-08 12:00 EDT (America/New_York)"
         )
         self.assertEqual(state["office_knowledge"], OFFICE_KNOWLEDGE)
+        self.assertEqual(state["insurance_list"], INSURANCE_LIST)
         self.assertEqual(state["transfer_policy"], load_prompt("transfer_policy"))
 
     def test_every_state_field_is_named_by_a_question_and_every_named_field_is_sent(
@@ -751,10 +811,15 @@ class JudgeStateTests(unittest.TestCase):
         history = ChatContext()
         history.add_message(role="user", content="Hi.")
         named = set()
-        for question in (*QUESTIONS.values(), knowledge_gap.line_question([])):
+        for question in (
+            *QUESTIONS.values(),
+            *(gap_lines.line_question(judge, []) for judge in gap_lines.GAPS),
+        ):
             text = json.dumps(question)
             named.update(re.findall(r"`([a-z_]+)`", text))
-        self.assertEqual(named, set(judge_state(history, OFFICE_KNOWLEDGE)))
+        self.assertEqual(
+            named, set(judge_state(history, OFFICE_KNOWLEDGE, INSURANCE_LIST))
+        )
 
     def test_only_an_agent_hangup_is_graded_for_how_the_call_ended(self):
         def ended(*outputs):
@@ -800,7 +865,9 @@ class JudgeStateTests(unittest.TestCase):
         ):
             self.assertIn(excluded, scope.split("Not office questions:")[1])
         self.assertIn(scope, QUESTIONS["knowledge_available"]["instructions"])
-        self.assertIn(scope, knowledge_gap.line_question([])["instructions"])
+        self.assertIn(
+            scope, gap_lines.line_question("knowledge_available", [])["instructions"]
+        )
 
 
 class DecisionsAnswerTests(unittest.TestCase):
