@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.0](https://github.com/chasef07/abita_s2s/compare/v0.25.2...v0.26.0) (2026-10-31)
+
+
+### Features
+
+* **insurance:** log the catalog revision each plan list came from ([#245](https://github.com/chasef07/abita_s2s/issues/245)) ([3d7af40](https://github.com/chasef07/abita_s2s/commit/3d7af4030cb77dc3f975fb5ec0cf1e86ad582ad0))
+
 ## [0.25.2](https://github.com/chasef07/abita_s2s/compare/v0.25.1...v0.25.2) (2026-10-30)
 
 
