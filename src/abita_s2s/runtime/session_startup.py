@@ -267,15 +267,16 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         office_plans(registration, office.key, scenario_plans),
     )
     state.insurance.plans = plans
+    insurance_list = render_insurance_list(plans)
     if config.interaction_url and not ctx.is_fake_job():
         if call.caller_phone:
             state.reporter = CallReporter(
-                call, client, config, drain_writes, office_knowledge
+                call, client, config, drain_writes, office_knowledge, insurance_list
             )
         else:
             logger.error("Product call reporting unavailable: caller phone missing")
     try:
-        model = create_model(config, office_knowledge, render_insurance_list(plans))
+        model = create_model(config, office_knowledge, insurance_list)
         session = AgentSession[CallState](
             userdata=state,
             llm=model,

@@ -14,7 +14,7 @@ from abita_s2s.observability.call_labels import (
     classify_labels,
     transfer_called,
 )
-from abita_s2s.observability import knowledge_gap
+from abita_s2s.observability import gap_lines
 from abita_s2s.observability.decisions import URL, parse, read_answers
 from abita_s2s.observability.judge_state import judge_state
 from abita_s2s.observability.judges import DEFINITIONS_HASH, GATES, JURORS, QUESTIONS
@@ -24,7 +24,7 @@ EVALUATION_SECONDS = 20
 EVALUATION_GRACE_SECONDS = 1
 RETRY_SECONDS = 0.25
 MIN_CALL_SECONDS = 30
-PUBLISHED_VERSIONS = {"f46817bd40ec": "typesafe-scorecard-v11"}
+PUBLISHED_VERSIONS = {"657d0ca0338b": "typesafe-scorecard-v12"}
 EVALUATOR_VERSION = PUBLISHED_VERSIONS.get(
     DEFINITIONS_HASH, f"typesafe-scorecard-{DEFINITIONS_HASH}"
 )
@@ -48,6 +48,7 @@ async def evaluate_judges(
     *,
     api_key: str,
     office_knowledge: str,
+    insurance_list: str,
     seconds: float = EVALUATION_SECONDS,
     closeout: dict,
     transferred: bool,
@@ -58,7 +59,7 @@ async def evaluate_judges(
     A malformed answer fails only its own question. Each question takes the
     jury's majority for yes/no answers and mean for sentiment scores.
     """
-    state = judge_state(history, office_knowledge)
+    state = judge_state(history, office_knowledge, insurance_list)
     results, errors = {}, {}
     if include_jury:
         for name, gate in GATES.items():
@@ -137,10 +138,11 @@ async def evaluate_judges(
                 raise
 
         juror_questions = {name: QUESTIONS[name] for name in asked}
-        if "knowledge_available" in asked:
-            juror_questions[knowledge_gap.KEY] = knowledge_gap.line_question(
-                state["transcript"]
-            )
+        for judge, gap in gap_lines.GAPS.items():
+            if judge in asked:
+                juror_questions[gap["key"]] = gap_lines.line_question(
+                    judge, state["transcript"]
+                )
         replies = await asyncio.gather(
             *(ask(juror, state, juror_questions) for juror in jurors),
             classify_labels(ask, state, closeout, transferred=transferred),
@@ -176,17 +178,18 @@ async def evaluate_judges(
                 "votes": votes,
                 "errors": failures,
             }
-    gap = results.get("knowledge_available", {})
-    if (
-        knowledge_gap.KEY in juror_questions
-        and gap.get("verdict") is False
-        and (
-            line := knowledge_gap.picked_line(
-                juror_questions[knowledge_gap.KEY], replies, len(JURORS)
+    for judge, gap in gap_lines.GAPS.items():
+        result = results.get(judge, {})
+        if (
+            gap["key"] in juror_questions
+            and result.get("verdict") is False
+            and (
+                line := gap_lines.picked_line(
+                    judge, juror_questions[gap["key"]], replies, len(JURORS)
+                )
             )
-        )
-    ):
-        gap["line"] = line
+        ):
+            result["line"] = line
     return {
         "results": results,
         "errors": errors,
@@ -201,6 +204,7 @@ async def evaluate_call(
     seconds: float,
     *,
     office_knowledge: str,
+    insurance_list: str,
     budget: float = math.inf,
     closeout: dict | None = None,
 ) -> dict:
@@ -245,6 +249,7 @@ async def evaluate_call(
                         history,
                         api_key=api_key,
                         office_knowledge=office_knowledge,
+                        insurance_list=insurance_list,
                         seconds=window,
                         closeout=closeout or {},
                         transferred=transferred,

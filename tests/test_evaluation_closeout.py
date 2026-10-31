@@ -34,13 +34,17 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
                 patch("abita_s2s.observability.evaluation.EVALUATION_GRACE_SECONDS", 0),
                 self.assertLogs("abita_s2s.observability.evaluation", "ERROR") as logs,
             ):
-                result = await evaluate_call(report, "offline", 60, office_knowledge="")
+                result = await evaluate_call(
+                    report, "offline", 60, office_knowledge="", insurance_list=""
+                )
             self.assertEqual(result["status"], "incomplete")
             self.assertNotIn("private API body", str(result) + str(logs.output))
 
     async def test_missing_key_never_calls_provider(self):
         with patch("abita_s2s.observability.evaluation.evaluate_judges") as judge:
-            result = await evaluate_call(self.report(), "", 60, office_knowledge="")
+            result = await evaluate_call(
+                self.report(), "", 60, office_knowledge="", insurance_list=""
+            )
         judge.assert_not_called()
         self.assertEqual(result["reason"], "openrouter_key_not_configured")
 
@@ -55,7 +59,11 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
                 ) as judge,
             ):
                 result = await evaluate_call(
-                    self.report(), "offline", seconds, office_knowledge=""
+                    self.report(),
+                    "offline",
+                    seconds,
+                    office_knowledge="",
+                    insurance_list="",
                 )
             self.assertEqual(judge.call_args.kwargs["include_jury"], jury)
             if not jury:
@@ -65,9 +73,13 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
     async def test_no_caller_or_missing_report(self):
         report = self.report()
         report["chat_history"] = ChatContext().to_dict()
-        result = await evaluate_call(report, "offline", 60, office_knowledge="")
+        result = await evaluate_call(
+            report, "offline", 60, office_knowledge="", insurance_list=""
+        )
         self.assertEqual(result["status"], "skipped")
-        result = await evaluate_call({}, "offline", 60, office_knowledge="")
+        result = await evaluate_call(
+            {}, "offline", 60, office_knowledge="", insurance_list=""
+        )
         self.assertEqual(result["status"], "skipped")
         self.assertEqual(result["reason"], "native_report_unavailable")
 

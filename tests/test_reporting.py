@@ -88,6 +88,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             ),
             drain or AsyncMock(),
             "Hours\nWeekdays 9 to 5.",
+            "### Medical visits\n\n- Aetna PPO `aetna-ppo`: accepted",
         )
 
     async def test_sweetwater_reports_dialed_number_and_product_location(self):
@@ -257,6 +258,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                 "appointment_datetime_correct",
                 "call_ended_correctly",
                 "transfer_policy_followed",
+                "insurance_listed",
                 "expressed_sentiment",
             },
         )

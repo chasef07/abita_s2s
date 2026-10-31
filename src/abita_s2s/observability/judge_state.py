@@ -10,7 +10,9 @@ from abita_s2s.prompt import load_prompt
 SPEAKERS = {"user": "caller", "assistant": "agent"}
 
 
-def judge_state(history: ChatContext, office_knowledge: str) -> dict:
+def judge_state(
+    history: ChatContext, office_knowledge: str, insurance_list: str
+) -> dict:
     """Give judges the call as one line per turn or tool result, beside the call start and the policies the agent followed.
 
     A tool line sits where its result arrived, so judges see what the agent knew when.
@@ -38,5 +40,6 @@ def judge_state(history: ChatContext, office_knowledge: str) -> dict:
         "transcript": lines,
         "call_started": f"{started:%A, %Y-%m-%d %H:%M %Z} ({EASTERN.key})",
         "office_knowledge": office_knowledge,
+        "insurance_list": insurance_list,
         "transfer_policy": load_prompt("transfer_policy"),
     }

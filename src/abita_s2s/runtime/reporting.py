@@ -32,9 +32,11 @@ class CallReporter:
         config: Config,
         drain: Callable[[], Awaitable[None]],
         office_knowledge: str,
+        insurance_list: str,
     ):
         self._client = client
         self._office_knowledge = office_knowledge
+        self._insurance_list = insurance_list
         self._url = config.interaction_url
         self._secret = config.product_secret
         self._openrouter_key = config.openrouter_key
@@ -230,6 +232,7 @@ class CallReporter:
                     self._openrouter_key,
                     (ended_at - self._started_at).total_seconds(),
                     office_knowledge=self._office_knowledge,
+                    insurance_list=self._insurance_list,
                     budget=remaining,
                     closeout={
                         **deepcopy(payload["closeoutPayload"]),
