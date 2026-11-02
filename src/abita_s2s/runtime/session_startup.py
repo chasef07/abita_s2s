@@ -213,15 +213,20 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             sip_participant_identity=participant.identity,
         )
 
-    client = httpx.AsyncClient()
+    client = httpx.AsyncClient(
+        limits=httpx.Limits(
+            max_connections=100, max_keepalive_connections=20, keepalive_expiry=50.0
+        )
+    )
     owners: Owners | None = None
     sip_api = None
     cleanup_task = None
     drain_task = None
     state = CallState(call=call)
+    resolver = PatientResolver(state, PatientMiddleware(client, config))
 
     async def drain():
-        writers = owners.writers() if owners else []
+        writers = owners.writers() if owners else [resolver]
         for writer in writers:
             writer.close_admission()
         async with asyncio.timeout(DRAIN.seconds):
@@ -260,6 +265,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         await asyncio.shield(cleanup_task)
 
     ctx.add_shutdown_callback(close_client)
+    resolver.start_phone_lookup()
     product = Product(client, config)
     registration = RegistrationMiddleware(client, config)
     office_knowledge, plans = await asyncio.gather(
@@ -294,7 +300,6 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         session.on(
             "close", lambda event: logger.info("session_closed reason=%s", event.reason)
         )
-        resolver = PatientResolver(state, PatientMiddleware(client, config))
         if not ctx.is_fake_job() and simulation is None:
             sip_api = api.LiveKitAPI(failover=False)
         control = CallControl(
@@ -320,7 +325,6 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             control,
             lambda: model.watchdog.hand_off_held(),
         )
-        resolver.start_phone_lookup()
         await start_session(session, ctx, room_options, AbitaAgent(owners))
         if state.reporter:
             state.reporter.started = True
