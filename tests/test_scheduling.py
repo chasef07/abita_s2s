@@ -2438,8 +2438,8 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             result,
-            "blocked: Office staff must verify a referral from the patient's primary"
-            " care doctor before scheduling medical visits. Test Insurance is accepted."
+            "blocked: Test Insurance is accepted for medical visits. Tell the caller"
+            " they need a referral from their primary care doctor before scheduling."
             " Offer a staff request or transfer; do not schedule.",
         )
         self.assertFalse((await self.book(owner, ref)).startswith("success:"))

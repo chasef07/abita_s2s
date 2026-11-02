@@ -9,7 +9,7 @@ from pydantic import ConfigDict
 
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance_contract import CoverageType, InsuranceDecision
-from abita_s2s.insurance_list import VISITS, listed_plan
+from abita_s2s.insurance_list import VISITS, listed_plan, requirement_text
 from abita_s2s.integrations.patient_middleware import Receipt
 from abita_s2s.name_matcher import dob_matches, exact_name, parse_dob
 from abita_s2s.offices import e164
@@ -59,11 +59,6 @@ def staff(outcome="needs_staff_review"):
     )
 
 
-REQUIREMENTS = {
-    "pcp_referral": "a referral from the patient's primary care doctor",
-    "prior_authorization": "prior authorization",
-    "staff_verify": "this plan's coverage",
-}
 ANSWERS = {
     "accepted": "{plan} is accepted for {visits} at this office.",
     "not_accepted": "{plan} is not accepted for {visits} at this office.",
@@ -72,7 +67,7 @@ ANSWERS = {
     "ask_card": "Ask what insurance plan is on the card.",
     "ask_full_name": "Ask for the full plan name on the card.",
     "choose_plan": "Ask which plan is on the card: {options}.",
-    "requirement": "Office staff must verify {requirement} before scheduling {visits}. {plan} is accepted.",
+    "requirement": "{plan} is accepted for {visits}. {requirement}.",
     "pending_confirmation": "Office staff must confirm {plan} for {visits} before scheduling.",
     "no_provider_for_age": "{plan} is accepted, but no doctor here who takes it can see a patient of this age. Office staff must arrange this visit.",
     "chart_unverified": "Office staff must verify the insurance on the chart before scheduling.",
@@ -85,9 +80,7 @@ def decision_answer(decision: InsuranceDecision) -> str:
         plan=decision.canonicalPlan,
         visits=VISITS[decision.coverageType],
         options=", ".join(option.label for option in decision.options),
-        requirement=REQUIREMENTS[decision.requirements[0].kind]
-        if decision.requirements
-        else "",
+        requirement=requirement_text([r.kind for r in decision.requirements]),
     )
     if decision.callerNotice:
         answer += f" Note: {decision.callerNotice}"

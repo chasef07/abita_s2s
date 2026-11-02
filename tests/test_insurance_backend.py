@@ -11,12 +11,8 @@ from test_patient_resolution import CONFIG, call_state, receipt
 from test_insurance_registration import created, registration, updated
 
 from abita_s2s.identity import PatientResolver
-from abita_s2s.insurance import (
-    ANSWERS,
-    REQUIREMENTS,
-    InsuranceRegistration,
-    decision_answer,
-)
+from abita_s2s.insurance import ANSWERS, InsuranceRegistration, decision_answer
+from abita_s2s.insurance_list import REQUIREMENTS
 from abita_s2s.insurance_contract import InsuranceDecision, InsuranceRequirement
 from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.integrations.patient_middleware import Receipt
@@ -135,7 +131,20 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
                     reason="requirement",
                     requirements=[dict(kind="pcp_referral", verification="unverified")],
                 ),
-                "Office staff must verify a referral from the patient's primary care doctor before scheduling medical visits. Aetna HMO is accepted.",
+                "Aetna HMO is accepted for medical visits. Tell the caller they need a referral from their primary care doctor before scheduling.",
+            ),
+            (
+                decision(
+                    "CarePlus Medicare",
+                    outcome="needs_staff_task",
+                    canSchedule=False,
+                    reason="requirement",
+                    requirements=[
+                        dict(kind="prior_authorization", verification="unverified")
+                    ],
+                    callerNotice="It comes from your primary care doctor.",
+                ),
+                "CarePlus Medicare is accepted for medical visits. Tell the caller this plan needs prior authorization before scheduling. Note: It comes from your primary care doctor.",
             ),
             (
                 decision(

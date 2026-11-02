@@ -21,9 +21,9 @@ UNAVAILABLE = "The insurance list could not be loaded for this call."
 VISITS = {"medical": "medical visits", "routine_vision": "routine vision exams"}
 
 REQUIREMENTS = {
-    "pcp_referral": "a referral from the primary care doctor",
-    "prior_authorization": "prior authorization",
-    "staff_verify": "coverage",
+    "pcp_referral": "Tell the caller they need a referral from their primary care doctor before scheduling",
+    "prior_authorization": "Tell the caller this plan needs prior authorization before scheduling",
+    "staff_verify": "Office staff must verify this plan's coverage before scheduling",
 }
 WORD = re.compile(r"[a-z0-9]+")
 FILLER = frozenset(
@@ -180,6 +180,10 @@ def _line(plan: PlanSummary) -> str:
     return line
 
 
+def requirement_text(kinds: Sequence[str]) -> str:
+    return ". ".join(REQUIREMENTS[kind] for kind in kinds)
+
+
 def _status(plan: PlanSummary) -> str:
     """Middleware names doctors only for a plan it accepts, so staff checks without them are unconfirmed."""
     if plan.outcome == "accepted":
@@ -189,8 +193,7 @@ def _status(plan: PlanSummary) -> str:
         if plan.acceptedAt:
             status += f" here (accepted at {', '.join(plan.acceptedAt)})"
     elif plan.requirements and plan.allowedProviders:
-        checks = " and ".join(REQUIREMENTS[kind] for kind in plan.requirements)
-        status = f"accepted; office staff must verify {checks} before scheduling"
+        status = f"accepted. {requirement_text(plan.requirements)}"
     else:
         status = "not confirmed yet; office staff confirm before scheduling"
     if plan.callerNotice:
