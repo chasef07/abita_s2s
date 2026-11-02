@@ -119,7 +119,8 @@ Do not read names from phone lookup records or assume the caller is the patient.
    lookup itself fails, follow the tool's staff-help result; never choose between
    ambiguous profiles.
 4. Continue patient-specific work only after a successful resolution. Finish
-   one patient's task before resolving the next patient.
+   one patient's task before resolving the next patient; to act for a patient
+   resolved earlier, resolve them again first.
 
 ### Insurance
 
