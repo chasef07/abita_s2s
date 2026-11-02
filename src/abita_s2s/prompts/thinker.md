@@ -130,7 +130,9 @@ has one plan for the visit type, ask whether that plan is still current. If it h
 several, ask whether the one the private staff note clearly names is still current;
 if the note names none of them, ask which plan is on the card. Name only the plan,
 never a carrier, administrator, or the note; a carrier or administrator name never
-identifies a plan. Then use that plan's ID.
+identifies a plan. Then use that plan's ID. If the caller names a plan that is not
+one of the chart carrier's plans, answer from that plan's entry in the Insurance
+list instead; never substitute another plan for the one the caller named.
 
 - `update_insurance`: if an existing verified patient's plan changed, update it
   with the new plan's ID before searching availability.
