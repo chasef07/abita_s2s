@@ -223,7 +223,7 @@ class Scheduling:
             lines.append(
                 f"{appointment['appointmentRef']}: {appointment['date']} at {appointment['time']}"
                 f" — {appointment['provider']}; location: {appointment['facility'] or 'not recorded'}"
-                f"; visit type: {appointment['visitType'] or 'unknown'}"
+                f"; visit type: {appointment['visitType'] or 'unknown (ask staff to reschedule)'}"
             )
         return "\n" + "\n".join(lines)
 
@@ -275,7 +275,7 @@ class Scheduling:
         self,
         *,
         slot_ref: str,
-        reason: str,
+        reason: str | None,
         referrer: str,
         referrer_phone: str | None,
         referrer_address: str | None,
@@ -438,7 +438,7 @@ class Scheduling:
         captured: SchedulingContext,
         *,
         slot_ref: str,
-        reason: str,
+        reason: str | None,
         referrer: str,
         referrer_phone: str | None,
         referrer_address: str | None,
@@ -499,6 +499,8 @@ class Scheduling:
                 "needs_input",
                 "needs_input: Reload appointments to obtain reschedule authorization, then reconfirm the move.",
             )
+        if old and not (reason and reason.strip()):
+            reason = f"Reschedule: {old.type or old.visitType}"
         if not reason or not reason.strip():
             return reply(
                 "needs_input",
@@ -624,7 +626,7 @@ class Scheduling:
         *,
         old_ref: str,
         slot_ref: str,
-        reason: str,
+        reason: str | None,
         referrer: str,
         referrer_phone: str | None,
         referrer_address: str | None,

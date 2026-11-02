@@ -31,6 +31,9 @@ scenarios:
       office: spring-hill
       caller_phone: '+12025550148'
 
+  # Its own insurance_plans put five accepted Aetna plans on the sandbox chart's
+  # carrier (car63046) and Aetna EPO on another, so the chart record lists plans
+  # that are not the one the caller names (Nov 2, 2026 call 9).
   - label: Existing patient's plan is not accepted
     instructions: >
       You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
@@ -40,12 +43,93 @@ scenarios:
       request or self-pay, say you will check with your insurance first and call
       back, then end.
     agent_expectations: >
-      Says Aetna EPO is not accepted for medical visits at this office. Offers no
-      appointment times and does not book or reschedule. May offer self-pay or a
-      staff request. Does not call update_insurance.
+      Says Aetna EPO is not accepted for medical visits at this office. Does not
+      search with or book under another Aetna plan, offers no appointment times,
+      and does not book or reschedule. May offer self-pay or a staff request.
+      Does not call update_insurance.
     userdata:
       office: spring-hill
       caller_phone: '+12025550148'
+      insurance_plans:
+        medical:
+        - planId: aetna-commercial-hmo
+          label: Aetna Commercial HMO
+          family: Aetna
+          names: []
+          carrierId: car63046
+          allowedProviders: [Dr. Bach, Dr. Licht, Dr. Noel]
+          outcome: accepted
+          requirements: []
+          callerNotice: ''
+          acceptedAt: []
+          selfPay: false
+        - planId: aetna-commercial-ppo
+          label: Aetna Commercial PPO
+          family: Aetna
+          names: []
+          carrierId: car63046
+          allowedProviders: [Dr. Bach, Dr. Licht, Dr. Noel]
+          outcome: accepted
+          requirements: []
+          callerNotice: ''
+          acceptedAt: []
+          selfPay: false
+        - planId: aetna-hmo
+          label: Aetna HMO
+          family: Aetna
+          names: []
+          carrierId: car63046
+          allowedProviders: [Dr. Bach, Dr. Licht, Dr. Noel]
+          outcome: accepted
+          requirements: []
+          callerNotice: ''
+          acceptedAt: []
+          selfPay: false
+        - planId: aetna-ppo
+          label: Aetna PPO
+          family: Aetna
+          names: []
+          carrierId: car63046
+          allowedProviders: [Dr. Bach, Dr. Licht, Dr. Noel]
+          outcome: accepted
+          requirements: []
+          callerNotice: ''
+          acceptedAt: []
+          selfPay: false
+        - planId: aetna-managed-choice
+          label: Aetna Managed Choice
+          family: Aetna
+          names: []
+          carrierId: car63046
+          allowedProviders: [Dr. Bach, Dr. Licht, Dr. Noel]
+          outcome: accepted
+          requirements: []
+          callerNotice: ''
+          acceptedAt: []
+          selfPay: false
+        - planId: aetna-epo
+          label: Aetna EPO
+          family: Aetna
+          names: []
+          carrierId: car40887
+          allowedProviders: []
+          outcome: not_accepted
+          requirements: []
+          callerNotice: ''
+          acceptedAt: []
+          selfPay: false
+        - planId: self-pay-medical
+          label: Self Pay
+          family: Self Pay
+          names: [Cash, Cash Pay, Selfpay]
+          carrierId: car301672
+          allowedProviders: [Dr. Bach, Dr. Licht, Dr. Noel]
+          outcome: accepted
+          requirements: []
+          callerNotice: ''
+          acceptedAt: []
+          selfPay: true
+        routine_vision: []
 
   - label: New patient asks about a company that varies by plan
     instructions: >
