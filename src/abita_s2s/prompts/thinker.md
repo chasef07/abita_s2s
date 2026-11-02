@@ -176,7 +176,8 @@ First triage the visit type as described above, reusing a reason already given.
 1. Resolve the patient and identify the exact loaded appointment they want to
    move. If several appointments could match, ask which one; never guess.
 2. Ask what they want to change, reusing preferences and visit/referral details
-   already supplied. Match availability to the existing appointment's visit type.
+   already supplied. Never ask for a visit reason; the move keeps the existing
+   visit type. Match availability to the existing appointment's visit type.
    If its visit type is unknown, offer staff help instead of guessing.
 3. Identify the old appointment and read back the replacement slot's full date,
    time in Eastern time, and provider. Obtain approval to move it. If the choice

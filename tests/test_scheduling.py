@@ -1688,6 +1688,37 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
 
+    async def test_reschedule_without_a_reason_keeps_the_existing_visit_type(self):
+        cases = (
+            (
+                None,
+                "Established Adult Medical",
+                "Reschedule: Established Adult Medical",
+            ),
+            ("   ", "", "Reschedule: medical"),
+        )
+        for reason, kind, expected in cases:
+            with self.subTest(reason=reason, kind=kind):
+                owner, requests = self.owner([inventory(), rescheduled()])
+                verified(
+                    owner.state,
+                    appointmentsStatus="found",
+                    appointments=[appointment(type=kind)],
+                )
+                result = await self.tool(
+                    owner,
+                    "reschedule_appointment",
+                    oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
+                    appointmentSlotRef=await self.slots(owner),
+                    appointmentReason=reason,
+                    referringDoctor="none",
+                    readBack=True,
+                )
+                self.assertTrue(result.startswith("success:"), result)
+                payload = requests[-1][1]
+                self.assertEqual(payload["appointmentReason"], expected)
+                self.assertEqual(payload["visitReason"], expected)
+
     async def test_reschedule_partial_and_success_never_rebooks(self):
         for status in ("cancelled", "error"):
             owner, requests = self.owner([inventory(), rescheduled(status)])

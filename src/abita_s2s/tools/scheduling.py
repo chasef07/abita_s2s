@@ -160,9 +160,9 @@ class SchedulingTools:
         context: RunContext[CallState],
         oldAppointmentRef: str,
         appointmentSlotRef: str,
-        appointmentReason: str,
         referringDoctor: str,
         readBack: Literal[True] | None,
+        appointmentReason: str | None = None,
         referringDoctorPhone: str | None = None,
         referringDoctorAddress: str | None = None,
     ) -> str:
@@ -172,6 +172,10 @@ class SchedulingTools:
         Reuse known visit and referral details; ask only for missing information.
         Books first, then cancels the old visit. Report partial success and never repeat an uncertain booking.
         Pass referral arguments as book_appointment describes.
+
+        Args:
+            appointmentReason: A new reason the caller gave, or null; the move keeps
+                the existing visit type. Never ask for a reason to reschedule.
         """
         if not bound(self._scheduling, context):
             return UNAVAILABLE
