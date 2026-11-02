@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.27.1](https://github.com/chasef07/abita_s2s/compare/v0.27.0...v0.27.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* act on the 2026-11-02 call review with smaller prompts ([#258](https://github.com/chasef07/abita_s2s/issues/258)) ([29834f3](https://github.com/chasef07/abita_s2s/commit/29834f36720fea5c975b4545d21ebaaf05c1261d))
+* **insurance:** tell callers their plan needs a PCP referral or prior authorization ([#259](https://github.com/chasef07/abita_s2s/issues/259)) ([7d26e00](https://github.com/chasef07/abita_s2s/commit/7d26e0057e2a663decbcf5a563b0758c928479af))
+* **scheduling:** name the patient in availability and booking results ([#253](https://github.com/chasef07/abita_s2s/issues/253)) ([e0d7b25](https://github.com/chasef07/abita_s2s/commit/e0d7b257183520c8bf8394f39fcefe2bd4299e03))
+
 ## [0.27.0](https://github.com/chasef07/abita_s2s/compare/v0.26.1...v0.27.0) (2026-10-31)
 
 
