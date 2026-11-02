@@ -35,7 +35,8 @@ class StaffTaskTools:
         Args:
             category: Follow the Staff task drafts routing rules. Classify the work
                 requested; ask one focused question if unclear before using other.
-            urgency: high_priority for time-sensitive non-clinical work, normal for
+            urgency: high_priority for time-sensitive non-clinical work or when the
+                caller's call or transfer to the office went unanswered, normal for
                 standard follow-up, non_urgent without time sensitivity. Transfer clinical acuity.
             summary: Short staff inbox title for one unresolved need.
             message: Details of exactly one need. Include medication/pharmacy, service/plan,

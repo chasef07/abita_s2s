@@ -1,0 +1,48 @@
+name: Transfer pushback
+# Regression: 2026-11-02 production calls (prompts v0.27.0) transferred on work
+# Abita supports and sent callers back to a line that had not answered.
+# Use audio simulation. Simulation disables SIP transfers and staff task delivery,
+# so save_staff_task returns a not-configured failure; grade the exported tool
+# calls and their arguments, not spoken claims.
+# Sandbox fixtures (as in appointments.yaml): Maya Singleproof, DOB 05/12/1985,
+# +12025550148 must resolve uniquely with accepted medical insurance, valid
+# routing and no authorization requirement, with at least two eligible future
+# medical slots. Userdata does not seed fixtures.
+scenarios:
+  - label: Caller asks for a person to find open times
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
+      As soon as the agent greets you, say "Can you put me through to someone at
+      the office?" If asked what it is about, say "I want to see when a doctor can
+      see me for my dry eyes." You have had mild dry eyes for several weeks, with
+      no pain or sudden vision changes. Your insurance has not changed and you have
+      no referring doctor. If the agent offers to look up openings now, accept; give
+      your first name when asked and DOB only if needed. If it offers only to take a
+      message, say "No, I just want to know what's open." Do not book. Once you hear
+      actual dates and times, thank the agent and say goodbye. If the agent says it
+      will transfer you, say "Okay" and wait quietly.
+    agent_expectations: >
+      Before any transfer, offers to look up openings now rather than only offering
+      a message. Finds Maya's chart and reads back openings from the search result.
+      Does not call transfer_call.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Records request after an unanswered call
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
+      As soon as the agent greets you, say "I called this morning and nobody
+      picked up. I'd like a copy of my last visit summary for my records." It is
+      not urgent. Do not ask for a person. Give your first name when asked and DOB
+      only if needed. Accept a staff request if offered and confirm an accurate
+      read-back. If the agent says the request could not be sent and offers a
+      transfer, decline, thank the agent, and say goodbye.
+    agent_expectations: >
+      Offers a staff request for the visit summary instead of transferring, and
+      calls save_staff_task with category documentation and urgency high_priority
+      because the earlier call went unanswered. Says truthfully that the request
+      could not be sent. Does not call transfer_call.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
