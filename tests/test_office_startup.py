@@ -314,6 +314,70 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             {("product.test", None), ("middleware.test", "spring-hill")},
         )
 
+    async def test_shared_client_keeps_idle_connections_across_tool_gaps(self):
+        with patch(
+            "abita_s2s.runtime.session_startup.httpx.AsyncClient",
+            wraps=httpx.AsyncClient,
+        ) as client_factory:
+            await self.run_startup(True, env={"ABITA_CONSOLE_OFFICE": "spring-hill"})
+        limits = client_factory.call_args.kwargs["limits"]
+        self.assertEqual(
+            (
+                limits.max_connections,
+                limits.max_keepalive_connections,
+                limits.keepalive_expiry,
+            ),
+            (100, 20, 50.0),
+        )
+
+    async def test_phone_lookup_starts_before_office_knowledge_returns(self):
+        config = Config(
+            "offline",
+            product_secret="product-token",
+            knowledge_url="https://product.test/v1/agent/knowledge/read",
+            middleware_url="https://middleware.test",
+            middleware_token="middleware-token",
+        )
+        looked_up = asyncio.Event()
+
+        async def handler(request):
+            if request.method == "POST" and request.url.host == "middleware.test":
+                looked_up.set()
+                return httpx.Response(404, json={"status": "not_found"})
+            if request.url.host == "product.test":
+                try:
+                    await asyncio.wait_for(looked_up.wait(), 1)
+                except TimeoutError:
+                    return httpx.Response(503)
+                return httpx.Response(200, json=KNOWLEDGE["spring-hill"])
+            return httpx.Response(503)
+
+        _, args = await self.run_startup(False, config=config, product=handler)
+        self.assertIn("Fax records requests to 555-0142.", args["office_knowledge"])
+
+    async def test_startup_failure_cancels_the_pending_phone_lookup(self):
+        entered, cancelled = asyncio.Event(), asyncio.Event()
+
+        async def lookup(*args):
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+        with (
+            patch(
+                "abita_s2s.runtime.session_startup.PatientMiddleware.resolve",
+                side_effect=lookup,
+            ),
+            self.assertRaisesRegex(RuntimeError, "model startup failed"),
+        ):
+            await self.run_startup(
+                False, model_error=RuntimeError("model startup failed")
+            )
+        self.assertTrue(entered.is_set())
+        self.assertTrue(cancelled.is_set())
+
     async def test_failed_insurance_list_read_continues_with_the_notice(self):
         with self.assertLogs("abita_s2s.insurance_list", "ERROR") as logs:
             _, args = await self.run_startup(False)
