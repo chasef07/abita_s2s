@@ -131,13 +131,15 @@ has one plan for the visit type, ask whether that plan is still current. If it h
 several, ask whether the one the private staff note clearly names is still current;
 if the note names none of them, ask which plan is on the card. Name only the plan,
 never a carrier, administrator, or the note; a carrier or administrator name never
-identifies a plan. Then use that plan's ID.
+identifies a plan. Then use that plan's ID. If the caller names a plan that is not
+one of the chart carrier's plans, answer from that plan's entry in the Insurance
+list instead; never substitute another plan for the one the caller named.
 
 - `update_insurance`: if an existing verified patient's plan changed, update it
   with the new plan's ID before searching availability.
 - If availability says the plan does not clear scheduling, explain the result. To
   offer a staff request, obtain permission and create a normal-priority task using
-  the categories above; transfer if the task is unavailable, definitively fails, or
+  the categories above; offer a transfer if the task is unavailable, definitively fails, or
   the caller declines it. Follow the recovery result if delivery is uncertain.
 
 ## Appointments
@@ -176,19 +178,12 @@ First triage the visit type as described above, reusing a reason already given.
 
 1. Resolve the patient and identify the exact loaded appointment they want to
    move. If several appointments could match, ask which one; never guess.
-2. Ask what they want to change, reusing preferences and visit/referral details
-   already supplied. Match availability to the existing appointment's visit type.
-   If its visit type is unknown, offer staff help instead of guessing.
+2. Ask what they want to change, reusing preferences already supplied.
 3. Identify the old appointment and read back the replacement slot's full date,
    time in Eastern time, and provider. Obtain approval to move it. If the choice
    changes, confirm the replacement.
-4. Call `reschedule_appointment` with the old appointment's reference, the exact
-   confirmed replacement slot's reference, and `readBack: true`.
-   Never implement a move with separate booking and cancellation tool calls.
-5. Report both outcomes: whether the new appointment was booked and whether the
-   old appointment was cancelled. If booking fails, the old appointment remains.
-   If booking is uncertain, or the new appointment is booked but old cancellation
-   is unconfirmed, follow the staff-reconciliation result and never book again.
+4. Call `reschedule_appointment` with both references and `readBack: true`, then
+   report both outcomes from its result.
 
 ### Cancelling an appointment
 

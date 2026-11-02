@@ -96,7 +96,7 @@ def move(outcome: MoveOutcome, description: str, old: Appointment) -> dict:
         case "failed":
             return reply(
                 "failed",
-                "blocked: The reschedule failed. Reload appointments or ask staff to reconcile before another change.",
+                f"blocked: The reschedule failed. Your old appointment on {old.date} at {old.time} was not changed. Reload appointments or ask staff to reconcile before another change.",
             )
         case "uncertain":
             return uncertain("reschedule")

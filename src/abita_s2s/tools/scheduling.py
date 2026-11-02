@@ -162,18 +162,20 @@ class SchedulingTools:
         context: RunContext[CallState],
         oldAppointmentRef: str,
         appointmentSlotRef: str,
-        appointmentReason: str,
         referringDoctor: str,
         readBack: Literal[True] | None,
+        appointmentReason: str | None = None,
         referringDoctorPhone: str | None = None,
         referringDoctorAddress: str | None = None,
     ) -> str:
         """Move the caller-confirmed loaded appointment to a confirmed returned slot.
 
         Confirm the old appointment and read back the new date, time and provider before readBack=true.
-        Reuse known visit and referral details; ask only for missing information.
         Books first, then cancels the old visit. Report partial success and never repeat an uncertain booking.
         Pass referral arguments as book_appointment describes.
+
+        Args:
+            appointmentReason: Only a new reason the caller volunteered; never ask for one.
         """
         if not bound(self._scheduling, context):
             return UNAVAILABLE
