@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.27.2](https://github.com/chasef07/abita_s2s/compare/v0.27.1...v0.27.2) (2026-11-02)
+
+
+### Bug Fixes
+
+* **scheduling:** keep appointment refs across insurance updates and drop dead call state ([#260](https://github.com/chasef07/abita_s2s/issues/260)) ([24f10fa](https://github.com/chasef07/abita_s2s/commit/24f10fa816610f6a18c28a02136f5095f6454ab5))
+
+
+### Performance Improvements
+
+* **startup:** reuse middleware connections and start the phone lookup early ([#262](https://github.com/chasef07/abita_s2s/issues/262)) ([8d831cf](https://github.com/chasef07/abita_s2s/commit/8d831cf2f072f7b93774bfa906959e9f0f1caead))
+
 ## [0.27.1](https://github.com/chasef07/abita_s2s/compare/v0.27.0...v0.27.1) (2026-11-02)
 
 
