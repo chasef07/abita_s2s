@@ -22,7 +22,6 @@ from abita_s2s.integrations.patient_middleware import (
     PatientMiddleware,
     Receipt,
 )
-from abita_s2s.state import CandidateLookup
 from insurance_fixtures import decision
 from abita_s2s.offices import (
     HOLLYWOOD_ROUTINE_OFFICE_CHOICE,
@@ -728,6 +727,18 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         output = await resolve_patient(context, "Jane", None)
         self.assertIn("No upcoming appointments.", output)
         self.assertNotIn("Existing appointments", output)
+
+    async def test_insurance_update_keeps_appointment_refs(self):
+        owner, requests = self.owner([{"status": "cancelled", "appointmentId": 77}])
+        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        ref = owner.appointments()[0]["appointmentRef"]
+        owner.state.patient.update_insurance("Aetna")
+        self.assertEqual(owner.appointments()[0]["appointmentRef"], ref)
+        cancelled = await self.tool(
+            owner, "cancel_appointment", appointmentRef=ref, readBack=True
+        )
+        self.assertTrue(cancelled.startswith("success:"), cancelled)
+        self.assertEqual(len(requests), 1)
 
     async def test_missing_prerequisites_and_office_care(self):
         owner, requests = self.owner([])
@@ -1491,9 +1502,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     [a.id for a in owner.state.patient.active.appointments], [77]
                 )
                 self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
-                owner.state.patient.lookup = CandidateLookup(
-                    "found", (owner.state.patient.active,)
-                )
+                owner.state.patient.candidates = (owner.state.patient.active,)
                 resolver = PatientResolver(
                     owner.state, PatientMiddleware(owner.http._client, CONFIG)
                 )

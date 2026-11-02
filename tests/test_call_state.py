@@ -6,16 +6,15 @@ from test_patient_resolution import call_state, receipt
 
 from abita_s2s.identity import PatientResolver
 from abita_s2s.integrations.patient_middleware import Appointment, NotFound, Receipt
-from abita_s2s.state import CallState, CandidateLookup, PatientAbsence, PatientState
+from abita_s2s.state import CallState, PatientState
 
 
 class CallStateTests(unittest.IsolatedAsyncioTestCase):
     def test_only_a_new_chart_or_insurance_starts_a_new_revision(self):
         patient = PatientState()
         jane = Receipt.model_validate(receipt())
-        patient.record_absence(PatientAbsence("Jane", "01/02/1980", "spring-hill"))
         patient.activate(jane)
-        self.assertEqual((patient.revision, patient.absence), (1, None))
+        self.assertEqual(patient.revision, 1)
         patient.activate(jane.model_copy(update={"insuranceCarrier": "Reloaded"}))
         patient.mark_appointments_stale()
         booked = Appointment.model_validate(
@@ -105,22 +104,13 @@ class CallStateTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         await other._lookup_phone(token)
-        self.assertEqual(other.state.patient.lookup.status, "not_attempted")
+        self.assertEqual(other.state.patient.candidates, ())
         await resolver._lookup_phone(token)
         self.assertIsNone(resolver.state.patient.active)
         await resolver._lookup_phone(token)
-        self.assertEqual(resolver.state.patient.lookup.status, "found")
+        self.assertEqual(resolver.state.patient.candidates, (patient,))
         await resolver._load_patient(
             patient, "Jane", None, resolver._begin_lookup(), phone=True
         )
         await resolver._lookup_phone(resolver._begin_lookup())
         self.assertIs(resolver.state.patient.active, patient)
-
-    def test_lookup_failure_is_distinct_from_absence(self):
-        self.assertEqual(
-            CandidateLookup("failed", failure_reason="network_error").status, "failed"
-        )
-        self.assertIsNone(CandidateLookup("none").failure_reason)
-        for status in ("unexpected", "failed", "found"):
-            with self.assertRaises(ValueError):
-                CandidateLookup(status)

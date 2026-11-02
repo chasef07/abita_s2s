@@ -21,11 +21,7 @@ from abita_s2s.name_matcher import (
     same_patient,
 )
 from abita_s2s.results import reply
-from abita_s2s.state import (
-    CallState,
-    CandidateLookup,
-    PatientAbsence,
-)
+from abita_s2s.state import CallState
 
 
 def candidate_first_name(candidate: Candidate | Receipt) -> str:
@@ -89,7 +85,6 @@ class PatientResolver:
 
     def _begin_lookup(self) -> object:
         self._token = object()
-        self.state.patient.record_absence(None)
         return self._token
 
     def start_phone_lookup(self) -> None:
@@ -103,7 +98,7 @@ class PatientResolver:
         token = self._begin_lookup()
         self._precall = asyncio.create_task(self._lookup_phone(token))
 
-    async def _lookup_phone(self, token: object) -> CandidateLookup:
+    async def _lookup_phone(self, token: object) -> tuple[Candidate | Receipt, ...]:
         result = await self._middleware.resolve(
             ResolveRequest(
                 phone=self.state.call.caller_phone,
@@ -116,22 +111,15 @@ class PatientResolver:
             matches = result.matches
         else:
             matches = []
-        if not matches:
-            lookup = (
-                CandidateLookup("none")
-                if isinstance(result, NotFound)
-                else CandidateLookup("failed", failure_reason="lookup_failed")
-            )
-        elif len({c.patientId for c in matches}) != len(matches) or any(
+        if len({c.patientId for c in matches}) != len(matches) or any(
             not candidate_first_name(c) for c in matches
         ):
-            lookup = CandidateLookup("failed", failure_reason="invalid_response")
-        else:
-            lookup = CandidateLookup("found", tuple(matches))
+            matches = []
+        candidates = tuple(matches)
         if self._current(token):
             self._token = None
-            self.state.patient.record_lookup(lookup)
-        return lookup
+            self.state.patient.record_candidates(candidates)
+        return candidates
 
     def close_admission(self) -> None:
         self._closed = True
@@ -181,7 +169,7 @@ class PatientResolver:
                     candidates = await asyncio.shield(self._precall)
                     if not self._current(token):
                         return superseded()
-                    self.state.patient.record_lookup(candidates)
+                    self.state.patient.record_candidates(candidates)
                 return await self._resolve(first_name, dob, token, call_id=call_id)
             except asyncio.CancelledError:
                 if self._token is token:
@@ -218,7 +206,7 @@ class PatientResolver:
             )
         selected = [
             c
-            for c in self.state.patient.lookup.candidates
+            for c in self.state.patient.candidates
             if phone_name_matches(name, candidate_first_name(c))
             and (not dob or dob_matches(dob, c.dob))
         ]
@@ -252,9 +240,6 @@ class PatientResolver:
         if not self._current(token):
             return superseded()
         if isinstance(result, NotFound):
-            self.state.patient.record_absence(
-                PatientAbsence(name, dob, self.state.call.called_office_key)
-            )
             return reply(
                 "not_found",
                 "no_results: A complete search found no matching patient. Confirm the first-name spelling and DOB once and retry any correction; if still no match, tell the caller you'll set them up as a new patient and start New patient intake.",

@@ -493,7 +493,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(args["room_options"].participant_identity, "caller")
         self.assertTrue(args["room_options"].close_on_disconnect)
         self.assertTrue(args["room_options"].delete_room_on_close)
-        self.assertEqual(args["agent"]._practice_name, SPRING_HILL.greeting_name)
+        self.assertIn(SPRING_HILL.greeting_name, args["agent"]._greeting)
         call = args["userdata"].call
         self.assertEqual(call.call_id, "sip-test")
         self.assertEqual(call.called_number, "+18135484830")
