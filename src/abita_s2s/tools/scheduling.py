@@ -47,8 +47,10 @@ class SchedulingTools:
         )
         lines = [result["answer"]]
         if "searchedFrom" in result:
+            patient = self._scheduling.state.patient.active
             lines.append(
-                f"Searched {result['searchedFrom']} through {result['searchedThrough']}."
+                f"Searched {result['searchedFrom']} through {result['searchedThrough']}"
+                + (f" for {patient.name}." if patient else ".")
             )
         if "retry_same_search" in result and result["outcome"] == "availability_failed":
             lines.append(

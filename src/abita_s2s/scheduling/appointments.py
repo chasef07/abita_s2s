@@ -512,11 +512,12 @@ class Scheduling:
         slot = offered.slot
         description = (
             f"{slot.date} at {slot.time} Eastern with {provider_name(slot.provider)}"
+            f" for {p.name}"
         )
         if confirmed is not True:
             return reply(
                 "needs_confirmation",
-                f"needs_input: Confirm {description} with the caller before booking.",
+                f"needs_input: Confirm {description} before booking.",
             )
         booking = Booking(
             patientId=p.patientId,

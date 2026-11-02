@@ -322,6 +322,33 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(requests[0][1]["visitType"], "routine_vision")
         self.assertEqual(requests[1][1]["visitCategory"], "routine_vision")
 
+    async def test_scheduling_results_name_the_patient_they_act_for(self):
+        owner, _ = self.owner([inventory(), booking()])
+        search = await self.tool(
+            owner, "list_available_appointments", visitType="medical"
+        )
+        self.assertIn("through 2026-09-28 for Doe, Jane.", search)
+        ref = soonest(search)[0]
+        confirm = await self.tool(
+            owner,
+            "book_appointment",
+            appointmentSlotRef=ref,
+            appointmentReason="Follow up",
+            referringDoctor="none",
+            readBack=None,
+        )
+        self.assertIn(
+            "Confirm 2026-09-15 at 9:00 AM Eastern with Dr. Bach for Doe, Jane before booking.",
+            confirm,
+        )
+        booked = await self.book(owner, ref)
+        self.assertTrue(
+            booked.startswith(
+                "success: Booked 2026-09-15 at 9:00 AM Eastern with Dr. Bach for Doe, Jane."
+            ),
+            booked,
+        )
+
     async def test_insurance_write_guards_invalidate_offered_slots(self):
         for guard in ("pending", "uncertain", "partial"):
             with self.subTest(guard=guard):
@@ -636,7 +663,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             output,
             "success: Found eligible openings.\n"
-            "Searched 2026-09-15 through 2026-09-28.\n"
+            "Searched 2026-09-15 through 2026-09-28 for Doe, Jane.\n"
             "Soonest options: SEP15-1130-BACH, SEP15-1145-BACH\n\n"
             "Tuesday, September 15, 2026 (tomorrow), EDT\n"
             "  Dr. Bach morning: open 11:30 AM SEP15-1130-BACH, 11:45 AM SEP15-1145-BACH\n\n"
@@ -769,7 +796,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             output,
             "success: Found eligible openings.\n"
-            "Searched 2026-09-15 through 2026-09-28.\n"
+            "Searched 2026-09-15 through 2026-09-28 for Doe, Jane.\n"
             "Soonest options: SEP15-0900-BACH, SEP15-1300-NOEL\n\n"
             "Tuesday, September 15, 2026 (tomorrow), EDT\n"
             "  Dr. Bach morning: open 9:00 AM SEP15-0900-BACH; shared 9:15 AM SEP15-0915-BACH\n"
@@ -2609,6 +2636,8 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     owner.http.reschedule,
                 )
                 self.assertTrue(first.startswith(answer), first)
+                if reported[0] == "booked":
+                    self.assertIn("for Doe, Jane", first)
                 evidence = owner.state.reporter.appointment.call_args.args[0]
                 self.assertEqual(
                     (
