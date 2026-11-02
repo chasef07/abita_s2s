@@ -132,23 +132,26 @@ class RenderTests(unittest.TestCase):
             ),
             (
                 {"outcome": "needs_staff_task", "requirements": ["pcp_referral"]},
-                "accepted; office staff must verify a referral from the primary "
-                "care doctor before scheduling",
+                "accepted. Tell the caller they need a referral from their "
+                "primary care doctor before scheduling",
             ),
             (
                 {
                     "outcome": "needs_staff_task",
                     "requirements": ["prior_authorization"],
+                    "callerNotice": "It comes from your primary care doctor.",
                 },
-                "accepted; office staff must verify prior authorization before scheduling",
+                "accepted. Tell the caller this plan needs prior authorization "
+                "before scheduling. Note: It comes from your primary care doctor.",
             ),
             (
                 {
                     "outcome": "needs_staff_task",
                     "requirements": ["pcp_referral", "staff_verify"],
                 },
-                "accepted; office staff must verify a referral from the primary "
-                "care doctor and coverage before scheduling",
+                "accepted. Tell the caller they need a referral from their "
+                "primary care doctor before scheduling. Office staff must verify "
+                "this plan's coverage before scheduling",
             ),
             (
                 {"outcome": "needs_staff_task"},

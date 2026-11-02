@@ -1,0 +1,89 @@
+name: Abita plan requirements
+# ACU-119. Each scenario's insurance_plans give Spring Hill one medical plan that
+# needs prior authorization and one that needs a referral from the primary care
+# doctor, both accepted by doctors who can see the caller. New-patient callers
+# ask to book, then end once they hear the insurance answer, so no chart or
+# visit is written. A pass needs the requirement in the agent's spoken words;
+# a staff request or transfer alone is not a pass.
+scenarios:
+  - label: New patient whose plan needs prior authorization
+    instructions: >
+      You are Rosa Authwait, a new patient, born April 2, 1956. Open with: "Hi,
+      I'm new and I need an eye exam for blurry vision. I have CarePlus Medicare."
+      If asked, say it is for a medical problem with your eyes. Ask once: "Do I
+      need to get anything from my primary care doctor first?" Once you hear the
+      answer, say you will take care of it and call back, then end. Do not give
+      your address or other details.
+    agent_expectations: >
+      Tells the caller that CarePlus Medicare needs prior authorization before the
+      visit can be scheduled, and that it comes from her primary care doctor.
+      Does not say staff will check as the whole answer. Does not call
+      add_patient, offer times, or book.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550171'
+      insurance_plans:
+        medical:
+        - planId: careplus-medicare-medical
+          label: CarePlus Medicare
+          family: CarePlus
+          names: [Care Plus]
+          carrierId: car281317
+          allowedProviders: [Dr. Bach, Dr. Licht]
+          outcome: needs_staff_task
+          requirements: [prior_authorization]
+          callerNotice: The prior authorization comes from your primary care doctor.
+          acceptedAt: []
+          selfPay: false
+        - planId: ambetter-value-medical
+          label: Ambetter Value
+          family: Ambetter
+          names: []
+          carrierId: car300001
+          allowedProviders: [Dr. Bach, Dr. Licht]
+          outcome: needs_staff_task
+          requirements: [pcp_referral]
+          callerNotice: ''
+          acceptedAt: []
+          selfPay: false
+        routine_vision: []
+
+  - label: New patient whose plan needs a PCP referral
+    instructions: >
+      You are Theo Refwait, a new patient, born August 14, 1979. Open with: "Hi,
+      I'm a new patient and I want to see the eye doctor about floaters. I have
+      Ambetter Value." If asked, say it is for a medical problem with your eyes.
+      Once you hear the answer about your insurance, say you will call back, then
+      end. Do not give your address or other details.
+    agent_expectations: >
+      Tells the caller that Ambetter Value needs a referral from his primary care
+      doctor before the visit can be scheduled. Does not say staff will check as
+      the whole answer. Does not call add_patient, offer times, or book.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550172'
+      insurance_plans:
+        medical:
+        - planId: careplus-medicare-medical
+          label: CarePlus Medicare
+          family: CarePlus
+          names: [Care Plus]
+          carrierId: car281317
+          allowedProviders: [Dr. Bach, Dr. Licht]
+          outcome: needs_staff_task
+          requirements: [prior_authorization]
+          callerNotice: The prior authorization comes from your primary care doctor.
+          acceptedAt: []
+          selfPay: false
+        - planId: ambetter-value-medical
+          label: Ambetter Value
+          family: Ambetter
+          names: []
+          carrierId: car300001
+          allowedProviders: [Dr. Bach, Dr. Licht]
+          outcome: needs_staff_task
+          requirements: [pcp_referral]
+          callerNotice: ''
+          acceptedAt: []
+          selfPay: false
+        routine_vision: []
