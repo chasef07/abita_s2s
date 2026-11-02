@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 class AbitaAgent(Agent):
     def __init__(self, owners: Owners) -> None:
-        self._practice_name = owners.office.greeting_name
         self._greeting = greeting(owners.office.greeting_name, datetime.now(EASTERN))
         chat_ctx = llm.ChatContext.empty()
         chat_ctx.add_message(role="developer", content=self._greeting)

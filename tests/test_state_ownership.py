@@ -20,10 +20,9 @@ OWNERS = {
     "reporter": "runtime",
     "patient": "state",
     "insurance": "state",
-    "lookup": "state",
+    "candidates": "state",
     "active": "state",
     "revision": "state",
-    "absence": "state",
     "plans": "runtime",
     "registrations": "insurance",
     "write_pending": "insurance",
@@ -33,8 +32,7 @@ CALLERS = {
     "activate": ("identity",),
     "deactivate": ("identity",),
     "update_insurance": ("identity",),
-    "record_absence": ("identity",),
-    "record_lookup": ("identity",),
+    "record_candidates": ("identity",),
     "update_appointments": ("scheduling",),
     "mark_appointments_stale": ("scheduling",),
 }
@@ -132,6 +130,15 @@ def ownership_violations() -> list[str]:
     ]
 
 
+def read_fields() -> set[str]:
+    return {
+        node.attr
+        for path in PACKAGE.rglob("*.py")
+        for node in ast.walk(ast.parse(path.read_text()))
+        if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load)
+    }
+
+
 class StateOwnershipTests(unittest.TestCase):
     maxDiff = None
 
@@ -139,6 +146,12 @@ class StateOwnershipTests(unittest.TestCase):
         names = [f.name for cls in STATE_CLASSES for f in dataclasses.fields(cls)]
         self.assertEqual(len(names), len(set(names)), "field names must be unique")
         self.assertEqual(set(OWNERS), set(names))
+
+    def test_every_field_is_read_by_the_app(self):
+        names = {f.name for cls in STATE_CLASSES for f in dataclasses.fields(cls)}
+        self.assertEqual(
+            names - read_fields(), set(), "delete call state that only tests read"
+        )
 
     def test_every_patient_method_names_its_callers(self):
         methods = {

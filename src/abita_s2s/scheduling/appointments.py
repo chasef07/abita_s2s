@@ -165,7 +165,7 @@ class Scheduling:
         self.http = http
         self.now = now or (lambda: datetime.now(UTC))
         self._offers = Offers(state, http, lambda: self.now())
-        self._references: dict[tuple[int, str, int], str] = {}
+        self._references: dict[tuple[str, int], str] = {}
         self._next_ref = 0
         self._write_task: asyncio.Task[dict] | None = None
         self._closed = False
@@ -188,7 +188,7 @@ class Scheduling:
         return scheduling_context(self.state)
 
     def _reference(self, patient_id: str, appointment: Appointment) -> str:
-        key = (self.state.patient.revision, patient_id, appointment.id)
+        key = (patient_id, appointment.id)
         if key not in self._references:
             self._next_ref += 1
             self._references[key] = f"A{self._next_ref}"
@@ -337,7 +337,6 @@ class Scheduling:
                 (
                     appointment_id
                     for (
-                        _,
                         patient_id,
                         appointment_id,
                     ), known_ref in self._references.items()

@@ -54,7 +54,7 @@ CONFIG = Config(
 
 def call_state(phone="+15555550101", office=SPRING_HILL):
     state = CallState(
-        CallContext("call", datetime.now(UTC), "abita", office.key, caller_phone=phone)
+        CallContext("call", datetime.now(UTC), office.key, caller_phone=phone)
     )
     state.insurance.plans = office_plans()
     return state
@@ -368,9 +368,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
             (await r.resolve("Jane", "02/03/1982"))["outcome"], "not_found"
         )
         self.assertIsNone(r.state.patient.active)
-        self.assertIsNotNone(r.state.patient.absence)
         self.assertEqual((await r.resolve(None, "01/02/1980"))["outcome"], "verified")
-        self.assertIsNone(r.state.patient.absence)
 
     async def test_no_match_routes_to_new_patient_intake_not_staff(self):
         r, _ = self.resolver([search()])
@@ -402,12 +400,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["outcome"], outcome)
                 expected = "no_results: " if outcome == "not_found" else "blocked: "
                 self.assertTrue(result["answer"].startswith(expected), result["answer"])
-                self.assertEqual(
-                    r.state.patient.absence is not None, outcome == "not_found"
-                )
                 self.assertIsNone(r.state.patient.active)
-                await r.resolve("John", None)
-                self.assertIsNone(r.state.patient.absence)
 
     async def test_complete_search_multiple_charts_never_hydrates(self):
         r, calls = self.resolver([search(candidate(), candidate("other"))])
@@ -417,7 +410,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(calls), 1)
         self.assertIsNone(r.state.patient.active)
 
-    async def test_invalid_hydrated_receipts_never_activate_or_establish_absence(self):
+    async def test_invalid_hydrated_receipts_never_activate(self):
         for override in (
             {"name": "Doe, John"},
             {"dob": "02/03/1982"},
@@ -435,7 +428,6 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
                     (await r.resolve("Jane", "01/02/1980"))["outcome"], "lookup_failed"
                 )
                 self.assertIsNone(r.state.patient.active)
-                self.assertIsNone(r.state.patient.absence)
 
     async def test_invalid_dob_is_rejected_before_read(self):
         for dob in ("02/30/1980", "13/01/1980", "01/01/2999", "1980-01-01", ""):
@@ -566,21 +558,17 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await task)["outcome"], "superseded")
         self.assertIsNone(r.state.patient.active)
 
-    async def test_phone_absence_and_failure_never_establish_registration_absence(self):
-        for body, status in [
-            ({"status": "not_found"}, "none"),
-            ({"status": "error"}, "failed"),
-            (search(candidate(), complete=False), "failed"),
-            (
-                {"status": "multiple_matches", "matches": [candidate(), candidate()]},
-                "failed",
-            ),
-            ({**receipt(), "name": None}, "failed"),
+    async def test_phone_absence_and_failure_leave_no_candidates(self):
+        for body in [
+            {"status": "not_found"},
+            {"status": "error"},
+            search(candidate(), complete=False),
+            {"status": "multiple_matches", "matches": [candidate(), candidate()]},
+            {**receipt(), "name": None},
         ]:
             r, _ = self.resolver([body, body])
             await self.preload(r)
-            self.assertEqual(r.state.patient.lookup.status, status)
-            self.assertIsNone(r.state.patient.absence)
+            self.assertEqual(r.state.patient.candidates, ())
             self.assertEqual(
                 (await r.resolve("Jane", None))["answer"],
                 "needs_input: What is the patient's date of birth?",
@@ -637,7 +625,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         await closing
         self.assertEqual((await resolving)["outcome"], "superseded")
         self.assertIsNone(r.state.patient.active)
-        self.assertEqual(r.state.patient.lookup.status, "not_attempted")
+        self.assertEqual(r.state.patient.candidates, ())
 
     async def test_tool_schema_and_cross_call_guard(self):
         r, calls = self.resolver([])

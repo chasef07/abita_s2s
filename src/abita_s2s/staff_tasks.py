@@ -154,16 +154,7 @@ class StaffTasks:
     ) -> StaffTask:
         """Validate before any write, then snapshot the exact request for replay."""
         call = self.state.call
-        if call.customer_key != "abita":
-            raise ValueError(
-                "Staff tasks are unavailable for this call. No request was sent."
-            )
-        try:
-            office = get_office_profile(call.called_office_key)
-        except ValueError as exc:
-            raise ValueError(
-                "This office is not authorized. No request was sent."
-            ) from exc
+        office = get_office_profile(call.called_office_key)
         if not office.staff_tasks_enabled:
             raise ValueError(
                 "Staff tasks are disabled for this office. No request was sent."

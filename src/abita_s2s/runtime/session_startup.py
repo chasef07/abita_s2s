@@ -177,7 +177,6 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         call = CallContext(
             call_id=simulation.simulation_job_id,
             session_started_at=session_started_at,
-            customer_key="abita",
             called_office_key=office.key,
             caller_phone=data.get("caller_phone"),
             room_name=ctx.room.name,
@@ -190,7 +189,6 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         call = CallContext(
             call_id=f"console-{uuid4()}",
             session_started_at=session_started_at,
-            customer_key="abita",
             called_office_key=office.key,
         )
     else:
@@ -205,7 +203,6 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         call = CallContext(
             call_id=sip_call_id or ctx.room.name or participant.identity,
             session_started_at=session_started_at,
-            customer_key="abita",
             called_office_key=office.key,
             caller_phone=attrs.get("sip.phoneNumber") or None,
             called_number=attrs["sip.trunkPhoneNumber"],
