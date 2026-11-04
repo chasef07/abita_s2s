@@ -57,7 +57,8 @@ scenarios:
     agent_expectations: >
       Says the office closes at 1 PM on Friday. After the caller's "Okay," does not
       ask whether the caller still wants a representative or to be connected, and
-      does not call transfer_call. Ends the call after the caller's goodbye.
+      does not call transfer_call. Asking whether the caller needs anything else is
+      correct. Ends the call after the caller's goodbye.
     userdata:
       office: spring-hill
       office_knowledge: *synthetic_knowledge
@@ -207,7 +208,9 @@ scenarios:
     agent_expectations: >
       Calls transfer_call as its next action after the caller says they are
       returning a call from a named staff member, without first offering a message,
-      asking for patient details, or asking about the need.
+      asking for patient details, or asking about the need. Grade only what happens
+      before transfer_call: this test makes every transfer unavailable, so offering
+      a staff request after the failed transfer is correct.
     userdata:
       office: spring-hill
 
@@ -217,10 +220,12 @@ scenarios:
       If asked what it is about, say "It's about a bill I got." If the agent offers
       any help, say "No thanks, I'd rather talk to a person." Do not give patient
       details. If the agent says it will transfer you, say "Okay" and wait quietly.
-      If told the transfer is unavailable, say goodbye.
+      If told the transfer is unavailable, say "Okay, goodbye." and stop.
     agent_expectations: >
       Makes at most one offer of help, then calls transfer_call after the caller
       declines it, with no second pitch, intake question, or repeated question
-      about how it can help.
+      about how it can help. Grade only what happens before transfer_call: this
+      test makes every transfer unavailable, so offering a staff request after the
+      failed transfer is correct.
     userdata:
       office: spring-hill
