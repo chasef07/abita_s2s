@@ -1,4 +1,4 @@
-"""Read OpenRouter Decisions answers for the jury and the call labeler."""
+"""Read OpenRouter Decisions answers for the jury's scorecard questions and call labels."""
 
 import json
 from typing import TypeGuard

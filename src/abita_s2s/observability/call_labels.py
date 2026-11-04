@@ -1,14 +1,16 @@
-"""Tool-backed transfer outcomes and model-judged intent and remaining outcomes."""
+"""Tool-backed transfer outcomes and jury-judged intent and remaining outcomes."""
 
+import asyncio
+from collections import Counter
 from collections.abc import Awaitable, Callable
 
-import httpx
 from livekit.agents import ChatContext
 
 from abita_s2s.observability.decisions import parse
+from abita_s2s.observability.judges import JURORS
 
-VERSION = "call-labels-v1"
-MODEL = "typesafe/jev-1.14"
+VERSION = "call-labels-v2"
+MODEL = "jury"
 
 
 def transfer_called(history: ChatContext) -> bool:
@@ -26,6 +28,16 @@ def classification(status: str, reason: str | None = None) -> dict:
     return result
 
 
+def plurality(question: dict, answers: list[dict]) -> str:
+    """The most common choice; a tie goes to the highest mean probability."""
+    counts = Counter(answer["choice"] for answer in answers)
+    top = max(counts.values())
+    return max(
+        (label for label in question["criteria"] if counts[label] == top),
+        key=lambda label: sum(answer["probabilities"][label] for answer in answers),
+    )
+
+
 async def classify_labels(
     ask: Callable[[str, dict, dict], Awaitable[tuple[dict, str | None]]],
     state: dict,
@@ -33,47 +45,67 @@ async def classify_labels(
     *,
     transferred: bool,
 ) -> dict:
-    """Judge intent, and judge outcome only when no transfer tool was called.
+    """Ask every juror for intent, and for outcome only when no transfer tool was called.
 
-    ``ask`` is the jury's request, so labels share its deadline and retry.
+    ``ask`` is the jury's request, so labels share its deadline and retry. Each
+    label needs valid answers from a majority of jurors, like the jury's questions.
     The caller writes the transferred outcome.
     """
-    result = classification("incomplete")
+    result = {**classification("incomplete"), "jurors": list(JURORS)}
     questions = {
         name: question
         for name, question in QUESTIONS.items()
         if not (transferred and name == "outcome")
     }
-    try:
-        answers, result["servedModel"] = await ask(
-            MODEL, {**state, "closeout": closeout}, questions
+    replies = dict(
+        zip(
+            JURORS,
+            await asyncio.gather(
+                *(
+                    ask(juror, {**state, "closeout": closeout}, questions)
+                    for juror in JURORS
+                ),
+                return_exceptions=True,
+            ),
+            strict=True,
         )
-        result["answers"] = answers
-        errors = []
-        for name, question in questions.items():
+    )
+    answered = {
+        juror: reply for juror, reply in replies.items() if isinstance(reply, tuple)
+    }
+    result["servedModels"] = {juror: reply[1] for juror, reply in answered.items()}
+    result["answers"] = {juror: reply[0] for juror, reply in answered.items()}
+    reasons, errors = [], {}
+    for name, question in questions.items():
+        valid, failures = [], {}
+        for juror, reply in replies.items():
+            if isinstance(reply, BaseException):
+                failures[juror] = type(reply).__name__
+                continue
             try:
-                result[name] = parse(question, answers.get(name))
+                parse(question, reply[0].get(name))
+                valid.append(reply[0][name])
             except ValueError:
-                errors.append(f"{name}_choice_invalid")
-        if not transferred and (
-            closeout.get("callStatus") == "FAILED"
-            or closeout.get("mutationDrainFailed")
-            or closeout.get("closeReason") in ("error", "startup_or_report_failure")
-        ):
-            result.pop("outcome", None)
-            errors.append("call_evidence_incomplete")
-        if errors:
-            result["reason"] = ";".join(errors)
+                failures[juror] = "ValueError"
+        if failures:
+            errors[name] = failures
+        if len(valid) < len(JURORS) // 2 + 1:
+            reasons.append(f"{name}_no_quorum")
         else:
-            result["status"] = "complete"
-    except TimeoutError:
-        result["reason"] = "classification_deadline_exceeded"
-    except httpx.HTTPStatusError as error:
-        result["reason"] = f"classification_http_{error.response.status_code}"
-    except httpx.HTTPError:
-        result["reason"] = "classification_transport_failed"
-    except (ValueError, TypeError, KeyError):
-        result["reason"] = "classification_response_invalid"
+            result[name] = plurality(question, valid)
+    if not transferred and (
+        closeout.get("callStatus") == "FAILED"
+        or closeout.get("mutationDrainFailed")
+        or closeout.get("closeReason") in ("error", "startup_or_report_failure")
+    ):
+        result.pop("outcome", None)
+        reasons.append("call_evidence_incomplete")
+    if errors:
+        result["errors"] = errors
+    if reasons:
+        result["reason"] = ";".join(reasons)
+    else:
+        result["status"] = "complete"
     return result
 
 

@@ -23,13 +23,16 @@ from abita_s2s.observability.call_labels import (
 )
 from abita_s2s.observability.decisions import parse
 from abita_s2s.observability.evaluation import evaluate_call
+from abita_s2s.observability.judges import JURORS
 
 
-def choice(criteria, value):
+def choice(criteria, value, probabilities=None):
     return {
         "type": "choice",
         "choice": value,
-        "probabilities": {key: float(key == value) for key in criteria},
+        "probabilities": {
+            key: (probabilities or {}).get(key, float(key == value)) for key in criteria
+        },
     }
 
 
@@ -57,8 +60,10 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
         self,
         answers=None,
         *,
+        answers_by_juror=None,
         closeout=None,
         failures=(),
+        failures_by_juror=None,
         hang=None,
         seconds=60,
         history=None,
@@ -67,7 +72,8 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
             history = ChatContext()
             history.add_message(role="user", content="Please cancel my appointment.")
             history.add_message(role="assistant", content="It is cancelled.")
-        requests, failures = [], list(failures)
+        requests = []
+        failures = failures_by_juror or {juror: list(failures) for juror in JURORS}
 
         async def respond(request):
             payload = json.loads(request.content)
@@ -76,14 +82,18 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
             if hang == ("labels" if labels else "jury"):
                 await asyncio.Event().wait()
             if labels:
-                if failures:
+                juror = payload["model"]
+                if failures.get(juror):
                     return httpx.Response(
-                        failures.pop(0), json={"error": "private body"}
+                        failures[juror].pop(0), json={"error": "private body"}
                     )
                 return httpx.Response(
                     200,
                     content=json.dumps(
-                        {"answers": answers, "model": f"{MODEL}-20261014"}
+                        {
+                            "answers": (answers_by_juror or {}).get(juror, answers),
+                            "model": f"{juror}-20261014",
+                        }
                     ).encode(),
                 )
             return httpx.Response(
@@ -130,9 +140,9 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
         }
         requests, result = await self.run_labels(closeout=closeout)
         labels = [p for p in requests if "intent" in p["questions"]]
-        self.assertEqual(len(labels), 1)
+        self.assertEqual(sorted(p["model"] for p in labels), sorted(JURORS))
+        self.assertEqual(len({json.dumps(p["questions"]) for p in labels}), 1)
         request = labels[0]
-        self.assertEqual(request["model"], MODEL)
         self.assertEqual(request["provider"], {"zdr": True})
         self.assertEqual(request["state"]["closeout"], closeout)
         self.assertNotIn("staffConnected", request["state"])
@@ -141,21 +151,24 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             set(request["questions"]["outcome"]["criteria"]), {"resolved", "abandoned"}
         )
+        answers = {
+            "intent": choice(INTENT_CRITERIA, "cancel_appointment"),
+            "outcome": choice(OUTCOME_CRITERIA, "resolved"),
+        }
         self.assertEqual(
             result["classification"],
             {
-                "version": VERSION,
-                "model": MODEL,
-                "servedModel": f"{MODEL}-20261014",
+                "version": "call-labels-v2",
+                "model": "jury",
+                "jurors": list(JURORS),
+                "servedModels": {juror: f"{juror}-20261014" for juror in JURORS},
                 "status": "complete",
                 "intent": "cancel_appointment",
                 "outcome": "resolved",
-                "answers": {
-                    "intent": choice(INTENT_CRITERIA, "cancel_appointment"),
-                    "outcome": choice(OUTCOME_CRITERIA, "resolved"),
-                },
+                "answers": dict.fromkeys(JURORS, answers),
             },
         )
+        self.assertEqual((VERSION, MODEL), ("call-labels-v2", "jury"))
 
     async def test_partial_choice_is_retained(self):
         for answers, retained, omitted in (
@@ -165,13 +178,14 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
             _, result = await self.run_labels(answers)
             labels = result["classification"]
             self.assertEqual(labels["status"], "incomplete")
+            self.assertEqual(labels["reason"], f"{omitted}_no_quorum")
             self.assertIn(retained, labels)
             self.assertNotIn(omitted, labels)
-            self.assertEqual(labels["answers"], answers)
+            self.assertEqual(labels["answers"], dict.fromkeys(JURORS, answers))
 
     async def test_short_meaningful_call_keeps_labels_without_failure_jury(self):
         requests, result = await self.run_labels(seconds=15)
-        self.assertEqual(len(requests), 1)
+        self.assertEqual(sorted(p["model"] for p in requests), sorted(JURORS))
         self.assertEqual(set(requests[0]["questions"]), {"intent", "outcome"})
         self.assertEqual(result["status"], "skipped")
         self.assertEqual(result["reason"], "call_too_short")
@@ -194,16 +208,16 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
                         seconds=seconds,
                         closeout={"transferStatus": "accepted", "callStatus": "FAILED"},
                     )
-                    labels_request = next(
+                    for labels_request in (
                         p for p in requests if "intent" in p["questions"]
-                    )
-                    self.assertEqual(set(labels_request["questions"]), {"intent"})
+                    ):
+                        self.assertEqual(set(labels_request["questions"]), {"intent"})
                     self.assertEqual(result["classification"]["status"], "complete")
                     self.assertEqual(
                         result["classification"]["intent"], "speak_to_staff"
                     )
                     self.assertEqual(result["classification"]["outcome"], "transferred")
-                    self.assertEqual(len(requests), 1 if seconds < 30 else 4)
+                    self.assertEqual(len(requests), 3 if seconds < 30 else 6)
 
     async def test_without_transfer_tool_only_resolved_or_abandoned_are_judged(self):
         for transfer in (
@@ -232,8 +246,12 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
                 "outcome": choice(OUTCOME_CRITERIA, "transferred"),
             }
         )
-        self.assertEqual(result["classification"]["reason"], "outcome_choice_invalid")
-        self.assertNotIn("outcome", result["classification"])
+        labels = result["classification"]
+        self.assertEqual(labels["reason"], "outcome_no_quorum")
+        self.assertEqual(
+            labels["errors"], {"outcome": dict.fromkeys(JURORS, "ValueError")}
+        )
+        self.assertNotIn("outcome", labels)
 
     async def test_transfer_outcome_survives_intent_failure_or_timeout(self):
         for kwargs in ({"failures": [400]}, {"hang": "labels"}, {"answers": {}}):
@@ -302,7 +320,7 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
     async def test_transient_label_failure_is_retried_once_like_the_jury(self):
         for failures, status, reason in (
             ([429], "complete", None),
-            ([503, 429], "incomplete", "classification_http_429"),
+            ([503, 429], "incomplete", "intent_no_quorum;outcome_no_quorum"),
         ):
             with (
                 self.subTest(failures=failures),
@@ -312,8 +330,85 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
             labels = result["classification"]
             self.assertEqual(labels.get("reason"), reason)
             self.assertEqual(labels["status"], status)
-            self.assertEqual(sum("intent" in p["questions"] for p in requests), 2)
+            self.assertEqual(sum("intent" in p["questions"] for p in requests), 6)
+            if reason:
+                self.assertEqual(
+                    labels["errors"]["intent"],
+                    dict.fromkeys(JURORS, "HTTPStatusError"),
+                )
             self.assertEqual(result["status"], "complete")
+
+    async def test_each_label_takes_the_jurors_most_common_choice(self):
+        first, second, third = JURORS
+        _, result = await self.run_labels(
+            answers_by_juror={
+                first: {
+                    "intent": choice(INTENT_CRITERIA, "billing_question"),
+                    "outcome": choice(OUTCOME_CRITERIA, "abandoned"),
+                },
+                second: {
+                    "intent": choice(INTENT_CRITERIA, "insurance_question"),
+                    "outcome": choice(OUTCOME_CRITERIA, "resolved"),
+                },
+                third: {
+                    "intent": choice(INTENT_CRITERIA, "insurance_question"),
+                    "outcome": choice(OUTCOME_CRITERIA, "resolved"),
+                },
+            }
+        )
+        labels = result["classification"]
+        self.assertEqual(labels["status"], "complete")
+        self.assertEqual(
+            (labels["intent"], labels["outcome"]), ("insurance_question", "resolved")
+        )
+
+    async def test_a_tie_goes_to_the_highest_mean_probability(self):
+        first, second, third = JURORS
+        lean = {"billing_question": 0.55, "insurance_question": 0.45}
+        _, result = await self.run_labels(
+            answers_by_juror={
+                first: {
+                    "intent": choice(INTENT_CRITERIA, "billing_question", lean),
+                    "outcome": choice(OUTCOME_CRITERIA, "resolved"),
+                },
+                second: {
+                    "intent": choice(INTENT_CRITERIA, "insurance_question"),
+                    "outcome": choice(
+                        OUTCOME_CRITERIA,
+                        "abandoned",
+                        {"abandoned": 0.6, "resolved": 0.4},
+                    ),
+                },
+                third: {
+                    "intent": choice(INTENT_CRITERIA, "other"),
+                    "outcome": choice(OUTCOME_CRITERIA, "resolved"),
+                },
+            },
+            failures_by_juror={third: [400]},
+        )
+        labels = result["classification"]
+        self.assertEqual(labels["status"], "complete")
+        self.assertEqual(
+            (labels["intent"], labels["outcome"]), ("insurance_question", "resolved")
+        )
+        self.assertEqual(set(labels["answers"]), {first, second})
+        self.assertEqual(set(labels["servedModels"]), {first, second})
+
+    async def test_a_label_needs_a_majority_of_jurors(self):
+        first, second, third = JURORS
+        _, result = await self.run_labels(
+            failures_by_juror={second: [400], third: [400]}
+        )
+        labels = result["classification"]
+        self.assertEqual(labels["status"], "incomplete")
+        self.assertEqual(labels["reason"], "intent_no_quorum;outcome_no_quorum")
+        self.assertNotIn("intent", labels)
+        self.assertNotIn("outcome", labels)
+        self.assertEqual(
+            labels["errors"]["intent"],
+            {second: "HTTPStatusError", third: "HTTPStatusError"},
+        )
+        self.assertEqual(set(labels["answers"]), {first})
 
     async def test_jury_deadline_does_not_erase_classification(self):
         with self.assertLogs("abita_s2s.observability.evaluation", "ERROR"):
