@@ -54,7 +54,7 @@ async def evaluate_judges(
     transferred: bool,
     include_jury: bool = True,
 ) -> dict:
-    """Ask each juror every question in one request within one deadline.
+    """Ask each juror the scorecard questions and the call labels within one deadline.
 
     A malformed answer fails only its own question. Each question takes the
     jury's majority for yes/no answers and mean for sentiment scores.

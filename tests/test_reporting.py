@@ -373,7 +373,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
             "abita_s2s.observability.evaluation.httpx.AsyncClient", return_value=client
         ):
             await reporter.finish(lambda: report)
-        self.assertEqual(len(requests), 1)
+        self.assertEqual(sorted(p["model"] for p in requests), sorted(JURORS))
         closeout = self.requests[-1]["closeoutPayload"]
         self.assertEqual(
             requests[0]["state"]["closeout"]["domainOutcomes"],
@@ -430,13 +430,18 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         self,
     ):
         evaluation = await self.finish_with_non_finite_answer("labeler")
+        invalid = dict.fromkeys(JURORS, "ValueError")
         self.assertEqual(
             evaluation["classification"],
             {
-                "version": "call-labels-v1",
-                "model": "typesafe/jev-1.14",
+                "version": "call-labels-v2",
+                "model": "jury",
+                "jurors": list(JURORS),
+                "servedModels": {},
+                "answers": {},
                 "status": "incomplete",
-                "reason": "classification_response_invalid",
+                "errors": {"intent": invalid, "outcome": invalid},
+                "reason": "intent_no_quorum;outcome_no_quorum",
             },
         )
 
@@ -454,8 +459,8 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             self.requests[-1]["closeoutPayload"]["evaluation"]["classification"],
             {
-                "version": "call-labels-v1",
-                "model": "typesafe/jev-1.14",
+                "version": "call-labels-v2",
+                "model": "jury",
                 "status": "skipped",
                 "reason": "native_report_unavailable",
             },
