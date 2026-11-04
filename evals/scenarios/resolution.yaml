@@ -12,7 +12,9 @@ name: Resolve the stated need instead of transferring
 # Office knowledge below is synthetic. Booking scenarios use the sandbox fixture
 # from appointments.yaml: Maya Singleproof, DOB 05/12/1985, +12025550148, must
 # resolve uniquely with accepted medical insurance and eligible future medical
-# slots. No scenario books, so the shared chart is unchanged.
+# slots. The chart's carrier is Aetna and it has one upcoming medical visit, so
+# booking callers name Aetna Medicare PPO and ask for a separate new visit. No
+# scenario books, so the shared chart is unchanged.
 scenarios:
   - label: Caller asks for a person to learn which doctor treats glaucoma
     instructions: >
@@ -100,7 +102,9 @@ scenarios:
       You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
       As soon as the agent greets you, say "Hi, I need to book my glaucoma
       follow-up." Your eyes feel the same as always, with no new symptoms. Your
-      insurance has not changed and no doctor referred you. Give your first name
+      insurance has not changed and no doctor referred you. If asked which insurance plan is on your card, say "Aetna Medicare PPO." If the
+      agent mentions an appointment you already have, say "Keep that one. I need a
+      separate new visit for this." Give your first name
       when asked and DOB only if needed. If the agent asks again what the visit is
       for or which condition it is, say "I told you, it's my glaucoma follow-up."
       If the agent asks a second time, say "Can I just talk to a person?" Only after
@@ -120,7 +124,9 @@ scenarios:
       You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
       As soon as the agent greets you, say "I was in last week for eye pain and the
       doctor said to come back for a follow-up. It's mild now, and my vision is
-      fine." Your insurance has not changed and no doctor referred you. Answer one
+      fine." Your insurance has not changed and no doctor referred you. If asked which insurance plan is on your card, say "Aetna Medicare PPO." If the
+      agent mentions an appointment you already have, say "Keep that one. I need a
+      separate new visit for this." Answer one
       safety question about your symptoms with "No, nothing like that." If asked a
       second safety question, sigh and say "I already said it's mild and my vision
       is fine." Give your first name when asked and DOB only if needed. Only after
@@ -131,6 +137,48 @@ scenarios:
       ask again what the visit is for, and searches medical openings. Reads back
       openings from the search result. Does not book and does not call
       transfer_call.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Caller asks for a person to find open times
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
+      As soon as the agent greets you, say "Can you put me through to someone at
+      the office?" If asked what it is about, say "I want to see when a doctor can
+      see me for my dry eyes." You have had mild dry eyes for several weeks, with
+      no pain or sudden vision changes. Your insurance has not changed and you have
+      no referring doctor. If asked which insurance plan is on your card, say "Aetna Medicare PPO." If the
+      agent mentions an appointment you already have, say "Keep that one. I need a
+      separate new visit for this." If the agent offers to look up openings now,
+      accept; give your first name when asked and DOB only if needed. If it offers
+      only to take a message, say "No, I just want to know what's open." Do not
+      book. Once you hear actual dates and times, thank the agent and say goodbye.
+      If the agent says it will transfer you, say "Okay" and wait quietly.
+    agent_expectations: >
+      Offers to look up openings now rather than only offering a message. Finds
+      Maya's chart and reads back openings from the search result. Does not call
+      transfer_call.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Vague follow-up still asks which condition
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
+      Open with: "Hi, I'd like to make an appointment." If asked what it is for,
+      say only "eye exam, follow up." If asked what kind of visit it is, say only
+      "a follow-up for an eye condition." Say it is for glaucoma only if asked
+      which condition. Your insurance has not changed. If asked which insurance plan is on your card, say "Aetna Medicare PPO." If the
+      agent mentions an appointment you already have, say "Keep that one. I need a
+      separate new visit for this." Give your first
+      name when asked and DOB only if needed. Only after actual times are offered,
+      say you will check your calendar and call back, then end. If told no
+      openings can be found, accept that and end.
+    agent_expectations: >
+      After hearing only "a follow-up for an eye condition," asks which condition it
+      is for before searching openings. Does not diagnose, does not book, and does
+      not call transfer_call.
     userdata:
       office: spring-hill
       caller_phone: '+12025550148'
