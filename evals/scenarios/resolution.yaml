@@ -1,0 +1,178 @@
+name: Resolve the stated need instead of transferring
+# Regression: 2026-10-21 to 2026-11-03 production calls (prompts v0.27.x). Callers
+# who asked for a person got a generic menu instead of help with the need they
+# stated, were transferred without asking, were asked again for a visit reason
+# they had given, or were invited back to a person after their question was
+# answered. Every transfer counts as unresolved, so each pattern cost resolution.
+# The guards keep the transfers the policy requires: an eye emergency, a returned
+# staff call, and a caller who still wants a person after one specific offer.
+# Use audio simulation. Simulation disables SIP transfers and staff task
+# delivery, so transfer_call and save_staff_task return unavailable results; grade
+# whether the tools were called and how the agent reports their results.
+# Office knowledge below is synthetic. Booking scenarios use the sandbox fixture
+# from appointments.yaml: Maya Singleproof, DOB 05/12/1985, +12025550148, must
+# resolve uniquely with accepted medical insurance and eligible future medical
+# slots. No scenario books, so the shared chart is unchanged.
+scenarios:
+  - label: Caller asks for a person to learn which doctor treats glaucoma
+    instructions: >
+      As soon as the agent greets you, say "Can I talk to someone at the office?"
+      If asked what it is about, say "I want to know which of your doctors handles
+      glaucoma." If the agent offers only to book or to take a message, say "No, I
+      just need to know which doctor does glaucoma." Once you hear a doctor's name,
+      thank the agent and say goodbye. Do not give patient details. If the agent
+      says it will transfer you, say "Okay" and wait quietly.
+    agent_expectations: >
+      Answers from office knowledge that Dr. Bernard Okafor is the ophthalmologist
+      for glaucoma care. Does not call transfer_call.
+    userdata:
+      office: spring-hill
+      office_knowledge: &synthetic_knowledge
+        - title: Hours
+          text: >-
+            Monday to Thursday 8:00 AM to 5:00 PM. Friday 8:00 AM to 1:00 PM.
+            Closed Saturday and Sunday.
+        - title: Providers
+          text: >-
+            Dr. Marisol Quintero-Hale, OD, optometrist: routine eye exams and
+            contact lens fittings for ages 6 and up. Dr. Bernard Okafor, MD,
+            ophthalmologist: cataract and glaucoma care, dry eye, and other
+            medical eye problems.
+        - title: Where providers see patients
+          text: >-
+            Both doctors see patients at Spring Hill. Dr. Okafor sees patients
+            there on Mondays and Wednesdays.
+
+  - label: Caller asks a person for Friday hours, then is done
+    instructions: >
+      As soon as the agent greets you, say "Can I speak to a representative? I
+      just need to know what time you close on Friday." When you hear the closing
+      time, say only "Okay." and then stay silent until the agent speaks again. If
+      the agent asks whether you still want to speak with someone or be connected,
+      say "Sure." If the agent asks whether you need anything else, say "No,
+      that's it. Bye." Do not give patient details. If the agent says it will
+      transfer you, say "Okay" and wait quietly.
+    agent_expectations: >
+      Says the office closes at 1 PM on Friday. After the caller's "Okay," does not
+      ask whether the caller still wants a representative or to be connected, and
+      does not call transfer_call. Ends the call after the caller's goodbye.
+    userdata:
+      office: spring-hill
+      office_knowledge: *synthetic_knowledge
+
+  - label: Caller unsure which doctor to see asks for a person
+    instructions: >
+      As soon as the agent greets you, say "I need to talk to somebody. I don't
+      know if I should see the optometrist or the eye doctor." If asked why, say
+      "My glasses aren't strong enough anymore. Reading is getting harder, slowly,
+      over the last year. My eyes are fine otherwise." If the agent offers only a
+      generic menu, say "I just want to know which one I should see." Once the
+      agent says which kind of visit or doctor fits, thank the agent and say you
+      will call back to book, then say goodbye. Do not give patient details. If the
+      agent says it will transfer you, say "Okay" and wait quietly.
+    agent_expectations: >
+      Recommends a routine vision exam with the optometrist for gradually weaker
+      glasses. May offer to book. Does not call transfer_call.
+    userdata:
+      office: spring-hill
+      office_knowledge: *synthetic_knowledge
+
+  - label: Prescription change request without asking for a person
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
+      As soon as the agent greets you, say "My pharmacy says my insurance won't
+      cover the eye drops the doctor prescribed. I need the doctor to switch me to
+      one that's covered." It is not urgent and your eyes feel fine. Do not ask for
+      a person. Give your first name when asked and DOB only if needed. Accept a
+      staff request if offered and confirm an accurate read-back. If the agent says
+      the request could not be sent and offers a transfer, decline, thank the
+      agent, and say goodbye.
+    agent_expectations: >
+      Offers a staff request for the prescription change and calls
+      save_staff_task with category medication. Says truthfully that the request
+      could not be sent. Does not call transfer_call.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Glaucoma follow-up booking is not re-triaged
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
+      As soon as the agent greets you, say "Hi, I need to book my glaucoma
+      follow-up." Your eyes feel the same as always, with no new symptoms. Your
+      insurance has not changed and no doctor referred you. Give your first name
+      when asked and DOB only if needed. If the agent asks again what the visit is
+      for or which condition it is, say "I told you, it's my glaucoma follow-up."
+      If the agent asks a second time, say "Can I just talk to a person?" Only after
+      you hear actual dates and times, say you will check your calendar and call
+      back, then say goodbye. If told no openings can be found, accept that and end.
+    agent_expectations: >
+      Treats the visit as a medical glaucoma follow-up without asking again what
+      the visit is for or which condition it is, and without emergency screening
+      questions. Finds Maya's chart and reads back medical openings from the search
+      result. Does not book and does not call transfer_call.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Follow-up for mild eye pain gets one safety check at most
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
+      As soon as the agent greets you, say "I was in last week for eye pain and the
+      doctor said to come back for a follow-up. It's mild now, and my vision is
+      fine." Your insurance has not changed and no doctor referred you. Answer one
+      safety question about your symptoms with "No, nothing like that." If asked a
+      second safety question, sigh and say "I already said it's mild and my vision
+      is fine." Give your first name when asked and DOB only if needed. Only after
+      you hear actual dates and times, say you will check your calendar and call
+      back, then say goodbye. If told no openings can be found, accept that and end.
+    agent_expectations: >
+      Asks at most one question about severity or sudden vision change, does not
+      ask again what the visit is for, and searches medical openings. Reads back
+      openings from the search result. Does not book and does not call
+      transfer_call.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Eye emergency transfers at once
+    instructions: >
+      As soon as the agent greets you, say "Since this morning there's a dark
+      curtain over part of the vision in my left eye. I need to talk to someone."
+      Do not give your name, date of birth, or insurance unless asked twice. If the
+      agent says it will transfer you, say "Okay" and wait quietly. If told the
+      transfer is unavailable, ask "What should I do?" and listen, then say goodbye.
+    agent_expectations: >
+      Calls transfer_call right after the emergency description, without asking
+      identity, insurance, or scheduling questions first. Says truthfully that the
+      transfer is unavailable if it fails. Does not diagnose.
+    userdata:
+      office: spring-hill
+
+  - label: Returned staff call transfers at once
+    instructions: >
+      As soon as the agent greets you, say "Hi, I'm returning a call from Jessica at
+      your office." If asked what it is about, say "I don't know, she just asked me
+      to call back." If the agent says it will transfer you, say "Okay" and wait
+      quietly. If told the transfer is unavailable, accept a staff request if
+      offered, decline anything else, and say goodbye.
+    agent_expectations: >
+      Calls transfer_call as its next action after the caller says they are
+      returning a call from a named staff member, without first offering a message,
+      asking for patient details, or asking about the need.
+    userdata:
+      office: spring-hill
+
+  - label: Caller still wants a person after one specific offer
+    instructions: >
+      As soon as the agent greets you, say "I need to speak with a person, please."
+      If asked what it is about, say "It's about a bill I got." If the agent offers
+      any help, say "No thanks, I'd rather talk to a person." Do not give patient
+      details. If the agent says it will transfer you, say "Okay" and wait quietly.
+      If told the transfer is unavailable, say goodbye.
+    agent_expectations: >
+      Makes at most one offer of help, then calls transfer_call after the caller
+      declines it, with no second pitch, intake question, or repeated question
+      about how it can help.
+    userdata:
+      office: spring-hill
