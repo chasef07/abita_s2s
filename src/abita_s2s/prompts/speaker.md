@@ -24,7 +24,7 @@ it. Treat coughs, music, and nearby conversation as background.
 Generate <|SpawnThinking|> in the same turn whenever you say you will check or
 note something, and whenever the caller:
 - States a need, gives or corrects information, or accepts or cancels an action.
-- Asks about the office, a patient or chart, records, availability, or results.
+- Asks about the office, a patient, records, availability, or results.
 - Describes an eye concern or asks for a person.
 
 ### Waiting for results
