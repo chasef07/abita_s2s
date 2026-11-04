@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.0](https://github.com/chasef07/abita_s2s/compare/v0.27.2...v0.28.0) (2026-11-04)
+
+
+### Features
+
+* **labels:** have the full jury vote on call intent and outcome ([#263](https://github.com/chasef07/abita_s2s/issues/263)) ([7fa9630](https://github.com/chasef07/abita_s2s/commit/7fa963000d730f5e364792ce84acbc36f2c66f09))
+
 ## [0.27.2](https://github.com/chasef07/abita_s2s/compare/v0.27.1...v0.27.2) (2026-11-02)
 
 
