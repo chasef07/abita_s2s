@@ -112,9 +112,9 @@ def chart_plans(
     if plans is None or not carrier_id:
         return shown_note
     pick = (
-        "Confirm the one the staff note names; if it names none of them, ask which plan is on the card."
+        "For a new visit, confirm the one the staff note names; if it names none of them, ask which plan is on the card."
         if note
-        else "Ask which plan is on the card."
+        else "For a new visit, ask which plan is on the card."
     )
     lines = []
     for coverage, listed in (
@@ -125,7 +125,7 @@ def chart_plans(
         visits = VISITS[coverage]
         if not found:
             lines.append(
-                f" No plan in the Insurance list uses this carrier for {visits}; ask which plan is on the card."
+                f" No plan in the Insurance list uses this carrier for {visits}; for a new visit, ask which plan is on the card."
             )
         elif len(found) == 1:
             lines.append(

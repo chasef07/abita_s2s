@@ -4,20 +4,22 @@ name: Abita insurance plan IDs
 # medical visit, and eligible future medical slots. Spring Hill lists Aetna and
 # Humana as "varies by plan", Aetna EPO as not accepted, and Cigna Sure Fit as not
 # confirmed yet. The sandbox Spring Hill has no routine vision, so every scenario
-# is a medical visit. Existing-patient callers ask to move their visit so a search
-# runs; every call ends once openings are offered or the insurance answer is given,
-# so no chart, insurance change, or visit is written. New-patient callers may be
-# asked intake questions; they end the call instead of answering them.
+# is a medical visit. Existing-patient callers ask for a new visit so the plan
+# is confirmed and a search runs; a caller moving a visit says their insurance
+# has not changed, so no plan is confirmed. Every call ends once openings are
+# offered or the insurance answer is given, so no chart, insurance change, or
+# visit is written. New-patient callers may be asked intake questions; they end
+# the call instead of answering them.
 # Verify the insurancePlanId and visitType tool arguments; the spoken flow alone
 # is not a pass.
 scenarios:
   - label: Existing patient confirms the specific plan behind a shared carrier
     instructions: >
       You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
-      Open with: "Hi, I need to move my glaucoma follow-up to a later week." Give
-      your first name when asked and DOB only if needed. Confirm the November 6
-      visit is the one to move. If asked which week, say any day the week of
-      November 16. Your insurance has not changed. If asked which plan you have,
+      Open with: "Hi, I need to book another glaucoma check, separate from my
+      November 6 visit." Give your first name when asked and DOB only if needed.
+      If asked which week, say any day the week of November 16. Your insurance
+      has not changed. If asked which plan you have,
       say "Aetna Medicare PPO." Stay on the call until the agent reads you
       specific dates and times; then say you will check your calendar and call
       back, and end. If told no openings can be found, accept that and end.
@@ -37,11 +39,11 @@ scenarios:
   - label: Existing patient's plan is not accepted
     instructions: >
       You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
-      Open with: "Hi, I need to move my glaucoma follow-up to a later week." Give
-      your first name when asked and DOB only if needed. Your insurance has not
-      changed. If asked which plan you have, say "Aetna EPO." If offered a staff
-      request or self-pay, say you will check with your insurance first and call
-      back, then end.
+      Open with: "Hi, I need to book another glaucoma check, separate from my
+      November 6 visit." Give your first name when asked and DOB only if needed.
+      Your insurance has not changed. If asked which plan you have, say "Aetna
+      EPO." If offered a staff request or self-pay, say you will check with your
+      insurance first and call back, then end.
     agent_expectations: >
       Says Aetna EPO is not accepted for medical visits at this office. Does not
       search with or book under another Aetna plan, offers no appointment times,
@@ -178,3 +180,44 @@ scenarios:
     userdata:
       office: spring-hill
       caller_phone: '+12025550163'
+
+  # Its own insurance_plans list has no plan on the sandbox chart's carrier
+  # (car63046), as when a staff-booked visit's carrier is not on the office list
+  # (Nov 2, 2026 call 256: the agent refused to search and filed the reschedule
+  # as an insurance task).
+  - label: Existing patient moves a visit and says their insurance has not changed
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
+      Open with: "Hi, I need to move my glaucoma follow-up to a later week." Give
+      your first name when asked and DOB only if needed. Confirm the November 6
+      visit is the one to move. If asked which week, say any day the week of
+      November 16. If asked whether your insurance has changed, say no. If asked
+      which plan you have, say "the same one I had when I booked." Stay on the
+      call until the agent reads you specific dates and times; then say you will
+      check your calendar and call back, and end. If told no openings can be
+      found, accept that and end.
+    agent_expectations: >
+      Asks whether the insurance has changed instead of asking which plan is on
+      the card, and does not say the plan could not be confirmed. Searches
+      medical openings with a null insurancePlanId and the November 6 visit's
+      rescheduleAppointmentRef, and offers only times with that visit's doctor,
+      or says that doctor has no openings in the window. Does not call
+      update_insurance, does not save a staff task, and does not book or
+      reschedule anything.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+      insurance_plans:
+        medical:
+        - planId: humana-medicare-ppo
+          label: Humana Medicare PPO
+          family: Humana
+          names: []
+          carrierId: car99999
+          allowedProviders: [Dr. Bach, Dr. Licht, Dr. Noel]
+          outcome: accepted
+          requirements: []
+          callerNotice: ''
+          acceptedAt: []
+          selfPay: false
+        routine_vision: []

@@ -42,7 +42,7 @@ class SlotSearch(Request):
     startDate: str
     patientId: str
     visitType: CoverageType
-    insurancePlanId: str
+    insurancePlanId: str | None
     dob: str
 
 

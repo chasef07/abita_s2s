@@ -22,18 +22,24 @@ class SchedulingTools:
         self,
         context: RunContext[CallState],
         visitType: CoverageType,
-        insurancePlanId: str,
+        insurancePlanId: str | None,
         startDate: str | None = None,
         office: SchedulingOfficeChoice | None = None,
+        rescheduleAppointmentRef: str | None = None,
     ) -> str:
         """Find eligible slots for the active patient in a 14-day Eastern-time window.
 
         Requires patient resolution or completed registration and no unfinished insurance write.
-        Only doctors who take the plan are searched.
+        With a plan, only doctors who take it are searched. Without one, only the moved
+        appointment's doctor is searched.
 
         Args:
             visitType: medical or routine_vision; match the existing visit when rescheduling.
             insurancePlanId: The caller-confirmed plan's ID from the Insurance list for visitType.
+                Null only when moving a loaded appointment and the caller says their
+                insurance has not changed since it was booked.
+            rescheduleAppointmentRef: The loaded appointment being moved; required when
+                insurancePlanId is null.
             startDate: YYYY-MM-DD, tomorrow or later; null defaults to tomorrow.
                 To search the next window, use the day after the returned searched-through date.
             office: Required caller-selected office for Hollywood/Sweetwater calls;
@@ -43,7 +49,7 @@ class SchedulingTools:
         if not bound(self._scheduling, context) or self._scheduling.closed:
             return UNAVAILABLE
         result = await self._scheduling.availability(
-            visitType, insurancePlanId, startDate, office
+            visitType, insurancePlanId, startDate, office, rescheduleAppointmentRef
         )
         lines = [result["answer"]]
         if "searchedFrom" in result:
