@@ -16,7 +16,7 @@ from livekit.agents.llm.utils import build_strict_openai_schema
 from test_patient_resolution import CONFIG, call_state, receipt
 
 from abita_s2s.agent import AbitaAgent
-from abita_s2s.tools.registry import Owners
+from owner_fixtures import call_owners
 from abita_s2s.identity import PatientResolver
 from abita_s2s.integrations.patient_middleware import (
     PatientMiddleware,
@@ -504,7 +504,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             inventory(searchedFrom="2026-09-15bogus"),
             inventory(searchedThrough="2026-09-29"),
             inventory(slots=[{**base, "bookingToken": " "}]),
-            inventory(slots=[{**base, "duration": 0}]),
         ] + [
             inventory(slots=[{**base, "datetime": value}])
             for value in (
@@ -704,7 +703,9 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         )
         resolver = PatientResolver(owner.state, AsyncMock())
         self.addAsyncCleanup(resolver.aclose)
-        agent = AbitaAgent(Owners(SPRING_HILL, resolver=resolver, scheduling=owner))
+        agent = AbitaAgent(
+            call_owners(SPRING_HILL, resolver=resolver, scheduling=owner)
+        )
         resolve_patient = ToolContext(agent.tools).function_tools["resolve_patient"]
         context = SimpleNamespace(
             userdata=owner.state, function_call=SimpleNamespace(call_id="resolution")
@@ -2196,7 +2197,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.addAsyncCleanup(resolver.aclose)
                 agent = AbitaAgent(
-                    Owners(SPRING_HILL, resolver=resolver, scheduling=owner)
+                    call_owners(SPRING_HILL, resolver=resolver, scheduling=owner)
                 )
                 resolve_patient = ToolContext(agent.tools).function_tools[
                     "resolve_patient"
@@ -3074,7 +3075,7 @@ class SchedulingSessionTests(unittest.IsolatedAsyncioTestCase):
     async def test_patient_correction_rejects_previous_slot_through_session(self):
         owner, requests = self.owner([inventory()])
         model = SchedulingModel()
-        agent = AbitaAgent(Owners(SPRING_HILL, scheduling=owner))
+        agent = AbitaAgent(call_owners(SPRING_HILL, scheduling=owner))
         async with AgentSession(llm=model, userdata=owner.state) as session:
             with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
                 await session.start(agent=agent)
@@ -3102,7 +3103,7 @@ class SchedulingSessionTests(unittest.IsolatedAsyncioTestCase):
         )
         verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
         model = SchedulingModel()
-        agent = AbitaAgent(Owners(SPRING_HILL, scheduling=owner))
+        agent = AbitaAgent(call_owners(SPRING_HILL, scheduling=owner))
         async with AgentSession(llm=model, userdata=owner.state) as session:
             with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
                 await session.start(agent=agent)

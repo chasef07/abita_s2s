@@ -70,9 +70,6 @@ class Slot(Record):
     time: Text
     datetime: Text
     bookingToken: Text
-    columnId: int | str | None = None
-    profileId: int | str | None = None
-    duration: int | None = Field(default=None, gt=0)
     sameStartBooked: int = Field(default=0, ge=0)
 
     @field_validator("datetime")
@@ -138,11 +135,9 @@ class WriteReceipt(Record):
     status: Literal["booked", "cancelled", "error"]
     outcome: Outcome = None
     appointmentId: int | None = Field(default=None, gt=0)
-    appointmentTypeId: int | None = Field(default=None, gt=0)
     rescheduleToken: str | None = None
     cancellationToken: str | None = None
     officeId: str | None = None
-    office: str | None = None
     visitType: CoverageType | None = None
     profileId: str | None = None
     providerName: str | None = None

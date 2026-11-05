@@ -82,35 +82,7 @@ def component_version(component: str, version: str, commit: str, files: dict) ->
             continue
         if tuple(map(int, prior.split("."))) >= current:
             continue
-        prior_files = component_files(component, tag)
-        full_folders = (
-            subprocess.run(
-                [
-                    "git",
-                    "cat-file",
-                    "-e",
-                    f"{tag}:src/abita_s2s/component_folders.json",
-                ],
-                cwd=ROOT,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            ).returncode
-            == 0
-        )
-        if not full_folders:
-            if component == "prompts":
-                prior_files = {
-                    name: sha
-                    for name, sha in prior_files.items()
-                    if name in ("speaker.md", "thinker.md")
-                }
-            elif component == "evals":
-                prior_files = {
-                    name: sha
-                    for name, sha in prior_files.items()
-                    if Path(name).suffix in (".yaml", ".yml")
-                }
-        return prior if prior_files == files else version
+        return prior if component_files(component, tag) == files else version
     return version
 
 

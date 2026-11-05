@@ -46,7 +46,7 @@ class SchedulingTools:
                 omit for other offices. Hollywood routine_vision callers may also
                 choose north-miami-beach-optical; the result says what to ask first.
         """
-        if not bound(self._scheduling, context) or self._scheduling.closed:
+        if not bound(self._scheduling, context):
             return UNAVAILABLE
         result = await self._scheduling.availability(
             visitType, insurancePlanId, startDate, office, rescheduleAppointmentRef

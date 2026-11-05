@@ -15,7 +15,7 @@ from test_insurance_list import plan, plans_reply
 from test_knowledge import KNOWLEDGE
 
 from abita_s2s.agent import AbitaAgent
-from abita_s2s.tools.registry import Owners
+from owner_fixtures import call_owners
 from abita_s2s.config import Config
 from abita_s2s.insurance_list import UNAVAILABLE as INSURANCE_UNAVAILABLE
 from abita_s2s.knowledge import UNAVAILABLE
@@ -131,7 +131,7 @@ class OfficeRoutingTests(unittest.TestCase):
 
 class GreetingTests(unittest.IsolatedAsyncioTestCase):
     async def test_greeting_seeds_startup_history_and_is_spoken_once(self):
-        agent = AbitaAgent(Owners(SPRING_HILL))
+        agent = AbitaAgent(call_owners(SPRING_HILL))
         seeded = [
             item
             for item in agent.chat_ctx.items

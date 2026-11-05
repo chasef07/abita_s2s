@@ -1,17 +1,15 @@
 """Backend participation decisions; no local plan matching or coverage rules."""
 
-from typing import Literal, get_args
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 CoverageType = Literal["medical", "routine_vision"]
-COVERAGE_TYPES: tuple[str, ...] = get_args(CoverageType)
 
 
 class InsuranceRequirement(BaseModel):
     model_config = ConfigDict(strict=True, frozen=True)
     kind: Literal["pcp_referral", "prior_authorization", "staff_verify"]
-    channel: str = ""
     verification: Literal["unverified"]
 
 
@@ -29,7 +27,6 @@ class InsuranceDecision(BaseModel):
     participation: Literal["accepted", "not_accepted", "unknown"]
     planId: str = ""
     canonicalPlan: str = ""
-    carrierCode: str = ""
     coverageType: CoverageType
     officeId: str
     allowedProviders: list[str]

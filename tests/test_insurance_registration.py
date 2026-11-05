@@ -280,7 +280,6 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("ssn", body)
             self.assertEqual(body["coverageType"], "routine_vision")
             self.assertEqual(state.call.caller_phone, "+15555550101")
-            self.assertEqual(state.patient.active.phone, "5555550999")
             self.assertEqual(state.patient.active.insuranceCarrier, plan)
 
     async def test_creation_proceeds_to_availability_with_the_same_plan(self):

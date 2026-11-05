@@ -18,7 +18,7 @@ from abita_s2s.integrations.product import Product
 from abita_s2s.integrations.patient_middleware import Failure, Receipt
 from abita_s2s.offices import get_office_profile
 from abita_s2s.staff_tasks import StaffTasks, _same_patient
-from abita_s2s.tools.registry import Owners
+from owner_fixtures import call_owners
 
 CONFIG = Config(
     "offline",
@@ -111,7 +111,7 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             resolver = PatientResolver(state, middleware)
             owner = StaffTasks(state, resolver, Product(client, config))
             agent = AbitaAgent(
-                Owners(
+                call_owners(
                     get_office_profile(state.call.called_office_key),
                     resolver=resolver,
                     staff_tasks=owner,
@@ -380,12 +380,9 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
         state = call_state()
         state.call = replace(state.call, called_office_key="crystal-river")
         async with self.setup_session(state=state) as (_, agent, _, owner, requests, _):
-            self.assertNotIn(
-                "save_staff_task", [tool.info.name for tool in agent.tools]
-            )
-            self.assertNotIn(
-                "discard_staff_task", [tool.info.name for tool in agent.tools]
-            )
+            tools = llm.ToolContext(agent.tools).function_tools
+            self.assertNotIn("save_staff_task", tools)
+            self.assertNotIn("discard_staff_task", tools)
             self.assertEqual(owner.save(**NEED)["outcome"], "failed")
             self.assertEqual(requests, [])
         async with self.setup_session(config=Config("offline")) as (
@@ -504,11 +501,8 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
         from livekit.agents.llm.utils import build_strict_openai_schema
 
         async with self.setup_session() as (_, agent, _, _, _, _):
-            schema = next(
-                build_strict_openai_schema(t)["function"]
-                for t in agent.tools
-                if t.info.name == "save_staff_task"
-            )
+            tools = llm.ToolContext(agent.tools).function_tools
+            schema = build_strict_openai_schema(tools["save_staff_task"])["function"]
             self.assertEqual(
                 set(schema["parameters"]["properties"]),
                 {"category", "urgency", "summary", "message", "draft_id", "cancel"},
@@ -529,7 +523,7 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
                 },
             )
             self.assertEqual(
-                [t.info.name for t in agent.tools if "staff_task" in t.info.name],
+                [name for name in tools if "staff_task" in name],
                 ["save_staff_task"],
             )
             self.assertNotIn("characters", json.dumps(schema))

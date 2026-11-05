@@ -20,7 +20,7 @@ from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.offices import SPRING_HILL
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
-from abita_s2s.tools.registry import Owners
+from owner_fixtures import call_owners
 
 
 class InsuranceModel(llm.LLM):
@@ -79,7 +79,9 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
             )
             self.addAsyncCleanup(resolver.aclose)
             self.addAsyncCleanup(owner.aclose)
-            agent = AbitaAgent(Owners(SPRING_HILL, resolver=resolver, insurance=owner))
+            agent = AbitaAgent(
+                call_owners(SPRING_HILL, resolver=resolver, insurance=owner)
+            )
             model = InsuranceModel()
             async with AgentSession(llm=model, userdata=state) as session:
                 with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
@@ -162,7 +164,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                     with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
                         await session.start(
                             agent=AbitaAgent(
-                                Owners(
+                                call_owners(
                                     SPRING_HILL,
                                     resolver=resolver,
                                     insurance=owner,
@@ -195,7 +197,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(requests), 2)
 
     def test_schema_preserves_top_level_inputs_and_nullable_identity(self):
-        agent = AbitaAgent(Owners(SPRING_HILL))
+        agent = AbitaAgent(call_owners(SPRING_HILL))
         tools = ToolContext(agent.tools).function_tools
         self.assertNotIn("check_insurance", tools)
         for tool in [
@@ -247,7 +249,7 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                 with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
                     await session.start(
                         agent=AbitaAgent(
-                            Owners(SPRING_HILL, resolver=resolver, insurance=owner)
+                            call_owners(SPRING_HILL, resolver=resolver, insurance=owner)
                         )
                     )
                 await asyncio.wait_for(

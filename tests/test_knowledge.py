@@ -2,7 +2,7 @@ import asyncio
 import json
 import unittest
 from datetime import UTC, datetime
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import httpx
 from livekit.agents.llm.tool_context import ToolContext
@@ -13,7 +13,8 @@ from abita_s2s.knowledge import UNAVAILABLE, read_office_knowledge
 from abita_s2s.offices import SPRING_HILL, get_office_profile
 from abita_s2s.prompt import thinker_instructions
 from abita_s2s.state import CallContext, CallState
-from abita_s2s.tools.registry import Owners, offer
+from abita_s2s.tools.registry import offer
+from owner_fixtures import call_owners
 
 CONFIG = Config(
     "offline",
@@ -163,15 +164,7 @@ class OfficeKnowledgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(cancelled.is_set())
 
     async def test_office_knowledge_search_is_not_offered_to_the_model(self):
-        owners = Owners(
-            SPRING_HILL,
-            resolver=Mock(),
-            scheduling=Mock(),
-            insurance=Mock(),
-            staff_tasks=Mock(),
-            call_control=Mock(),
-        )
-        tools = ToolContext(offer(owners)).function_tools
+        tools = ToolContext(offer(call_owners())).function_tools
         self.assertTrue(tools)
         self.assertNotIn("search_office_knowledge", tools)
 

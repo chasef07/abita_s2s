@@ -8,7 +8,7 @@ from abita_s2s.tools.context import bound
 
 
 class StaffTaskTools:
-    def __init__(self, staff_tasks: StaffTasks | None) -> None:
+    def __init__(self, staff_tasks: StaffTasks) -> None:
         self._staff_tasks = staff_tasks
 
     @function_tool

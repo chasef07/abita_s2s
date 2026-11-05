@@ -39,24 +39,20 @@ class Owners:
 
     office: OfficeProfile
     _: KW_ONLY
-    resolver: PatientResolver | None = None
-    scheduling: Scheduling | None = None
-    insurance: InsuranceRegistration | None = None
-    staff_tasks: StaffTasks | None = None
-    call_control: CallControl | None = None
+    resolver: PatientResolver
+    scheduling: Scheduling
+    insurance: InsuranceRegistration
+    staff_tasks: StaffTasks
+    call_control: CallControl
 
     def writers(self) -> list[Writer]:
         """Every owner that admits writes, which shutdown closes and drains in this order."""
         return [
-            owner
-            for owner in (
-                self.resolver,
-                self.scheduling,
-                self.insurance,
-                self.staff_tasks,
-                self.call_control,
-            )
-            if owner is not None
+            self.resolver,
+            self.scheduling,
+            self.insurance,
+            self.staff_tasks,
+            self.call_control,
         ]
 
 
@@ -77,34 +73,22 @@ class Entry:
 TOOLS: tuple[Entry, ...] = (
     Entry(
         ("Appointments",),
-        lambda o: (
-            SchedulingTools(o.scheduling).list_available_appointments
-            if o.scheduling
-            else None
-        ),
+        lambda o: SchedulingTools(o.scheduling).list_available_appointments,
         action=False,
     ),
     Entry(
         ("Appointments",),
-        lambda o: (
-            SchedulingTools(o.scheduling).book_appointment if o.scheduling else None
-        ),
+        lambda o: SchedulingTools(o.scheduling).book_appointment,
         action=True,
     ),
     Entry(
         ("Appointments",),
-        lambda o: (
-            SchedulingTools(o.scheduling).cancel_appointment if o.scheduling else None
-        ),
+        lambda o: SchedulingTools(o.scheduling).cancel_appointment,
         action=True,
     ),
     Entry(
         ("Appointments",),
-        lambda o: (
-            SchedulingTools(o.scheduling).reschedule_appointment
-            if o.scheduling
-            else None
-        ),
+        lambda o: SchedulingTools(o.scheduling).reschedule_appointment,
         action=True,
     ),
     Entry(
@@ -118,7 +102,7 @@ TOOLS: tuple[Entry, ...] = (
     ),
     Entry(
         ("Call completion", "Staff assistance"),
-        lambda o: CallControlTools(o.call_control) if o.call_control else None,
+        lambda o: CallControlTools(o.call_control),
         action=True,
     ),
     Entry(

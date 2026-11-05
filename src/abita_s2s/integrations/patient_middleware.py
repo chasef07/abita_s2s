@@ -20,9 +20,6 @@ class Appointment(Record):
     facility: str = ""
     visitType: CoverageType | None = None
     officeId: str | None = None
-    office: str | None = None
-    confirmed: bool = False
-    appointmentTypeId: int | None = None
     cancellationToken: str | None = None
     rescheduleToken: str | None = None
 
@@ -31,7 +28,6 @@ class Candidate(Record):
     status: Literal["candidate"]
     patientId: Text
     firstName: Text
-    lastName: Text
     dob: Text
 
 
@@ -40,7 +36,6 @@ class Receipt(Record):
     patientId: Text
     name: Text
     dob: Text
-    phone: str | None = None
     insuranceCarrier: str | None = None
     insuranceCarrierId: str | None = None
     insuranceNote: str | None = None

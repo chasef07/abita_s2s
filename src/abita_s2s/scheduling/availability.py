@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from abita_s2s.insurance import decision_answer
-from abita_s2s.insurance_contract import COVERAGE_TYPES, CoverageType
+from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.insurance_list import listed_plan
 from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.integrations.patient_middleware import Appointment
@@ -224,7 +224,7 @@ class Offers:
             return reply("needs_input", choice[1])
         selected = choice[0]
         p = self.state.patient.active
-        if visit not in COVERAGE_TYPES or p is None or not insurance_ready(self.state):
+        if p is None or not insurance_ready(self.state):
             self.invalidate()
             return reply(
                 "needs_input",
