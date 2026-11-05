@@ -30,8 +30,7 @@ class PatientTools:
         """Resolve existing patients only; do not call for callers who say they are new.
 
         Call with the patient's firstName and dob:null unless DOB was already
-        provided. The tool waits for any pending phone lookup, matches private
-        phone profiles first, and asks for DOB if needed.
+        provided. The tool asks for DOB if needed.
 
         Include a supplied DOB without separate confirmation and follow the returned next step.
         Same-name patient switches require DOB. If no patient matches, clarify first-name
@@ -75,9 +74,9 @@ class PatientTools:
 
         Requires the patient's plan ID from the Insurance list for the triaged visit
         type and caller confirmation of the final read-back. No existing-chart lookup is required.
-        Returns a plain-text status and result. A blocked result may mean the
-        chart exists but insurance is not confirmed. Do not repeat chart creation
-        after successful creation, partial creation, or an uncertain result.
+        A blocked result may mean the chart exists but insurance is not confirmed.
+        Do not repeat chart creation after successful creation, partial creation,
+        or an uncertain result.
 
         Args:
             firstName: Patient's first name.
