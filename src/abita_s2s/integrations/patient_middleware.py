@@ -8,7 +8,7 @@ from pydantic import Field, TypeAdapter
 from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.integrations.middleware import Middleware, OfficeKey
 from abita_s2s.integrations.transport import Request
-from abita_s2s.records import Record, Text
+from abita_s2s.records import Record, Text, provider_name
 
 
 class Appointment(Record):
@@ -22,6 +22,11 @@ class Appointment(Record):
     officeId: str | None = None
     cancellationToken: str | None = None
     rescheduleToken: str | None = None
+
+    @property
+    def doctor(self) -> str:
+        """The name the caller hears. Cancellation evidence reports the chart's provider."""
+        return provider_name(self.provider)
 
 
 class Candidate(Record):

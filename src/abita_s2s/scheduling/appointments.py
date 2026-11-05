@@ -32,7 +32,6 @@ from abita_s2s.scheduling.availability import (
     Offers,
     OfferedSlot,
     SchedulingContext,
-    provider_name,
     scheduling_context,
 )
 from abita_s2s.state import CallState
@@ -85,7 +84,7 @@ def booked_appointment(
         id=receipt.appointmentId,
         date=slot.date,
         time=slot.time,
-        provider=provider_name(receipt.providerName or slot.provider),
+        provider=receipt.providerName or slot.provider,
         facility=receipt.locationName or get_office_profile(office).display_name,
         officeId=receipt.officeId,
         visitType=receipt.visitType,
@@ -200,7 +199,7 @@ class Scheduling:
                 "appointmentRef": self._reference(p.patientId, a),
                 "date": a.date,
                 "time": a.time,
-                "provider": provider_name(a.provider),
+                "provider": a.doctor,
                 "facility": a.facility,
                 "visitType": a.visitType,
             }
@@ -413,7 +412,7 @@ class Scheduling:
             return reply(
                 "needs_confirmation",
                 f"needs_input: Confirm cancellation of {old.date} at {old.time} Eastern"
-                f" with {provider_name(old.provider)} before cancelling.",
+                f" with {old.doctor} before cancelling.",
             )
         self._offers.invalidate()
         self._ledger.record(
@@ -521,8 +520,7 @@ class Scheduling:
             )
         slot = offered.slot
         description = (
-            f"{slot.date} at {slot.time} Eastern with {provider_name(slot.provider)}"
-            f" for {p.name}"
+            f"{slot.date} at {slot.time} Eastern with {slot.provider} for {p.name}"
         )
         if confirmed is not True:
             return reply(
@@ -707,7 +705,7 @@ class Scheduling:
                     appointmentId=booking.appointmentId,
                     appointmentDate=slot.date,
                     appointmentTime=slot.time,
-                    providerName=provider_name(booking.providerName or slot.provider),
+                    providerName=booking.providerName or slot.provider,
                     appointmentTypeName=booking.appointmentTypeName,
                     locationName=booking.locationName,
                     patientName=patient.name,
