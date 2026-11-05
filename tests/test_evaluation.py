@@ -209,7 +209,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
     async def test_sentiment_is_a_zero_to_four_mean_without_a_failure_verdict(self):
         jurors = ("juror-a", "juror-b", "juror-c")
         requests, result = await self.run_evaluation(
-            values={"expressed_sentiment": dict(zip(jurors, (0, 2, 4)))},
+            values={"expressed_sentiment": dict(zip(jurors, (0, 2, 4), strict=True))},
             jurors=jurors,
         )
         question = requests[0]["questions"]["expressed_sentiment"]
@@ -219,7 +219,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
             result["results"]["expressed_sentiment"],
             {
                 "score": 2,
-                "votes": dict(zip(jurors, (0, 2, 4))),
+                "votes": dict(zip(jurors, (0, 2, 4), strict=True)),
                 "errors": {},
             },
         )

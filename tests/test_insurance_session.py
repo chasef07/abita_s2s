@@ -6,21 +6,21 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 import httpx
+from insurance_fixtures import decision
 from livekit.agents import AgentSession, llm
 from livekit.agents.llm.tool_context import ToolContext
 from livekit.agents.llm.utils import build_strict_openai_schema
+from owner_fixtures import call_owners
 from test_insurance_registration import created, registration, updated
 from test_patient_resolution import CONFIG, call_state, search
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.identity import PatientResolver
-from insurance_fixtures import decision
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
-from abita_s2s.offices import SPRING_HILL
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
-from owner_fixtures import call_owners
+from abita_s2s.offices import SPRING_HILL
 
 
 class InsuranceModel(llm.LLM):

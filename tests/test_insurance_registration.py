@@ -6,9 +6,9 @@ import unittest
 from unittest.mock import Mock
 
 import httpx
+from insurance_fixtures import decision
 from test_patient_resolution import CONFIG, call_state, receipt, search
 
-from insurance_fixtures import decision
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration, Registration
 from abita_s2s.insurance_state import insurance_ready
@@ -283,10 +283,12 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(state.patient.active.insuranceCarrier, plan)
 
     async def test_creation_proceeds_to_availability_with_the_same_plan(self):
-        from datetime import datetime, UTC
-        from abita_s2s.scheduling.appointments import Scheduling
-        from abita_s2s.integrations.scheduling_http import SchedulingHTTP
+        from datetime import UTC, datetime
+
         from test_scheduling import inventory
+
+        from abita_s2s.integrations.scheduling_http import SchedulingHTTP
+        from abita_s2s.scheduling.appointments import Scheduling
 
         for repeated_decision in (None, decision("VSP", "routine_vision")):
             with self.subTest(repeated_decision=repeated_decision):

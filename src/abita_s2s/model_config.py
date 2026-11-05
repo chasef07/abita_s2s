@@ -11,7 +11,6 @@ from abita_s2s.runtime.delegation_watchdog import DelegationWatchdog
 from abita_s2s.runtime.observability import ObservedGPTLiveSession
 from abita_s2s.runtime.silence import BackendResponses
 
-
 SPEAKER_MODEL = "gpt-live-1"
 THINKER_MODEL = "gpt-6-luna"
 THINKER_REASONING_EFFORT = "high"

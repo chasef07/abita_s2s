@@ -1,8 +1,8 @@
 """Resolve the office and compose one voice session per LiveKit job."""
 
 import asyncio
-import os
 import logging
+import os
 import re
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -23,19 +23,19 @@ from abita_s2s.insurance_list import (
     read_office_plans,
     render_insurance_list,
 )
-from abita_s2s.knowledge import read_office_knowledge, render_office_knowledge
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.integrations.product import KNOWLEDGE_ENTRIES, Product
+from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
+from abita_s2s.integrations.scheduling_http import SchedulingHTTP
+from abita_s2s.knowledge import read_office_knowledge, render_office_knowledge
 from abita_s2s.model_config import create_model
 from abita_s2s.offices import (
     get_office_profile,
     get_office_profile_by_phone,
 )
-from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
 from abita_s2s.runtime.reporting import CallReporter
 from abita_s2s.runtime.silence import check_in_on_silence
 from abita_s2s.scheduling.appointments import Scheduling
-from abita_s2s.integrations.scheduling_http import SchedulingHTTP
 from abita_s2s.staff_tasks import StaffTasks
 from abita_s2s.state import CallContext, CallState
 from abita_s2s.tools.registry import Owners

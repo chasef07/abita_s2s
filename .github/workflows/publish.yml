@@ -12,16 +12,41 @@ on:
         description: Exact reviewed 40-character main commit with a new pyproject version
         required: true
 permissions:
-  contents: write
+  contents: read
 concurrency:
   group: abita-s2s-release
   cancel-in-progress: false
 jobs:
+  on-main:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+      - run: git merge-base --is-ancestor "$COMMIT" origin/main
+        env:
+          COMMIT: ${{ inputs.commit }}
+  # Release runs arrive only after verify-release ran Verify on this exact commit.
+  verify:
+    if: github.event_name == 'workflow_dispatch'
+    needs: [on-main]
+    uses: ./.github/workflows/ci.yml
+    with:
+      release_sha: ${{ inputs.commit }}
   release:
+    if: >-
+      !cancelled() &&
+      needs.on-main.result == 'success' &&
+      contains(fromJSON('["success", "skipped"]'), needs.verify.result)
+    needs: [on-main, verify]
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.commit }}
           fetch-depth: 0
@@ -29,23 +54,10 @@ jobs:
         with:
           version: '0.13.7'
           python-version: '3.13.17'
-      - run: git merge-base --is-ancestor "$COMMIT" origin/main
-        env:
-          COMMIT: ${{ inputs.commit }}
       - run: uv sync --locked
-      # Release runs arrive only after verify-release ran the full Verify workflow on
-      # this exact commit; manual dispatches have no prior verification.
-      - if: github.event_name == 'workflow_dispatch'
-        run: uv run --no-sync ruff check . && uv run --no-sync basedpyright && uv run --no-sync python -m unittest discover -s tests -q
       - run: uv run --no-sync python scripts/release.py "$COMMIT"
         env:
           COMMIT: ${{ inputs.commit }}
-      - if: github.event_name == 'workflow_dispatch'
-        run: docker build -t abita-s2s:release .
-      - if: github.event_name == 'workflow_dispatch'
-        run: docker run --rm --network none --entrypoint /app/.venv/bin/python abita-s2s:release -m abita_s2s.release
-      - if: github.event_name == 'workflow_dispatch'
-        run: docker run --rm --network none --entrypoint /app/.venv/bin/python abita-s2s:release -c 'from abita_s2s.main import server; assert server._agent_name == "abita-s2s", server._agent_name'
       - run: uv run --no-sync python scripts/publish_release.py dist
         env:
           GH_TOKEN: ${{ github.token }}
