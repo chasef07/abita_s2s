@@ -9,12 +9,12 @@ from email.utils import parsedate_to_datetime
 import httpx
 from livekit.agents import ChatContext
 
+from abita_s2s.observability import gap_lines
 from abita_s2s.observability.call_labels import (
     classification,
     classify_labels,
     transfer_called,
 )
-from abita_s2s.observability import gap_lines
 from abita_s2s.observability.decisions import URL, parse, read_answers
 from abita_s2s.observability.judge_state import judge_state
 from abita_s2s.observability.judges import DEFINITIONS_HASH, GATES, JURORS, QUESTIONS

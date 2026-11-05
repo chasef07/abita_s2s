@@ -8,10 +8,10 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import httpx
+from insurance_fixtures import decision
 from pydantic import ValidationError
 from test_patient_resolution import CONFIG
 
-from insurance_fixtures import decision
 from abita_s2s.config import Config, HandoffConfig
 from abita_s2s.integrations.patient_middleware import (
     PatientMiddleware,

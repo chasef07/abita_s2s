@@ -3,12 +3,12 @@
 import copy
 import importlib.util
 import json
-from pathlib import Path
-import sys
 import subprocess
-import tempfile
+import sys
 import tarfile
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from abita_s2s import release as package

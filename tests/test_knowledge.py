@@ -2,10 +2,12 @@ import asyncio
 import json
 import unittest
 from datetime import UTC, datetime
+from typing import ClassVar
 from unittest.mock import patch
 
 import httpx
 from livekit.agents.llm.tool_context import ToolContext
+from owner_fixtures import call_owners
 
 from abita_s2s.config import Config, load_config
 from abita_s2s.integrations.product import Product
@@ -14,7 +16,6 @@ from abita_s2s.offices import SPRING_HILL, get_office_profile
 from abita_s2s.prompt import thinker_instructions
 from abita_s2s.state import CallContext, CallState
 from abita_s2s.tools.registry import offer
-from owner_fixtures import call_owners
 
 CONFIG = Config(
     "offline",
@@ -170,7 +171,7 @@ class OfficeKnowledgeTests(unittest.IsolatedAsyncioTestCase):
 
 
 class KnowledgeConfigTests(unittest.TestCase):
-    BASE = {
+    BASE: ClassVar[dict[str, str]] = {
         "OPENAI_API_KEY": "offline",
         "ABITA_EYE_GROUP_PRODUCT_SERVICE_SECRET": "private-secret",
     }

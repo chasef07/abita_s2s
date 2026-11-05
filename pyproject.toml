@@ -30,7 +30,11 @@ dev = [
 ]
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F", "RUF100"]
+select = ["E4", "E7", "E9", "F", "I", "ASYNC", "B", "RUF", "DTZ", "UP", "PIE", "PTH"]
+ignore = ["ASYNC109"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B023"]
 
 [tool.pyright]
 include = ["src"]

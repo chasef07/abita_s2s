@@ -7,13 +7,13 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 from livekit.agents import AgentSession, llm
+from owner_fixtures import call_owners
 from test_patient_resolution import CONFIG, call_state, receipt
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.identity import PatientResolver
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.offices import SPRING_HILL
-from owner_fixtures import call_owners
 
 
 class PatientModel(llm.LLM):

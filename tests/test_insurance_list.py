@@ -3,6 +3,7 @@ import unittest
 from datetime import UTC, datetime
 
 import httpx
+from test_patient_resolution import call_state
 
 from abita_s2s.config import Config
 from abita_s2s.insurance_list import (
@@ -14,7 +15,6 @@ from abita_s2s.insurance_list import (
 )
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
 from abita_s2s.prompt import thinker_instructions
-from test_patient_resolution import call_state
 
 CONFIG = Config(
     "offline", middleware_url="https://middleware.test", middleware_token="test-auth"
