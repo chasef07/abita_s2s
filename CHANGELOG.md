@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.28.1](https://github.com/chasef07/abita_s2s/compare/v0.28.0...v0.28.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **prompts:** act on the caller's stated need with 35% smaller prompts ([#266](https://github.com/chasef07/abita_s2s/issues/266)) ([1a0d51d](https://github.com/chasef07/abita_s2s/commit/1a0d51d57e6ec476359680ee2b3cada3b500c10a))
+* **tools:** give each tool its own rules and describe every argument ([#267](https://github.com/chasef07/abita_s2s/issues/267)) ([586ecec](https://github.com/chasef07/abita_s2s/commit/586ecec37e905041eff095bb3a7033a6cb983cf3))
+
 ## [0.28.0](https://github.com/chasef07/abita_s2s/compare/v0.27.2...v0.28.0) (2026-11-04)
 
 
