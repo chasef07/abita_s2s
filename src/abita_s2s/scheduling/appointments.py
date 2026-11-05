@@ -227,12 +227,30 @@ class Scheduling:
             )
         return "\n" + "\n".join(lines)
 
-    async def availability(self, visit, plan_id: str, start=None, office=None):
+    async def availability(
+        self, visit, plan_id: str | None, start=None, office=None, old_ref=None
+    ):
         if self._closed:
             return reply("unavailable", "blocked: Scheduling has closed for this call.")
+        plan: str | Appointment | None = plan_id
+        if plan is None:
+            p = self.state.patient.active
+            plan = self._target(p, "reschedule", old_ref)[0] if p and old_ref else None
+            if plan is None:
+                self._offers.invalidate()
+                return reply(
+                    "needs_input",
+                    "needs_input: Send the confirmed plan ID. Send null only to move a loaded appointment, with its reference, after the caller says their insurance has not changed.",
+                )
+            if plan.visitType != visit:
+                self._offers.invalidate()
+                return reply(
+                    "needs_input",
+                    "needs_input: Search the moved appointment's own visit type. If it is unknown, offer a staff request to reschedule.",
+                )
         return await self._offers.search(
             visit,
-            plan_id,
+            plan,
             start,
             office,
             writing=bool(self._write_task and not self._write_task.done()),
@@ -466,6 +484,11 @@ class Scheduling:
             return reply(
                 "needs_input",
                 "needs_input: Search availability again and choose a current returned slot.",
+            )
+        if offered.moved_id is not None and (old is None or old.id != offered.moved_id):
+            return reply(
+                "needs_input",
+                "needs_input: That slot was found without a plan, only to move one appointment. Confirm the plan and search again for this change.",
             )
         if not old:
             for saved in self._ledger.receipts(p.patientId):

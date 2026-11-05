@@ -167,10 +167,10 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         for note, instruction in (
             (
                 "Simply Medicaid Vision:Icare",
-                "Confirm the one the staff note names; if it names none of them,"
-                " ask which plan is on the card.",
+                "For a new visit, confirm the one the staff note names; if it names"
+                " none of them, ask which plan is on the card.",
             ),
-            (None, "Ask which plan is on the card."),
+            (None, "For a new visit, ask which plan is on the card."),
         ):
             with self.subTest(note=note):
                 answer = await self.answer(
@@ -196,7 +196,8 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
                 "car303033",
                 "The carrier's only plan for medical visits: Humana Medicaid HMO "
                 "`humana-medicaid-hmo`. No plan in the Insurance list uses this"
-                " carrier for routine vision exams; ask which plan is on the card.",
+                " carrier for routine vision exams; for a new visit, ask which plan is"
+                " on the card.",
                 "several plans",
             ),
             (
@@ -223,7 +224,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
             insuranceNote="Humana Medicaid HMO",
         )
         self.assertIn('Staff note, private: "Humana Medicaid HMO".', answer)
-        self.assertNotIn("Confirm the one the staff note names", answer)
+        self.assertNotIn("confirm the one the staff note names", answer)
 
     async def test_resolution_asks_per_visit_type_when_both_have_several_plans(self):
         state = call_state()
@@ -239,7 +240,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         answer = await self.answer(
             state, insuranceCarrierId="car40907", insuranceNote="Simply Medicaid"
         )
-        self.assertEqual(answer.count("Confirm the one the staff note names"), 2)
+        self.assertEqual(answer.count("confirm the one the staff note names"), 2)
 
     async def test_resolution_omits_carrier_plans_without_a_list_or_carrier(self):
         for plans, carrier in ((None, "car1"), (office_plans(), None)):

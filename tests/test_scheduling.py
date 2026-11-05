@@ -1755,6 +1755,136 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(payload["appointmentReason"], expected)
                 self.assertEqual(payload["visitReason"], expected)
 
+    async def test_reschedule_with_unchanged_insurance_searches_the_same_doctor_without_a_plan(
+        self,
+    ):
+        owner, requests = self.owner(
+            [
+                inventory(
+                    slots=[
+                        slot("Dr. J. Licht", "2026-09-15T08:00"),
+                        slot("Dr. Austin Bach", "2026-09-15T09:00"),
+                    ]
+                ),
+                rescheduled(),
+            ]
+        )
+        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        old_ref = owner.appointments()[0]["appointmentRef"]
+        result = await self.tool(
+            owner,
+            "list_available_appointments",
+            visitType="medical",
+            insurancePlanId=None,
+            rescheduleAppointmentRef=old_ref,
+        )
+        self.assertTrue(result.startswith("success:"), result)
+        self.assertNotIn("Licht", result)
+        self.assertNotIn("insurancePlanId", requests[0][1])
+        moved = await self.tool(
+            owner,
+            "reschedule_appointment",
+            oldAppointmentRef=old_ref,
+            appointmentSlotRef=soonest(result)[0],
+            referringDoctor="none",
+            readBack=True,
+        )
+        self.assertTrue(moved.startswith("success:"), moved)
+
+    async def test_planless_search_without_the_doctor_reports_no_openings(self):
+        owner, _ = self.owner(
+            [inventory(slots=[slot("Dr. J. Licht", "2026-09-15T08:00")])]
+        )
+        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        result = await self.tool(
+            owner,
+            "list_available_appointments",
+            visitType="medical",
+            insurancePlanId=None,
+            rescheduleAppointmentRef=owner.appointments()[0]["appointmentRef"],
+        )
+        self.assertTrue(result.startswith("no_results:"), result)
+        self.assertIn("Dr. Bach", result)
+
+    async def test_planless_slot_only_moves_the_searched_appointment(self):
+        owner, requests = self.owner([inventory()])
+        verified(
+            owner.state,
+            appointmentsStatus="found",
+            appointments=[appointment(), appointment(id=78, date="2026-09-22")],
+        )
+        first, second = (a["appointmentRef"] for a in owner.appointments())
+        result = await self.tool(
+            owner,
+            "list_available_appointments",
+            visitType="medical",
+            insurancePlanId=None,
+            rescheduleAppointmentRef=first,
+        )
+        ref = soonest(result)[0]
+        for name, extra in (
+            ("book_appointment", {}),
+            ("reschedule_appointment", {"oldAppointmentRef": second}),
+        ):
+            with self.subTest(name=name):
+                refused = await self.tool(
+                    owner,
+                    name,
+                    appointmentSlotRef=ref,
+                    appointmentReason="Follow up",
+                    referringDoctor="none",
+                    readBack=True,
+                    **extra,
+                )
+                self.assertTrue(refused.startswith("needs_input:"), refused)
+        self.assertEqual(len(requests), 1)
+
+    async def test_planless_search_stays_at_the_moved_appointments_office(self):
+        owner, requests = self.owner([])
+        verified(
+            owner.state,
+            appointmentsStatus="found",
+            appointments=[
+                appointment(officeId="crystal_river", office="Crystal River")
+            ],
+        )
+        result = await self.tool(
+            owner,
+            "list_available_appointments",
+            visitType="medical",
+            insurancePlanId=None,
+            rescheduleAppointmentRef=owner.appointments()[0]["appointmentRef"],
+        )
+        self.assertTrue(result.startswith("needs_input:"), result)
+        self.assertIn("office", result)
+        self.assertEqual(requests, [])
+
+    async def test_planless_search_needs_a_matching_loaded_appointment(self):
+        cases = (
+            ("medical", None),
+            ("routine_vision", "appointment"),
+            ("medical", "A99"),
+        )
+        for visit, ref in cases:
+            with self.subTest(visit=visit, ref=ref):
+                owner, requests = self.owner([])
+                verified(
+                    owner.state,
+                    appointmentsStatus="found",
+                    appointments=[appointment()],
+                )
+                if ref == "appointment":
+                    ref = owner.appointments()[0]["appointmentRef"]
+                result = await self.tool(
+                    owner,
+                    "list_available_appointments",
+                    visitType=visit,
+                    insurancePlanId=None,
+                    rescheduleAppointmentRef=ref,
+                )
+                self.assertTrue(result.startswith("needs_input:"), result)
+                self.assertEqual(requests, [])
+
     async def test_reschedule_partial_and_success_never_rebooks(self):
         for status in ("cancelled", "error"):
             owner, requests = self.owner([inventory(), rescheduled(status)])
