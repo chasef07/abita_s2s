@@ -101,7 +101,7 @@ class PatientResolver:
         result = await self._middleware.resolve(
             ResolveRequest(
                 phone=self.state.call.caller_phone,
-                office=self.state.call.called_office_key,
+                office=self.state.call.office.key,
             )
         )
         if isinstance(result, Receipt):
@@ -232,9 +232,7 @@ class PatientResolver:
                 "needs_identity", "needs_input: What is the patient's date of birth?"
             )
         result = await self._middleware.resolve(
-            ResolveRequest(
-                firstName=name, dob=dob, office=self.state.call.called_office_key
-            )
+            ResolveRequest(firstName=name, dob=dob, office=self.state.call.office.key)
         )
         if not self._current(token):
             return superseded()
@@ -275,7 +273,7 @@ class PatientResolver:
             receipt = await self._middleware.resolve(
                 ResolveRequest(
                     patientId=candidate.patientId,
-                    office=self.state.call.called_office_key,
+                    office=self.state.call.office.key,
                 )
             )
         if not self._current(token):

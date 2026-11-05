@@ -116,7 +116,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.state = call_state(None)
         self.state.call = replace(
             self.state.call,
-            called_office_key="crystal-river",
+            office=get_office_profile("crystal-river"),
             room_name="room",
             sip_participant_identity="caller",
             called_number="+13523202007",
@@ -362,7 +362,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
     async def test_product_partial_write_conflict_and_stable_identity(self):
         self.state.call = replace(
             self.state.call,
-            called_office_key="spring-hill",
+            office=SPRING_HILL,
             called_number=SPRING_HILL.trunk_numbers[0],
         )
         requests = []
@@ -395,7 +395,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
     async def test_caregiver_product_handoff_preserves_caller_contact_on_retry(self):
         self.state.call = replace(
             self.state.call,
-            called_office_key="spring-hill",
+            office=SPRING_HILL,
             caller_phone="+15555550101",
         )
         self.state.patient.active = Receipt.model_validate(
@@ -452,7 +452,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_partial_admission_and_invalid_destination_block_refer(self):
-        self.state.call = replace(self.state.call, called_office_key="spring-hill")
+        self.state.call = replace(self.state.call, office=SPRING_HILL)
         for response, cause in (
             (httpx.Response(503), "http_503"),
             (
@@ -546,7 +546,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
     async def test_admission_uses_original_trunk(self):
         self.state.call = replace(
             self.state.call,
-            called_office_key="spring-hill",
+            office=SPRING_HILL,
             called_number="+18135484830",
         )
         requests = []
@@ -591,7 +591,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.control.status, "accepted")
 
     async def test_invalid_admission_config_is_retryable_without_writes(self):
-        self.state.call = replace(self.state.call, called_office_key="spring-hill")
+        self.state.call = replace(self.state.call, office=SPRING_HILL)
         self.client.post = AsyncMock()
         with patch.dict(
             "os.environ",
@@ -611,7 +611,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.sip.transfer_sip_participant.assert_not_awaited()
 
     async def test_cancel_during_admission_fences_transfer_and_end_call(self):
-        self.state.call = replace(self.state.call, called_office_key="spring-hill")
+        self.state.call = replace(self.state.call, office=SPRING_HILL)
         self.client.post = AsyncMock(side_effect=asyncio.CancelledError())
         with patch.dict(
             "os.environ",

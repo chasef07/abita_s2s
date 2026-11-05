@@ -13,7 +13,6 @@ import httpx
 from abita_s2s.budgets import CLOSEOUT, FINISH, RETRY_PAUSE, SEND
 from abita_s2s.observability.evaluation import evaluate_call
 from abita_s2s.config import Config
-from abita_s2s.offices import get_office_profile, get_product_office_key
 from abita_s2s.state import CallContext
 
 logger = logging.getLogger(__name__)
@@ -42,11 +41,9 @@ class CallReporter:
         self._openrouter_key = config.openrouter_key
         self._drain = drain
         self._started_at = call.session_started_at
-        office = get_office_profile(call.called_office_key)
-        office_phone = call.called_number or office.trunk_numbers[0]
         self._base = {
-            "officeKey": get_product_office_key(office_phone),
-            "officePhone": office_phone,
+            "officeKey": call.product_office_key,
+            "officePhone": call.office_phone,
             "callerPhone": call.caller_phone,
             "sourceCallId": call.call_id,
             "startedAt": call.session_started_at.isoformat(),

@@ -113,7 +113,7 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             owner = StaffTasks(state, resolver, Product(client, config))
             agent = AbitaAgent(
                 call_owners(
-                    get_office_profile(state.call.called_office_key),
+                    state.call.office,
                     resolver=resolver,
                     staff_tasks=owner,
                 )
@@ -379,7 +379,7 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_office_disabled_and_no_configuration(self):
         state = call_state()
-        state.call = replace(state.call, called_office_key="crystal-river")
+        state.call = replace(state.call, office=get_office_profile("crystal-river"))
         async with self.setup_session(state=state) as (_, agent, _, owner, requests, _):
             tools = llm.ToolContext(agent.tools).function_tools
             self.assertNotIn("save_staff_task", tools)

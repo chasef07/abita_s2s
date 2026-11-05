@@ -410,7 +410,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             _, args = await self.run_startup(False, config=config, product=read(503))
         self.assertEqual(args["office_knowledge"], UNAVAILABLE)
         self.assertIn("cause=http_503", logs.output[0])
-        self.assertEqual(args["userdata"].call.called_office_key, "spring-hill")
+        self.assertEqual(args["userdata"].call.office.key, "spring-hill")
 
     async def test_simulation_takes_synthetic_office_knowledge_from_userdata(self):
         sim = SimpleNamespace(
@@ -561,7 +561,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         call = args["userdata"].call
         self.assertEqual(call.call_id, "sip-test")
         self.assertEqual(call.called_number, "+18135484830")
-        self.assertEqual(call.called_office_key, "spring-hill")
+        self.assertEqual(call.office.key, "spring-hill")
         self.assertEqual(call.caller_phone, "+15555550101")
         self.assertIsNone(args["userdata"].patient.active)
 

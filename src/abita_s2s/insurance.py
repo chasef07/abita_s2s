@@ -154,7 +154,7 @@ class InsuranceRegistration:
         r = registration
         key = WriteKey(
             (
-                self.state.call.called_office_key,
+                self.state.call.office.key,
                 exact_name(r.firstName),
                 parse_dob(r.dob),
             ),
@@ -233,7 +233,7 @@ class InsuranceRegistration:
             insurancePlanId=plan.planId,
             email=r.email or None,
             coverageType=r.visitType,
-            office=self.state.call.called_office_key,
+            office=self.state.call.office.key,
         )
 
         async def create():
@@ -320,7 +320,7 @@ class InsuranceRegistration:
                 "needs_member_id",
                 "needs_input: What is the member ID on the insurance card?",
             )
-        office = self.state.call.called_office_key
+        office = self.state.call.office.key
         subject = (office, active.patientId)
         key = WriteKey(
             subject, "update_insurance", (plan.planId, coverage_type, member_id)

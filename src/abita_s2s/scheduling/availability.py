@@ -15,7 +15,7 @@ from abita_s2s.integrations.scheduling_http import (
     Slot,
     SlotSearch,
 )
-from abita_s2s.offices import EASTERN, get_office_profile, same_office
+from abita_s2s.offices import EASTERN, same_office
 from abita_s2s.records import Appointment
 from abita_s2s.results import reply
 from abita_s2s.state import CallState
@@ -161,7 +161,7 @@ class Offers:
 
     def _office(self, requested, visit) -> tuple[str, None] | tuple[None, str]:
         """The office to search, or the question to put to the caller first."""
-        office = get_office_profile(self.state.call.called_office_key)
+        office = self.state.call.office
         promotion = office.promotion
         if promotion and visit == promotion.visit:
             if not self._announced_promoted_office and requested in (None, office.key):

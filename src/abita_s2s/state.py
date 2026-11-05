@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from abita_s2s.insurance_state import InsuranceState
+from abita_s2s.offices import OfficeProfile, get_product_office_key
 from abita_s2s.records import Appointment, Candidate, Receipt
 
 if TYPE_CHECKING:
@@ -15,11 +16,21 @@ if TYPE_CHECKING:
 class CallContext:
     call_id: str
     session_started_at: datetime
-    called_office_key: str
+    office: OfficeProfile
     caller_phone: str | None = None
     called_number: str | None = None
     room_name: str | None = None
     sip_participant_identity: str | None = None
+
+    @property
+    def office_phone(self) -> str:
+        """The number the caller dialed as received, or the office's main trunk."""
+        return self.called_number or self.office.trunk_numbers[0]
+
+    @property
+    def product_office_key(self) -> str:
+        """Product's location for the dialed number, which may differ from the office key."""
+        return get_product_office_key(self.office_phone)
 
 
 @dataclass(repr=False)

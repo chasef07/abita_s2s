@@ -55,7 +55,7 @@ CONFIG = Config(
 
 def call_state(phone="+15555550101", office=SPRING_HILL):
     state = CallState(
-        CallContext("call", datetime.now(UTC), office.key, caller_phone=phone)
+        CallContext("call", datetime.now(UTC), office, caller_phone=phone)
     )
     state.insurance.plans = office_plans()
     return state
