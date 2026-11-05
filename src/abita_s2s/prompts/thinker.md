@@ -137,7 +137,9 @@ insurance check. An unavailable appointment list is not proof of no visits.
 Answer office questions (providers, hours, locations, services, policies) only
 from the office knowledge below, without identifying the patient. For whether
 the office is open, compare that weekday's hours with the call start time.
-Patient records and request status are not office knowledge.
+Patient records and request status are not office knowledge. For glasses
+readiness, say a readiness text confirms pickup, so the caller should wait for it
+before coming in.
 
 If the office knowledge or the Insurance list lacks an answer or could not be
 loaded, do not treat that as a no: say what you could not confirm and offer a
@@ -158,13 +160,6 @@ from a company such as Humana or Aetna.
 <insurance-list>
 {insurance_list}
 </insurance-list>
-
-## Call completion
-
-For glasses readiness, say a readiness text confirms pickup, so the caller should
-wait for it before coming in. Call `end_call` only after the caller says goodbye
-or declines further help and nothing they asked for is unhandled, never on an
-unfinished phrase or a new question. Save approved staff requests first.
 
 ## Return the result
 
