@@ -170,6 +170,29 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(state.patient.active, active)
         self.assertEqual(len(self.requests), 1)
 
+    async def test_rejected_intake_for_another_patient_keeps_staff_requests_with_them(
+        self,
+    ):
+        for changes, outcome in (
+            ({"insurancePlanId": "unlisted"}, "unknown_plan"),
+            ({"phone": "123"}, "needs_callback"),
+            ({"street": ""}, "needs_registration_details"),
+        ):
+            with self.subTest(outcome=outcome):
+                state, resolver, owner = self.owner([receipt()])
+                await resolver.resolve("Jane", "01/02/1980")
+                self.assertEqual(state.patient.active.patientId, "chart-jane")
+                result = await owner.add(
+                    registration(firstName="John", dob="02/03/1982", **changes)
+                )
+                self.assertEqual(result["outcome"], outcome)
+                self.assertIsNone(state.patient.active)
+                self.assertEqual(
+                    resolver.staff_task_patient(),
+                    {"name": "John", "dob": "02/03/1982"},
+                )
+                self.assertEqual(len(self.requests), 1)
+
     async def test_registration_switch_preserves_state_when_writes_blocked(self):
         for blocked in ("write_pending", "write_uncertain", "closed"):
             with self.subTest(blocked=blocked):

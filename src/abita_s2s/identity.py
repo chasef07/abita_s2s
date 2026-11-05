@@ -315,7 +315,11 @@ class PatientResolver:
         return True
 
     def begin_registration(self, first_name: str, dob: str) -> bool:
-        """Make caller-confirmed new intake the pending patient, leaving a different patient's chart."""
+        """Make the named new intake the pending patient, leaving a different patient's chart.
+
+        Runs before the intake is validated or read back. A rejected intake can lead to a
+        staff request, which must name this patient and not the chart the call was on.
+        """
         active = self.state.patient.active
         if (
             self._closed
