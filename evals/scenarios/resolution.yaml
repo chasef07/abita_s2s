@@ -114,8 +114,10 @@ scenarios:
     agent_expectations: >
       Treats the visit as a medical glaucoma follow-up without asking again what
       the visit is for or which condition it is, and without emergency screening
-      questions. Finds Maya's chart and reads back medical openings from the search
-      result. Does not book and does not call transfer_call.
+      questions. Asking once whether Maya's existing appointment is the visit she
+      means is correct, not re-triage. Finds Maya's chart and reads back medical
+      openings from the search result. Does not book and does not call
+      transfer_call.
     userdata:
       office: spring-hill
       caller_phone: '+12025550148'
@@ -135,7 +137,8 @@ scenarios:
       back, then say goodbye. If told no openings can be found, accept that and end.
     agent_expectations: >
       Asks at most one question about severity or sudden vision change, does not
-      ask again what the visit is for, and searches medical openings. Reads back
+      ask again what the visit is for, and searches medical openings. Asking once
+      whether Maya's existing appointment is the visit she means is correct. Reads back
       openings from the search result. Does not book and does not call
       transfer_call.
     userdata:
@@ -222,9 +225,9 @@ scenarios:
       details. If the agent says it will transfer you, say "Okay" and wait quietly.
       If told the transfer is unavailable, say "Okay, goodbye." and stop.
     agent_expectations: >
-      Makes at most one offer of help, then calls transfer_call after the caller
-      declines it, with no second pitch, intake question, or repeated question
-      about how it can help. Grade only what happens before transfer_call: this
+      May ask once what the call is about. Makes at most one offer of help, then
+      calls transfer_call after the caller declines it, with no second pitch,
+      intake question, or repeated question about how it can help. Grade only what happens before transfer_call: this
       test makes every transfer unavailable, so offering a staff request after the
       failed transfer is correct.
     userdata:
