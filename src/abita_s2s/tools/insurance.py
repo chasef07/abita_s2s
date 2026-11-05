@@ -22,10 +22,13 @@ class InsuranceTools:
     ) -> str:
         """Change the active verified patient's coverage only when the caller requests it.
 
-        Send the new plan's ID from the Insurance list for the visit type and the card
-        member ID; a self-pay plan needs no member ID. Use add_patient for
-        registration. Claim success only from an updated receipt; never retry an
-        uncertain result or repeat a completed write.
+        Use add_patient for registration. Claim success only from an updated receipt;
+        never retry an uncertain result or repeat a completed write.
+
+        Args:
+            insurancePlanId: The new plan's ID from the Insurance list for visitType.
+            visitType: The visit type the new plan is for: medical or routine_vision.
+            insuranceMemberId: Member ID on the new card; empty for a self-pay plan.
         """
         if not bound(self._insurance, context):
             return staff()["answer"]

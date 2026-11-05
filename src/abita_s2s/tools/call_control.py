@@ -8,10 +8,20 @@ from abita_s2s.prompt import load_prompt
 from abita_s2s.state import CallState
 from abita_s2s.tools.context import say_only
 
+END_RULES = (
+    "Call only after the caller says goodbye or declines further help and nothing "
+    "they asked for is unhandled. Never call on an unfinished phrase or a new "
+    "question; answer it first. Save approved staff requests before calling."
+)
+
 
 class CallControlTools(EndCallTool):
     def __init__(self, control: CallControl) -> None:
-        super().__init__(delete_room=False, end_instructions=load_prompt("goodbye"))
+        super().__init__(
+            delete_room=False,
+            end_instructions=load_prompt("goodbye"),
+            extra_description=END_RULES,
+        )
         self._control = control
 
     @function_tool

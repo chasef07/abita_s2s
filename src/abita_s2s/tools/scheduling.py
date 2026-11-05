@@ -112,12 +112,13 @@ class SchedulingTools:
     ) -> str:
         """Book a new appointment using a returned slot after caller confirmation of date, time and provider.
 
-        Reuse the known visit reason. For a vague concern, ask one focused follow-up;
-        if still unclear, preserve the caller's words and note the limitation. Never diagnose.
-        readBack is true only after confirmation. Claim success only from this result. Do not retry uncertain writes.
+        Claim success only from this result. Do not retry uncertain writes.
         Use reschedule_appointment to move an existing appointment.
 
         Args:
+            appointmentSlotRef: The slot reference copied from the result line whose time you read back.
+            appointmentReason: The visit reason the caller already gave, in their words. Never diagnose.
+            readBack: True only after the caller confirms the read-back; otherwise null.
             referringDoctor: The referring doctor's name, or "none" if not referred or an
                 existing patient. Never narrate "none".
             referringDoctorPhone: The referring doctor's phone, or null if unknown.
@@ -144,9 +145,12 @@ class SchedulingTools:
     ) -> str:
         """Cancel only after verification and the caller confirms cancellation of the exact loaded appointment.
 
-        Use its private appointmentRef. readBack is true only after the caller confirms
-        the exact date, time, provider and intent to cancel.
         Claim success only from the result; never retry uncertain cancellation.
+
+        Args:
+            appointmentRef: The private reference of the loaded appointment to cancel.
+            readBack: True only after the caller confirms the exact date, time, provider
+                and intent to cancel; otherwise null.
         """
         if not bound(self._scheduling, context):
             return UNAVAILABLE
@@ -170,12 +174,17 @@ class SchedulingTools:
     ) -> str:
         """Move the caller-confirmed loaded appointment to a confirmed returned slot.
 
-        Confirm the old appointment and read back the new date, time and provider before readBack=true.
         Books first, then cancels the old visit. Report partial success and never repeat an uncertain booking.
-        Pass referral arguments as book_appointment describes.
 
         Args:
+            oldAppointmentRef: The private reference of the loaded appointment being moved.
+            appointmentSlotRef: As book_appointment describes.
+            referringDoctor: As book_appointment describes.
+            readBack: True only after the caller confirms the old appointment and the new
+                date, time and provider; otherwise null.
             appointmentReason: Only a new reason the caller volunteered; never ask for one.
+            referringDoctorPhone: As book_appointment describes.
+            referringDoctorAddress: As book_appointment describes.
         """
         if not bound(self._scheduling, context):
             return UNAVAILABLE
