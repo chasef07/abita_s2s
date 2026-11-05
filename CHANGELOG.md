@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.2](https://github.com/chasef07/abita_s2s/compare/v0.28.1...v0.28.2) (2026-11-05)
+
+
+### Bug Fixes
+
+* **scheduling:** reschedule booked visits without re-checking the plan ([#271](https://github.com/chasef07/abita_s2s/issues/271)) ([05cf19e](https://github.com/chasef07/abita_s2s/commit/05cf19e5757b9c6da8aeafd914d9c954d12cbf6f))
+
 ## [0.28.1](https://github.com/chasef07/abita_s2s/compare/v0.28.0...v0.28.1) (2026-11-05)
 
 
