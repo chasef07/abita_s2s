@@ -12,8 +12,9 @@ from test_patient_resolution import CONFIG, call_state, receipt, search
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration, Registration
 from abita_s2s.insurance_state import insurance_ready
-from abita_s2s.integrations.patient_middleware import PatientMiddleware, Receipt
+from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
+from abita_s2s.records import Receipt
 
 
 def registration(**changes):

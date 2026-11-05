@@ -18,9 +18,10 @@ from abita_s2s.identity import (
     PatientResolver,
 )
 from abita_s2s.insurance_list import OfficePlans
-from abita_s2s.integrations.patient_middleware import PatientMiddleware, Receipt
+from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.name_matcher import phone_name_matches
 from abita_s2s.offices import SPRING_HILL
+from abita_s2s.records import Receipt
 from abita_s2s.staff_tasks import _same_patient
 from abita_s2s.state import CallContext, CallState
 
@@ -54,7 +55,7 @@ CONFIG = Config(
 
 def call_state(phone="+15555550101", office=SPRING_HILL):
     state = CallState(
-        CallContext("call", datetime.now(UTC), office.key, caller_phone=phone)
+        CallContext("call", datetime.now(UTC), office, caller_phone=phone)
     )
     state.insurance.plans = office_plans()
     return state

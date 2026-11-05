@@ -10,7 +10,6 @@ from pydantic import ConfigDict
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance_contract import CoverageType, InsuranceDecision
 from abita_s2s.insurance_list import VISITS, listed_plan, requirement_text
-from abita_s2s.integrations.patient_middleware import Receipt
 from abita_s2s.integrations.registration_middleware import (
     CreationReceipt,
     InsuranceChange,
@@ -21,7 +20,7 @@ from abita_s2s.integrations.registration_middleware import (
 )
 from abita_s2s.name_matcher import dob_matches, exact_name, parse_dob
 from abita_s2s.offices import e164
-from abita_s2s.records import Record
+from abita_s2s.records import Receipt, Record
 from abita_s2s.results import reply
 from abita_s2s.state import CallState
 from abita_s2s.writes import WriteKey, WriteLedger, WriteOutcome, write_effect
@@ -155,7 +154,7 @@ class InsuranceRegistration:
         r = registration
         key = WriteKey(
             (
-                self.state.call.called_office_key,
+                self.state.call.office.key,
                 exact_name(r.firstName),
                 parse_dob(r.dob),
             ),
@@ -234,7 +233,7 @@ class InsuranceRegistration:
             insurancePlanId=plan.planId,
             email=r.email or None,
             coverageType=r.visitType,
-            office=self.state.call.called_office_key,
+            office=self.state.call.office.key,
         )
 
         async def create():
@@ -321,7 +320,7 @@ class InsuranceRegistration:
                 "needs_member_id",
                 "needs_input: What is the member ID on the insurance card?",
             )
-        office = self.state.call.called_office_key
+        office = self.state.call.office.key
         subject = (office, active.patientId)
         key = WriteKey(
             subject, "update_insurance", (plan.planId, coverage_type, member_id)

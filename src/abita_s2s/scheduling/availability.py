@@ -9,43 +9,23 @@ from abita_s2s.insurance import decision_answer
 from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.insurance_list import listed_plan
 from abita_s2s.insurance_state import insurance_ready
-from abita_s2s.integrations.patient_middleware import Appointment
 from abita_s2s.integrations.scheduling_http import (
     SchedulingFailure,
     SchedulingHTTP,
     Slot,
     SlotSearch,
 )
-from abita_s2s.offices import EASTERN, get_office_profile, same_office
+from abita_s2s.offices import EASTERN, same_office
+from abita_s2s.records import Appointment
 from abita_s2s.results import reply
 from abita_s2s.state import CallState
 
 SHARED_OFFICE_CHOICE = "needs_input: Ask for Hollywood or Sweetwater on those office calls; omit office for other calls."
 
 
-def provider_name(name):
-    for old, new in (
-        ("Dr. Austin Bach (Overflow)", "Dr. Bach"),
-        ("Dr. Austin Bach", "Dr. Bach"),
-        ("Dr. J. Licht", "Dr. Licht"),
-        ("Dr. D. Noel", "Dr. Noel"),
-    ):
-        name = name.replace(old, new)
-    return name
-
-
-def eastern_datetime(value: str) -> datetime:
-    start = datetime.fromisoformat(value)
-    return (
-        start.replace(tzinfo=EASTERN)
-        if start.tzinfo is None
-        else start.astimezone(EASTERN)
-    )
-
-
 def slot_identity(slot: Slot) -> tuple[str, datetime]:
     """One bookable choice per provider and start, whichever middleware column backs it."""
-    return provider_name(slot.provider), eastern_datetime(slot.datetime)
+    return slot.provider, slot.start
 
 
 def afternoon(start: datetime) -> bool:
@@ -54,8 +34,8 @@ def afternoon(start: datetime) -> bool:
 
 def slot_reference(slot: Slot) -> str:
     """A readable reference such as SEP15-0900-BACH: date, 24-hour time, provider surname."""
-    surname = "".join(filter(str.isalpha, provider_name(slot.provider).split()[-1]))
-    return f"{eastern_datetime(slot.datetime):%b%d-%H%M}-{surname}".upper()
+    surname = "".join(filter(str.isalpha, slot.provider.split()[-1]))
+    return f"{slot.start:%b%d-%H%M}-{surname}".upper()
 
 
 def soonest(offered: list[tuple[str, Slot]]) -> list[str]:
@@ -64,7 +44,7 @@ def soonest(offered: list[tuple[str, Slot]]) -> list[str]:
     When that day has only shared starts, offer its earliest shared start and the
     earliest open slot on a later day.
     """
-    starts = [(ref, slot, eastern_datetime(slot.datetime)) for ref, slot in offered]
+    starts = [(ref, slot, slot.start) for ref, slot in offered]
     first_day = starts[0][2].date()
     day = [item for item in starts if item[2].date() == first_day]
     open_slots = [(ref, start) for ref, slot, start in day if not slot.sameStartBooked]
@@ -181,7 +161,7 @@ class Offers:
 
     def _office(self, requested, visit) -> tuple[str, None] | tuple[None, str]:
         """The office to search, or the question to put to the caller first."""
-        office = get_office_profile(self.state.call.called_office_key)
+        office = self.state.call.office
         promotion = office.promotion
         if promotion and visit == promotion.visit:
             if not self._announced_promoted_office and requested in (None, office.key):
@@ -238,7 +218,7 @@ class Offers:
                     "needs_input",
                     "needs_input: Without a plan, search only the moved appointment's office. For another office, confirm the plan as for a new visit.",
                 )
-            provider, moved_id = provider_name(plan.provider), plan.id
+            provider, moved_id = plan.doctor, plan.id
         else:
             listed = listed_plan(self.state, plan, visit)
             if isinstance(listed, dict):
@@ -334,8 +314,7 @@ class Offers:
                     slots = [
                         slot
                         for slot in result.slots
-                        if key.provider is None
-                        or slot_identity(slot)[0] == key.provider
+                        if key.provider is None or slot.provider == key.provider
                     ]
                     if slots:
                         return self._offer(slots, key, generation, expiry)
@@ -425,8 +404,8 @@ class Offers:
             slots=[
                 {
                     "appointmentSlotRef": ref,
-                    "datetime": item.slot.datetime,
-                    "provider": provider_name(item.slot.provider),
+                    "start": item.slot.start,
+                    "provider": item.slot.provider,
                     "shared": bool(item.slot.sameStartBooked),
                 }
                 for ref, item in self._slots.items()

@@ -4,11 +4,9 @@ import asyncio
 
 from abita_s2s.insurance_list import chart_plans
 from abita_s2s.integrations.patient_middleware import (
-    Candidate,
     Multiple,
     NotFound,
     PatientMiddleware,
-    Receipt,
     ResolveRequest,
 )
 from abita_s2s.name_matcher import (
@@ -20,6 +18,7 @@ from abita_s2s.name_matcher import (
     phone_name_matches,
     same_patient,
 )
+from abita_s2s.records import Candidate, Receipt
 from abita_s2s.results import reply
 from abita_s2s.state import CallState
 
@@ -102,7 +101,7 @@ class PatientResolver:
         result = await self._middleware.resolve(
             ResolveRequest(
                 phone=self.state.call.caller_phone,
-                office=self.state.call.called_office_key,
+                office=self.state.call.office.key,
             )
         )
         if isinstance(result, Receipt):
@@ -233,9 +232,7 @@ class PatientResolver:
                 "needs_identity", "needs_input: What is the patient's date of birth?"
             )
         result = await self._middleware.resolve(
-            ResolveRequest(
-                firstName=name, dob=dob, office=self.state.call.called_office_key
-            )
+            ResolveRequest(firstName=name, dob=dob, office=self.state.call.office.key)
         )
         if not self._current(token):
             return superseded()
@@ -276,7 +273,7 @@ class PatientResolver:
             receipt = await self._middleware.resolve(
                 ResolveRequest(
                     patientId=candidate.patientId,
-                    office=self.state.call.called_office_key,
+                    office=self.state.call.office.key,
                 )
             )
         if not self._current(token):

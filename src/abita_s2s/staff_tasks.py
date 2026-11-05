@@ -6,20 +6,10 @@ from typing import Literal
 from uuid import uuid4
 
 from abita_s2s.identity import PatientResolver
-from abita_s2s.integrations.product import (
-    Category,
-    Product,
-    StaffTask,
-    StaffTaskReceipt,
-    Urgency,
-)
+from abita_s2s.integrations.product import Product, StaffTask, StaffTaskReceipt
 from abita_s2s.name_matcher import names_match, phone_name_matches, same_patient
-from abita_s2s.offices import (
-    e164,
-    get_office_profile,
-    get_product_office_key,
-    us_trunk_number,
-)
+from abita_s2s.offices import e164, us_trunk_number
+from abita_s2s.records import Category, Urgency
 from abita_s2s.results import reply
 from abita_s2s.state import CallState
 
@@ -154,7 +144,7 @@ class StaffTasks:
     ) -> StaffTask:
         """Validate before any write, then snapshot the exact request for replay."""
         call = self.state.call
-        office = get_office_profile(call.called_office_key)
+        office = call.office
         if not office.staff_tasks_enabled:
             raise ValueError(
                 "Staff tasks are disabled for this office. No request was sent."
@@ -195,7 +185,7 @@ class StaffTasks:
             urgency=urgency,
             patient=patient or None,
             inboundOfficePhone=inbound if other_trunk else None,
-            officeKey=get_product_office_key(inbound or office.trunk_numbers[0]),
+            officeKey=call.product_office_key,
         )
 
     async def _deliver(self, task: StaffTask, *, call_id: str | None = None) -> dict:

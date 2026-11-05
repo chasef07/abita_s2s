@@ -6,9 +6,8 @@ from livekit.agents import RunContext, function_tool
 
 from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.offices import EASTERN, SchedulingOfficeChoice
-from abita_s2s.scheduling.answers import UNAVAILABLE
+from abita_s2s.scheduling.answers import UNAVAILABLE, slot_lines
 from abita_s2s.scheduling.appointments import Scheduling
-from abita_s2s.scheduling.availability import afternoon, eastern_datetime
 from abita_s2s.state import CallState
 from abita_s2s.tools.context import bound
 
@@ -66,43 +65,7 @@ class SchedulingTools:
             )
         if slots := result.get("slots"):
             today = self._scheduling.now().astimezone(EASTERN).date()
-            lines.append("Soonest options: " + ", ".join(result["soonest"]))
-            days = {}
-            for slot in slots:
-                start = eastern_datetime(slot["datetime"])
-                rows = days.setdefault(start.date(), {})
-                rows.setdefault((slot["provider"], afternoon(start)), []).append(
-                    (start, slot)
-                )
-            for day, rows in days.items():
-                days_away = (day - today).days
-                relative = (
-                    "today"
-                    if days_away == 0
-                    else "tomorrow"
-                    if days_away == 1
-                    else f"in {days_away} days"
-                )
-                first = next(iter(rows.values()))[0][0]
-                lines += [
-                    "",
-                    f"{first:%A, %B} {day.day}, {day.year} ({relative}), {first:%Z}",
-                ]
-                for (provider, is_afternoon), entries in rows.items():
-                    groups = [
-                        f"{label} "
-                        + ", ".join(
-                            f"{start.strftime('%I:%M %p').lstrip('0')} {slot['appointmentSlotRef']}"
-                            for start, slot in entries
-                            if slot["shared"] is shared
-                        )
-                        for label, shared in (("open", False), ("shared", True))
-                        if any(slot["shared"] is shared for _, slot in entries)
-                    ]
-                    lines.append(
-                        f"  {provider} {'afternoon' if is_afternoon else 'morning'}: "
-                        + "; ".join(groups)
-                    )
+            lines += slot_lines(slots, result["soonest"], today)
         return "\n".join(lines)
 
     @function_tool

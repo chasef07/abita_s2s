@@ -1,15 +1,37 @@
 import unittest
 from dataclasses import FrozenInstanceError
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock
 
 from test_patient_resolution import call_state, receipt
 
 from abita_s2s.identity import PatientResolver
-from abita_s2s.integrations.patient_middleware import Appointment, NotFound, Receipt
-from abita_s2s.state import CallState, PatientState
+from abita_s2s.integrations.patient_middleware import NotFound
+from abita_s2s.offices import get_office_profile
+from abita_s2s.records import Appointment, Receipt
+from abita_s2s.state import CallContext, CallState, PatientState
 
 
 class CallStateTests(unittest.IsolatedAsyncioTestCase):
+    def test_office_phone_keeps_the_dialed_spelling_and_names_its_product_location(
+        self,
+    ):
+        for called, phone, key in (
+            (None, "+17864657475", "sweetwater"),
+            ("", "+17864657475", "sweetwater"),
+            ("+17864654845", "+17864654845", "sweetwater"),
+            ("1-786-465-7479", "1-786-465-7479", "sweetwater-optical"),
+        ):
+            with self.subTest(called=called):
+                call = CallContext(
+                    "call",
+                    datetime.now(UTC),
+                    get_office_profile("sweetwater"),
+                    called_number=called,
+                )
+                self.assertEqual(call.office_phone, phone)
+                self.assertEqual(call.product_office_key, key)
+
     def test_only_a_new_chart_or_insurance_starts_a_new_revision(self):
         patient = PatientState()
         jane = Receipt.model_validate(receipt())
@@ -51,7 +73,7 @@ class CallStateTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Jane", repr(patient))
         self.assertNotIn("01/02/1980", repr(patient))
         with self.assertRaises(FrozenInstanceError):
-            resolver.state.call.called_office_key = "different"
+            resolver.state.call.office = get_office_profile("hollywood")
 
     async def test_stale_cross_call_and_replayed_receipts_are_rejected(self):
         resolver, other = self.resolver(), self.resolver()

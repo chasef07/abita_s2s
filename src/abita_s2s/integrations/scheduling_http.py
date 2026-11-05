@@ -1,9 +1,11 @@
 """Scheduling HTTP contracts. Writes are sent once and uncertainty stays explicit."""
 
 from datetime import date, datetime
+from functools import cached_property
 from typing import Annotated, Literal
 
 from pydantic import (
+    AfterValidator,
     AwareDatetime,
     BeforeValidator,
     Field,
@@ -15,7 +17,8 @@ from pydantic import (
 from abita_s2s.insurance_contract import CoverageType, InsuranceDecision
 from abita_s2s.integrations.middleware import Middleware, OfficeKey
 from abita_s2s.integrations.transport import Request
-from abita_s2s.records import Record, Text
+from abita_s2s.offices import EASTERN
+from abita_s2s.records import Record, Text, provider_name
 
 SchedulingOutcome = Literal[
     "validation",
@@ -65,8 +68,17 @@ class Cancellation(Request):
     cancellationToken: str
 
 
+def eastern_datetime(value: str) -> datetime:
+    start = datetime.fromisoformat(value)
+    return (
+        start.replace(tzinfo=EASTERN)
+        if start.tzinfo is None
+        else start.astimezone(EASTERN)
+    )
+
+
 class Slot(Record):
-    provider: Text
+    provider: Annotated[Text, AfterValidator(provider_name)]
     time: Text
     datetime: Text
     bookingToken: Text
@@ -84,6 +96,11 @@ class Slot(Record):
     @property
     def date(self) -> str:
         return self.datetime.split("T", 1)[0]
+
+    @cached_property
+    def start(self):
+        """When the slot starts in Eastern time."""
+        return eastern_datetime(self.datetime)
 
 
 class Inventory(Record):
@@ -140,7 +157,7 @@ class WriteReceipt(Record):
     officeId: str | None = None
     visitType: CoverageType | None = None
     profileId: str | None = None
-    providerName: str | None = None
+    providerName: Annotated[str, AfterValidator(provider_name)] | None = None
     locationName: str | None = None
     appointmentTypeName: str | None = None
     missing: list[

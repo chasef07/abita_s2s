@@ -12,6 +12,7 @@ from abita_s2s.call_control import CallControl
 from abita_s2s.config import load_config
 from abita_s2s.handoff import AdmissionRejected
 from abita_s2s.integrations.product import Product
+from abita_s2s.offices import get_office_profile
 from abita_s2s.runtime.silence import BackendResponses
 
 
@@ -83,7 +84,9 @@ class MigrationRegressionTests(unittest.IsolatedAsyncioTestCase):
                 )
                 with self.assertRaises(AdmissionRejected):
                     await control.admission.resolve()
-                state.call = replace(state.call, called_office_key="crystal-river")
+                state.call = replace(
+                    state.call, office=get_office_profile("crystal-river")
+                )
                 target = await control.admission.resolve()
                 self.assertEqual(target.destination, "tel:+13527941244")
                 self.assertFalse(target.admitted)

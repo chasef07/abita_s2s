@@ -2,7 +2,8 @@
 
 from livekit.agents import RunContext, function_tool
 
-from abita_s2s.staff_tasks import Category, StaffTasks, Urgency
+from abita_s2s.records import Category, Urgency
+from abita_s2s.staff_tasks import StaffTasks
 from abita_s2s.state import CallState
 from abita_s2s.tools.context import bound
 

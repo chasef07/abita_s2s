@@ -1,10 +1,12 @@
-"""What each scheduling write outcome tells the model."""
+"""What the offered slots and each scheduling write outcome tell the model."""
 
 from collections.abc import Sequence
+from datetime import date
 from typing import Literal, assert_never
 
-from abita_s2s.integrations.patient_middleware import Appointment
+from abita_s2s.records import Appointment
 from abita_s2s.results import reply
+from abita_s2s.scheduling.availability import afternoon
 
 UNAVAILABLE = "blocked: Scheduling is unavailable."
 STALE_BEFORE_WRITE = (
@@ -19,6 +21,45 @@ CancelOutcome = Literal[
     "written", "refused", "expired", "failed", "unsent", "uncertain"
 ]
 MoveOutcome = Literal["written", "partial", "failed", "uncertain"]
+
+
+def slot_lines(slots: list[dict], soonest: list[str], today: date) -> list[str]:
+    """The offered slots by day, then provider and half-day, open before shared."""
+    lines = ["Soonest options: " + ", ".join(soonest)]
+    days = {}
+    for slot in slots:
+        rows = days.setdefault(slot["start"].date(), {})
+        rows.setdefault((slot["provider"], afternoon(slot["start"])), []).append(slot)
+    for day, rows in days.items():
+        days_away = (day - today).days
+        relative = (
+            "today"
+            if days_away == 0
+            else "tomorrow"
+            if days_away == 1
+            else f"in {days_away} days"
+        )
+        first = next(iter(rows.values()))[0]["start"]
+        lines += [
+            "",
+            f"{first:%A, %B} {day.day}, {day.year} ({relative}), {first:%Z}",
+        ]
+        for (provider, is_afternoon), entries in rows.items():
+            groups = [
+                f"{label} "
+                + ", ".join(
+                    f"{slot['start'].strftime('%I:%M %p').lstrip('0')} {slot['appointmentSlotRef']}"
+                    for slot in entries
+                    if slot["shared"] is shared
+                )
+                for label, shared in (("open", False), ("shared", True))
+                if any(slot["shared"] is shared for slot in entries)
+            ]
+            lines.append(
+                f"  {provider} {'afternoon' if is_afternoon else 'morning'}: "
+                + "; ".join(groups)
+            )
+    return lines
 
 
 def failed(noun: str) -> dict:

@@ -5,42 +5,9 @@ from typing import Annotated, Literal
 
 from pydantic import Field, TypeAdapter
 
-from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.integrations.middleware import Middleware, OfficeKey
 from abita_s2s.integrations.transport import Request
-from abita_s2s.records import Record, Text
-
-
-class Appointment(Record):
-    id: int
-    date: Text
-    time: Text
-    provider: str = ""
-    type: str = ""
-    facility: str = ""
-    visitType: CoverageType | None = None
-    officeId: str | None = None
-    cancellationToken: str | None = None
-    rescheduleToken: str | None = None
-
-
-class Candidate(Record):
-    status: Literal["candidate"]
-    patientId: Text
-    firstName: Text
-    dob: Text
-
-
-class Receipt(Record):
-    status: Literal["verified"]
-    patientId: Text
-    name: Text
-    dob: Text
-    insuranceCarrier: str | None = None
-    insuranceCarrierId: str | None = None
-    insuranceNote: str | None = None
-    appointmentsStatus: Literal["found", "none", "error"]
-    appointments: list[Appointment]
+from abita_s2s.records import Candidate, Receipt, Record, Text
 
 
 class Multiple(Record):

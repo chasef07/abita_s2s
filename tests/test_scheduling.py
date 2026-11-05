@@ -19,15 +19,13 @@ from test_patient_resolution import CONFIG, call_state, receipt
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.identity import PatientResolver
-from abita_s2s.integrations.patient_middleware import (
-    PatientMiddleware,
-    Receipt,
-)
+from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.integrations.scheduling_http import (
     RescheduleReceipt,
     SchedulingFailure,
     SchedulingHTTP,
     SchedulingOutcome,
+    Slot,
     WriteReceipt,
 )
 from abita_s2s.offices import (
@@ -36,6 +34,7 @@ from abita_s2s.offices import (
     SPRING_HILL,
     get_office_profile,
 )
+from abita_s2s.records import Receipt
 from abita_s2s.runtime.reporting import CallReporter
 from abita_s2s.scheduling.answers import BookOutcome, CancelOutcome, MoveOutcome
 from abita_s2s.scheduling.appointments import Scheduling
@@ -141,6 +140,40 @@ def speech_context(state):
         wait_for_playout=AsyncMock(),
         session=SimpleNamespace(generate_reply=Mock(return_value=speech)),
     )
+
+
+class SlotRecordTests(unittest.TestCase):
+    def test_slot_validates_provider_and_start_at_the_boundary(self):
+        fields = dict(time="9:00 PM", bookingToken="token")
+        offset = Slot(
+            provider=" Dr. Austin Bach (Overflow) ",
+            datetime="2026-09-16T01:00:00+00:00",
+            **fields,
+        )
+        naive = Slot(provider="Dr. D. Noel", datetime="2026-09-15T21:00", **fields)
+        self.assertEqual(offset.provider, "Dr. Bach")
+        self.assertEqual(naive.provider, "Dr. Noel")
+        self.assertEqual(offset.start, naive.start)
+        self.assertEqual(naive.start.tzname(), "EDT")
+        self.assertEqual(offset.date, "2026-09-16")
+        self.assertEqual(
+            offset,
+            Slot(
+                provider="Dr. Bach",
+                datetime="2026-09-16T01:00:00+00:00",
+                **fields,
+            ),
+        )
+
+    def test_receipt_provider_is_normalized_and_may_be_blank(self):
+        self.assertEqual(
+            WriteReceipt(status="booked", providerName="Dr. J. Licht").providerName,
+            "Dr. Licht",
+        )
+        self.assertEqual(
+            WriteReceipt(status="booked", providerName="").providerName, ""
+        )
+        self.assertIsNone(WriteReceipt(status="booked").providerName)
 
 
 class SchedulingTests(unittest.IsolatedAsyncioTestCase):
@@ -390,7 +423,9 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(requests[0][2]["authorization"], "test-auth")
         cached = await owner.availability("medical", PLAN, office="hollywood")
         self.assertEqual(len(requests), 1)
-        self.assertNotIn("private-signed-slot", json.dumps(cached))
+        self.assertNotIn(
+            "private-signed-slot", json.dumps(cached, default=datetime.isoformat)
+        )
 
     async def test_hollywood_routine_vision_announces_north_miami_beach_once(self):
         state = call_state(None, get_office_profile("hollywood"))
@@ -1656,6 +1691,24 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("success: The selected appointment was cancelled.", result)
         self.assertEqual(len(requests), 1)
         self.assertEqual(owner.state.patient.active.appointments, [])
+
+    async def test_loaded_appointment_says_the_short_name_and_reports_the_charts(self):
+        owner, _ = self.owner([{"status": "cancelled", "appointmentId": 77}])
+        chart = appointment(provider="Dr. Austin Bach (Overflow)")
+        verified(owner.state, appointmentsStatus="found", appointments=[chart])
+        listed = owner.appointments()[0]
+        self.assertEqual(listed["provider"], "Dr. Bach")
+        ref = listed["appointmentRef"]
+        confirm = await self.tool(
+            owner, "cancel_appointment", appointmentRef=ref, readBack=None
+        )
+        self.assertIn("with Dr. Bach before cancelling", confirm)
+        await self.tool(owner, "cancel_appointment", appointmentRef=ref, readBack=True)
+        evidence = owner.state.reporter.appointment.call_args.args[0]
+        self.assertEqual(
+            evidence["cancellationResult"]["providerName"],
+            "Dr. Austin Bach (Overflow)",
+        )
 
     async def test_vague_reason_is_preserved_and_booking_requires_confirmation(self):
         owner, requests = self.owner(

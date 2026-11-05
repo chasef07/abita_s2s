@@ -3,7 +3,6 @@
 from dataclasses import dataclass, field
 
 from abita_s2s.integrations.product import Product, Refusal
-from abita_s2s.offices import get_office_profile, get_product_office_key
 from abita_s2s.state import CallState
 
 
@@ -29,7 +28,7 @@ class HandoffAdmission:
 
     async def resolve(self) -> HandoffTarget:
         call = self.state.call
-        office = get_office_profile(call.called_office_key)
+        office = call.office
         if office.transfer_phone:
             return HandoffTarget(
                 office.transfer_phone,
@@ -43,7 +42,7 @@ class HandoffAdmission:
                 },
             )
         grant = await self.product.admit(
-            get_product_office_key(call.called_number or office.trunk_numbers[0]),
+            call.product_office_key,
             call.call_id,
             call.caller_phone or "",
         )

@@ -58,7 +58,7 @@ def call_state(office=SPRING_HILL):
         CallContext(
             call_id="test-call",
             session_started_at=datetime.now(UTC),
-            called_office_key=office.key,
+            office=office,
             caller_phone="+15555550101",
             called_number=office.trunk_numbers[0],
         )
