@@ -19,7 +19,7 @@ from abita_s2s.call_control import CallControl
 from abita_s2s.tools.call_control import CallControlTools
 from abita_s2s.config import Config, HandoffConfig, load_config
 from abita_s2s.handoff import HandoffAdmission
-from abita_s2s.integrations.patient_middleware import Receipt
+from abita_s2s.records import Receipt
 from abita_s2s.integrations.product import Product
 from abita_s2s.offices import SPRING_HILL, get_office_profile
 from abita_s2s.runtime.silence import BackendResponses

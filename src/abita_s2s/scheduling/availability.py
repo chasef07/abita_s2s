@@ -9,7 +9,6 @@ from abita_s2s.insurance import decision_answer
 from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.insurance_list import listed_plan
 from abita_s2s.insurance_state import insurance_ready
-from abita_s2s.integrations.patient_middleware import Appointment
 from abita_s2s.integrations.scheduling_http import (
     SchedulingFailure,
     SchedulingHTTP,
@@ -17,6 +16,7 @@ from abita_s2s.integrations.scheduling_http import (
     SlotSearch,
 )
 from abita_s2s.offices import EASTERN, get_office_profile, same_office
+from abita_s2s.records import Appointment
 from abita_s2s.results import reply
 from abita_s2s.state import CallState
 

@@ -19,24 +19,11 @@ from pydantic import (
 
 from abita_s2s.config import Config
 from abita_s2s.integrations.transport import Fault, Reply, Request, post
-from abita_s2s.records import Record
+from abita_s2s.records import Category, Record, Urgency
 
 STAFF_TASK_TIMEOUT = 10.0
 KNOWLEDGE_READ_TIMEOUT = 2.0
 HANDOFF_TIMEOUT = 2.0
-
-Category = Literal[
-    "appointments",
-    "documentation",
-    "medication",
-    "optical",
-    "referrals",
-    "other",
-    "insurance",
-    "pre_op",
-    "post_op",
-]
-Urgency = Literal["high_priority", "normal", "non_urgent"]
 
 
 def _uuid(value: str) -> str:

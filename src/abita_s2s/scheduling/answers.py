@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from datetime import date
 from typing import Literal, assert_never
 
-from abita_s2s.integrations.patient_middleware import Appointment
+from abita_s2s.records import Appointment
 from abita_s2s.results import reply
 from abita_s2s.scheduling.availability import afternoon
 

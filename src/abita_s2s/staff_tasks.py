@@ -6,13 +6,7 @@ from typing import Literal
 from uuid import uuid4
 
 from abita_s2s.identity import PatientResolver
-from abita_s2s.integrations.product import (
-    Category,
-    Product,
-    StaffTask,
-    StaffTaskReceipt,
-    Urgency,
-)
+from abita_s2s.integrations.product import Product, StaffTask, StaffTaskReceipt
 from abita_s2s.name_matcher import names_match, phone_name_matches, same_patient
 from abita_s2s.offices import (
     e164,
@@ -20,6 +14,7 @@ from abita_s2s.offices import (
     get_product_office_key,
     us_trunk_number,
 )
+from abita_s2s.records import Category, Urgency
 from abita_s2s.results import reply
 from abita_s2s.state import CallState
 

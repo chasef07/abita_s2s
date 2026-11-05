@@ -1,12 +1,17 @@
 """Every module belongs to one layer and imports only the layers it may depend on."""
 
 import ast
+import re
 import unittest
 from importlib.util import resolve_name
 from pathlib import Path
 
 PACKAGE = Path(__file__).parents[1] / "src" / "abita_s2s"
 TYPE_CHECKING = ("TYPE_CHECKING", "typing.TYPE_CHECKING")
+TYPE_ONLY = {
+    "abita_s2s.insurance_list.OfficePlans",
+    "abita_s2s.runtime.reporting.CallReporter",
+}
 
 LAYERS = {
     "foundation": (
@@ -68,18 +73,23 @@ def layer_of(name: str) -> str | None:
     return next((layer for layer, names in LAYERS.items() if name in names), None)
 
 
-def runtime_imports(nodes, package: str):
-    """Imported names, resolving relative imports and skipping type-only blocks."""
+def checked_imports(nodes, package: str):
+    """Imported names, resolving relative imports. Only TYPE_ONLY may skip the layers."""
     for node in nodes:
         if isinstance(node, ast.If) and ast.unparse(node.test) in TYPE_CHECKING:
-            yield from runtime_imports(node.orelse, package)
+            yield from (
+                name
+                for name in checked_imports(node.body, package)
+                if name not in TYPE_ONLY
+            )
+            yield from checked_imports(node.orelse, package)
             continue
         if isinstance(node, ast.Import):
             yield from (alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
             module = resolve_name("." * node.level + (node.module or ""), package)
             yield from (f"{module}.{alias.name}" for alias in node.names)
-        yield from runtime_imports(ast.iter_child_nodes(node), package)
+        yield from checked_imports(ast.iter_child_nodes(node), package)
 
 
 def target(module: str) -> str:
@@ -105,7 +115,7 @@ class LayerTests(unittest.TestCase):
             self.assertIsNotNone(layer, f"Assign {parts[0]} to a layer in LAYERS")
             package = ".".join(("abita_s2s", *parts[:-1]))
             forbidden = FORBIDDEN[layer]
-            for module in runtime_imports(ast.parse(path.read_text()).body, package):
+            for module in checked_imports(ast.parse(path.read_text()).body, package):
                 name = target(module)
                 for f in forbidden:
                     if name == f or name.startswith(f + "."):
@@ -114,3 +124,11 @@ class LayerTests(unittest.TestCase):
                             + (f"; {FIXES[f]}" if f in FIXES else "")
                         )
         self.assertEqual(violations, [])
+
+    def test_type_only_exemptions_are_still_imported(self):
+        sources = "".join(path.read_text() for path in PACKAGE.rglob("*.py"))
+        for name in TYPE_ONLY:
+            module, _, imported = name.rpartition(".")
+            self.assertRegex(
+                sources, rf"from {re.escape(module)} import [^\n]*\b{imported}\b"
+            )

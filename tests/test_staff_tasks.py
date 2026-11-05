@@ -15,7 +15,8 @@ from abita_s2s.agent import AbitaAgent
 from abita_s2s.config import Config, load_config
 from abita_s2s.identity import PatientResolver
 from abita_s2s.integrations.product import Product
-from abita_s2s.integrations.patient_middleware import Failure, Receipt
+from abita_s2s.integrations.patient_middleware import Failure
+from abita_s2s.records import Receipt
 from abita_s2s.offices import get_office_profile
 from abita_s2s.staff_tasks import StaffTasks, _same_patient
 from owner_fixtures import call_owners

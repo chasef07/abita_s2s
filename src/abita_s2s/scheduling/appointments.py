@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal, assert_never
 
-from abita_s2s.integrations.patient_middleware import Appointment, Receipt
 from abita_s2s.integrations.scheduling_http import (
     Booking,
     Cancellation,
@@ -18,6 +17,7 @@ from abita_s2s.integrations.scheduling_http import (
     WriteReceipt,
 )
 from abita_s2s.offices import get_office_profile
+from abita_s2s.records import Appointment, Receipt
 from abita_s2s.results import reply
 from abita_s2s.scheduling import answers
 from abita_s2s.scheduling.answers import (

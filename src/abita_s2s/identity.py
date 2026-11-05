@@ -4,13 +4,12 @@ import asyncio
 
 from abita_s2s.insurance_list import chart_plans
 from abita_s2s.integrations.patient_middleware import (
-    Candidate,
     Multiple,
     NotFound,
     PatientMiddleware,
-    Receipt,
     ResolveRequest,
 )
+from abita_s2s.records import Candidate, Receipt
 from abita_s2s.name_matcher import (
     dob_matches,
     exact_name,

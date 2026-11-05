@@ -17,7 +17,8 @@ from abita_s2s.identity import (
     PatientResolver,
 )
 from abita_s2s.insurance_list import OfficePlans
-from abita_s2s.integrations.patient_middleware import PatientMiddleware, Receipt
+from abita_s2s.integrations.patient_middleware import PatientMiddleware
+from abita_s2s.records import Receipt
 from abita_s2s.name_matcher import phone_name_matches
 from abita_s2s.offices import SPRING_HILL
 from abita_s2s.staff_tasks import _same_patient

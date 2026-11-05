@@ -5,13 +5,9 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from abita_s2s.insurance_state import InsuranceState
+from abita_s2s.records import Appointment, Candidate, Receipt
 
 if TYPE_CHECKING:
-    from abita_s2s.integrations.patient_middleware import (
-        Appointment,
-        Candidate,
-        Receipt,
-    )
     from abita_s2s.runtime.reporting import CallReporter
 
 
@@ -35,11 +31,11 @@ class PatientState:
     tests/test_state_ownership.py names the modules that may call each method.
     """
 
-    candidates: tuple["Candidate | Receipt", ...] = ()
-    active: "Receipt | None" = None
+    candidates: tuple[Candidate | Receipt, ...] = ()
+    active: Receipt | None = None
     revision: int = 0
 
-    def activate(self, receipt: "Receipt") -> None:
+    def activate(self, receipt: Receipt) -> None:
         """Make a verified chart active. A different patient starts a new revision."""
         if self.active is None or self.active.patientId != receipt.patientId:
             self.revision += 1
@@ -54,7 +50,7 @@ class PatientState:
         self.active = self._chart().model_copy(update={"insuranceCarrier": carrier})
         self.revision += 1
 
-    def update_appointments(self, appointments: "list[Appointment]") -> None:
+    def update_appointments(self, appointments: list[Appointment]) -> None:
         """Apply confirmed appointment writes. Stale appointments stay stale until a reload."""
         active = self._chart()
         if appointments == active.appointments:
@@ -72,11 +68,11 @@ class PatientState:
         """Revoke the loaded appointments' authority until identity reloads the chart."""
         self.active = self._chart().model_copy(update={"appointmentsStatus": "error"})
 
-    def record_candidates(self, candidates: tuple["Candidate | Receipt", ...]) -> None:
+    def record_candidates(self, candidates: tuple[Candidate | Receipt, ...]) -> None:
         """Keep the caller-phone lookup's well-formed candidates, or none."""
         self.candidates = candidates
 
-    def _chart(self) -> "Receipt":
+    def _chart(self) -> Receipt:
         if self.active is None:
             raise RuntimeError("No active chart to change")
         return self.active

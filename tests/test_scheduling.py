@@ -18,10 +18,8 @@ from test_patient_resolution import CONFIG, call_state, receipt
 from abita_s2s.agent import AbitaAgent
 from owner_fixtures import call_owners
 from abita_s2s.identity import PatientResolver
-from abita_s2s.integrations.patient_middleware import (
-    PatientMiddleware,
-    Receipt,
-)
+from abita_s2s.integrations.patient_middleware import PatientMiddleware
+from abita_s2s.records import Receipt
 from insurance_fixtures import decision
 from abita_s2s.offices import (
     HOLLYWOOD_ROUTINE_OFFICE_CHOICE,
