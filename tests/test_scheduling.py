@@ -10,28 +10,16 @@ from typing import get_args
 from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
+from insurance_fixtures import decision
 from livekit.agents import AgentSession, llm
 from livekit.agents.llm.tool_context import ToolContext
 from livekit.agents.llm.utils import build_strict_openai_schema
+from owner_fixtures import call_owners
 from test_patient_resolution import CONFIG, call_state, receipt
 
 from abita_s2s.agent import AbitaAgent
-from owner_fixtures import call_owners
 from abita_s2s.identity import PatientResolver
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
-from abita_s2s.records import Receipt
-from insurance_fixtures import decision
-from abita_s2s.offices import (
-    HOLLYWOOD_ROUTINE_OFFICE_CHOICE,
-    HOLLYWOOD_ROUTINE_OFFICE_FOLLOW_UP,
-    SPRING_HILL,
-    get_office_profile,
-)
-from abita_s2s.tools.scheduling import SchedulingTools
-from abita_s2s.scheduling.answers import BookOutcome, CancelOutcome, MoveOutcome
-from abita_s2s.runtime.reporting import CallReporter
-from abita_s2s.scheduling.appointments import Scheduling
-from abita_s2s.scheduling.availability import SHARED_OFFICE_CHOICE
 from abita_s2s.integrations.scheduling_http import (
     RescheduleReceipt,
     SchedulingFailure,
@@ -40,6 +28,18 @@ from abita_s2s.integrations.scheduling_http import (
     Slot,
     WriteReceipt,
 )
+from abita_s2s.offices import (
+    HOLLYWOOD_ROUTINE_OFFICE_CHOICE,
+    HOLLYWOOD_ROUTINE_OFFICE_FOLLOW_UP,
+    SPRING_HILL,
+    get_office_profile,
+)
+from abita_s2s.records import Receipt
+from abita_s2s.runtime.reporting import CallReporter
+from abita_s2s.scheduling.answers import BookOutcome, CancelOutcome, MoveOutcome
+from abita_s2s.scheduling.appointments import Scheduling
+from abita_s2s.scheduling.availability import SHARED_OFFICE_CHOICE
+from abita_s2s.tools.scheduling import SchedulingTools
 
 NOW = datetime(2026, 9, 14, 17, tzinfo=UTC)
 REF = r"[A-Z]{3}[0-9]{2}-[0-9]{4}-[A-Z]+(?:-[0-9]+)?"
@@ -2649,7 +2649,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             {"insuranceDecision": decision("Test Insurance")},
         ):
             with self.subTest(body=body):
-                owner, requests = self.owner(
+                owner, _ = self.owner(
                     [
                         {
                             "status": "success",

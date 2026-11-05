@@ -19,7 +19,7 @@ class Request(Record):
     model_config = ConfigDict(extra="forbid")
 
 
-class Reply(NamedTuple, Generic[Body]):
+class Reply(NamedTuple, Generic[Body]):  # noqa: UP046
     """An HTTP answer; `body` is None when it does not parse as the expected reply."""
 
     code: int

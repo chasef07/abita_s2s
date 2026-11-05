@@ -9,10 +9,10 @@ import httpx
 from test_patient_resolution import call_state
 from test_scheduling import PLAN, verified
 
-from abita_s2s.offices import get_office_profile
-from abita_s2s.tools.scheduling import SchedulingTools
-from abita_s2s.scheduling.appointments import Scheduling
 from abita_s2s.integrations.scheduling_http import SchedulingHTTP
+from abita_s2s.offices import get_office_profile
+from abita_s2s.scheduling.appointments import Scheduling
+from abita_s2s.tools.scheduling import SchedulingTools
 
 
 async def main(url):

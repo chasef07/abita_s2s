@@ -11,19 +11,18 @@ import httpx
 from livekit.agents import AgentSession, llm
 from livekit.agents.voice.events import CloseEvent, CloseReason
 from livekit.agents.voice.report import SessionReport
-from test_patient_resolution import CONFIG, call_state
+from test_call_labels import choice
+from test_patient_resolution import CONFIG, call_state, receipt
 
 from abita_s2s.budgets import CLOSEOUT, FINISH, RETRY_PAUSE
 from abita_s2s.config import load_config
-from abita_s2s.observability.judges import JURORS
+from abita_s2s.identity import PatientResolver
+from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.observability.call_labels import INTENT_CRITERIA, OUTCOME_CRITERIA
-from test_call_labels import choice
+from abita_s2s.observability.judges import JURORS
 from abita_s2s.offices import get_office_profile
 from abita_s2s.runtime.reporting import CallReporter, ReportingError
 from abita_s2s.staff_tasks import Draft, StaffTasks
-from abita_s2s.identity import PatientResolver
-from abita_s2s.integrations.patient_middleware import PatientMiddleware
-from test_patient_resolution import receipt
 
 ACK = {"status": "created", "interactionId": "d3665980-68ce-4336-87af-e2ba40ad2e8e"}
 REPORT = {
@@ -550,7 +549,8 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                 )
 
     async def test_final_staff_receipt_is_in_closeout_including_failed_delivery(self):
-        from test_staff_tasks import StaffTaskTests, NEED, receipt as task_receipt
+        from test_staff_tasks import NEED, StaffTaskTests
+        from test_staff_tasks import receipt as task_receipt
 
         for status in (201, 403):
 

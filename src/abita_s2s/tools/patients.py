@@ -5,8 +5,8 @@ from typing import Literal
 from livekit.agents import RunContext, function_tool
 
 from abita_s2s.identity import PatientResolver
-from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.insurance import InsuranceRegistration, Registration, staff
+from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.scheduling.appointments import Scheduling
 from abita_s2s.state import CallState
 from abita_s2s.tools.context import bound

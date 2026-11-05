@@ -12,8 +12,8 @@ from abita_s2s.integrations.patient_middleware import (
     PatientMiddleware,
     ResolveRequest,
 )
-from abita_s2s.records import Receipt
 from abita_s2s.offices import OFFICES
+from abita_s2s.records import Receipt
 
 
 class PatientMiddlewareTests(unittest.IsolatedAsyncioTestCase):

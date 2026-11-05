@@ -29,8 +29,8 @@ from abita_s2s.scheduling.answers import (
     MoveOutcome,
 )
 from abita_s2s.scheduling.availability import (
-    Offers,
     OfferedSlot,
+    Offers,
     SchedulingContext,
     scheduling_context,
 )

@@ -11,8 +11,8 @@ from uuid import UUID
 import httpx
 
 from abita_s2s.budgets import CLOSEOUT, FINISH, RETRY_PAUSE, SEND
-from abita_s2s.observability.evaluation import evaluate_call
 from abita_s2s.config import Config
+from abita_s2s.observability.evaluation import evaluate_call
 from abita_s2s.state import CallContext
 
 logger = logging.getLogger(__name__)

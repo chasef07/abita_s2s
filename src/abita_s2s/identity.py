@@ -9,7 +9,6 @@ from abita_s2s.integrations.patient_middleware import (
     PatientMiddleware,
     ResolveRequest,
 )
-from abita_s2s.records import Candidate, Receipt
 from abita_s2s.name_matcher import (
     dob_matches,
     exact_name,
@@ -19,6 +18,7 @@ from abita_s2s.name_matcher import (
     phone_name_matches,
     same_patient,
 )
+from abita_s2s.records import Candidate, Receipt
 from abita_s2s.results import reply
 from abita_s2s.state import CallState
 

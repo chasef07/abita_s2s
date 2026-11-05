@@ -10,6 +10,7 @@ import httpx
 from insurance_fixtures import decision, listed, office_plans
 from livekit.agents.llm.tool_context import ToolContext
 from livekit.agents.llm.utils import build_strict_openai_schema
+from owner_fixtures import call_owners
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.config import Config
@@ -18,12 +19,11 @@ from abita_s2s.identity import (
 )
 from abita_s2s.insurance_list import OfficePlans
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
-from abita_s2s.records import Receipt
 from abita_s2s.name_matcher import phone_name_matches
 from abita_s2s.offices import SPRING_HILL
+from abita_s2s.records import Receipt
 from abita_s2s.staff_tasks import _same_patient
 from abita_s2s.state import CallContext, CallState
-from owner_fixtures import call_owners
 
 DOB = "01/02/1980"
 SAME_PATIENT = (

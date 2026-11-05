@@ -56,7 +56,7 @@ jobs:
               exit 1
             fi
           done
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Select immutable release commit and verify assets
@@ -86,7 +86,7 @@ jobs:
           Path('livekit.toml').write_text('[project]\nsubdomain = ' + json.dumps(os.environ['SUBDOMAIN']) + '\n[agent]\nid = ' + json.dumps(os.environ['ABITA_S2S_AGENT_ID']) + '\n')
           PY
       - run: uv run --locked python scripts/deploy.py "$ACTION" --config livekit.toml --release dist --commit "$COMMIT" --version "$VERSION"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: deployment-record-${{ github.run_id }}
           path: deployment-record.json

@@ -1,25 +1,25 @@
 import asyncio
-from contextlib import nullcontext
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import nullcontext
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, PropertyMock, patch
 
 import httpx
+from owner_fixtures import call_owners
 from test_insurance_list import plan, plans_reply
 from test_knowledge import KNOWLEDGE
 
 from abita_s2s.agent import AbitaAgent
-from owner_fixtures import call_owners
 from abita_s2s.config import Config
 from abita_s2s.insurance_list import UNAVAILABLE as INSURANCE_UNAVAILABLE
-from abita_s2s.knowledge import UNAVAILABLE
 from abita_s2s.integrations.patient_middleware import NotFound
+from abita_s2s.knowledge import UNAVAILABLE
 from abita_s2s.offices import (
     OFFICES,
     SHARED_SCHEDULING_OFFICES,

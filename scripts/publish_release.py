@@ -2,10 +2,11 @@
 
 import argparse
 import json
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 from release import digest, run
+
 from abita_s2s.release import COMPONENTS
 
 

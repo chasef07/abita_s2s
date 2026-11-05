@@ -7,13 +7,13 @@ secret upload, image upload or implicit production selection is implemented here
 import argparse
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import time
 import tomllib
+from pathlib import Path
 
-from release import component_version, component_files, digest
+from release import component_files, component_version, digest
 
 from abita_s2s.release import COMPONENTS, checksums, content_digest
 
