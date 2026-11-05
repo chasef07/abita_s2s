@@ -2,7 +2,7 @@
 
 import asyncio
 from dataclasses import dataclass
-from typing import Literal, get_args
+from typing import Literal
 from uuid import uuid4
 
 from abita_s2s.identity import PatientResolver
@@ -161,18 +161,10 @@ class StaffTasks:
             )
         if not self._product.staff_tasks_configured:
             raise ValueError("Staff delivery is not configured. No request was sent.")
-        if category not in get_args(Category):
-            raise ValueError(
-                "Product does not support this category. No request was sent. Do not relabel it to bypass this restriction; offer office help."
-            )
         summary, message = summary.strip(), message.strip()
-        if (
-            urgency not in ("high_priority", "normal", "non_urgent")
-            or not 1 <= len(summary) <= 240
-            or not 1 <= len(message) <= 2500
-        ):
+        if not 1 <= len(summary) <= 240 or not 1 <= len(message) <= 2500:
             raise ValueError(
-                "No request was sent. Use a supported urgency, a summary up to 240 characters and details up to 2500 characters. Preserve essential intake and missing details."
+                "No request was sent. Use a summary up to 240 characters and details up to 2500 characters. Preserve essential intake and missing details."
             )
         phone = e164(call.caller_phone)
         if not phone or not 1 <= len(call.call_id) <= 255:

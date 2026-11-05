@@ -280,7 +280,6 @@ class InsuranceRegistration:
             patientId=result.patientId,
             name=result.name,
             dob=result.dob,
-            phone=r.phone or self.state.call.caller_phone,
             insuranceCarrier=plan.label if result.status == "created" else None,
             appointmentsStatus="none",
             appointments=[],

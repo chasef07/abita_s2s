@@ -75,44 +75,6 @@
                     "lineCount": 1
                 }
             }
-        ],
-        "./src/abita_s2s/tools/insurance.py": [
-            {
-                "code": "reportOptionalMemberAccess",
-                "range": {
-                    "startColumn": 39,
-                    "endColumn": 45,
-                    "lineCount": 1
-                }
-            }
-        ],
-        "./src/abita_s2s/tools/patients.py": [
-            {
-                "code": "reportOptionalMemberAccess",
-                "range": {
-                    "startColumn": 38,
-                    "endColumn": 45,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportOptionalMemberAccess",
-                "range": {
-                    "startColumn": 39,
-                    "endColumn": 42,
-                    "lineCount": 1
-                }
-            }
-        ],
-        "./src/abita_s2s/tools/staff_tasks.py": [
-            {
-                "code": "reportOptionalMemberAccess",
-                "range": {
-                    "startColumn": 35,
-                    "endColumn": 39,
-                    "lineCount": 1
-                }
-            }
         ]
     }
 }

@@ -5,7 +5,7 @@ from livekit.agents import RunContext
 
 def bound(owner, context: RunContext) -> bool:
     """Whether this call's session owns the per-call owner a tool delegates to."""
-    return owner is not None and owner.state is context.userdata
+    return owner.state is context.userdata
 
 
 async def say_only(context: RunContext, news: str) -> bool:

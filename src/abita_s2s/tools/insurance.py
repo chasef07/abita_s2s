@@ -9,7 +9,7 @@ from abita_s2s.tools.context import bound
 
 
 class InsuranceTools:
-    def __init__(self, insurance: InsuranceRegistration | None) -> None:
+    def __init__(self, insurance: InsuranceRegistration) -> None:
         self._insurance = insurance
 
     @function_tool

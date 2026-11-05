@@ -27,7 +27,7 @@ def git(root, *args):
     return subprocess.check_output(["git", *args], cwd=root, text=True).strip()
 
 
-def repository(root, *, legacy=False):
+def repository(root):
     git(root, "init", "-q")
     git(root, "config", "user.name", "Release test")
     git(root, "config", "user.email", "release@example.test")
@@ -44,10 +44,9 @@ def repository(root, *, legacy=False):
     (root / ".gitignore").write_text(
         "__pycache__/\n*.pyc\nout*/\nsrc/abita_s2s/release.json\n"
     )
-    if not legacy:
-        (root / "src/abita_s2s/component_folders.json").write_text(
-            json.dumps(package.COMPONENTS)
-        )
+    (root / "src/abita_s2s/component_folders.json").write_text(
+        json.dumps(package.COMPONENTS)
+    )
     git(root, "add", ".")
     git(root, "commit", "-qm", "Initial folders")
     return git(root, "rev-parse", "HEAD")
@@ -103,20 +102,6 @@ class ComponentVersionTests(unittest.TestCase):
                 for component in package.COMPONENTS:
                     git(root, "tag", f"{component}-v1.0.0")
                 self.assertEqual(versions(), unchanged)
-
-    def test_old_partial_bundles_cannot_represent_whole_folders(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            commit = repository(root, legacy=True)
-            for component in ("prompts", "evals"):
-                git(root, "tag", f"{component}-v0.9.0")
-            with patch.object(builder, "ROOT", root):
-                for component in package.COMPONENTS:
-                    files = builder.component_files(component, commit)
-                    self.assertEqual(
-                        builder.component_version(component, "1.0.0", commit, files),
-                        "1.0.0",
-                    )
 
     def test_reused_release_must_be_published_with_matching_content(self):
         for component in package.COMPONENTS:

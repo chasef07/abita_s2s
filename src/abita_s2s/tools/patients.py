@@ -15,9 +15,9 @@ from abita_s2s.tools.context import bound
 class PatientTools:
     def __init__(
         self,
-        resolver: PatientResolver | None,
-        insurance: InsuranceRegistration | None,
-        scheduling: Scheduling | None,
+        resolver: PatientResolver,
+        insurance: InsuranceRegistration,
+        scheduling: Scheduling,
     ) -> None:
         self._resolver = resolver
         self._insurance = insurance
@@ -45,8 +45,7 @@ class PatientTools:
         result = await self._resolver.resolve(
             firstName, dob, call_id=context.function_call.call_id
         )
-        appointments = self._scheduling.appointments_text() if self._scheduling else ""
-        return result["answer"] + appointments
+        return result["answer"] + self._scheduling.appointments_text()
 
     @function_tool
     async def add_patient(

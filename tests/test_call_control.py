@@ -23,7 +23,7 @@ from abita_s2s.integrations.patient_middleware import Receipt
 from abita_s2s.integrations.product import Product
 from abita_s2s.offices import SPRING_HILL, get_office_profile
 from abita_s2s.runtime.silence import BackendResponses
-from abita_s2s.tools.registry import Owners
+from owner_fixtures import call_owners
 
 
 class Model(llm.LLM):
@@ -159,7 +159,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.addAsyncCleanup(self.session.aclose)
         with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
             await self.session.start(
-                agent=AbitaAgent(Owners(SPRING_HILL, call_control=self.control))
+                agent=AbitaAgent(call_owners(SPRING_HILL, call_control=self.control))
             )
 
     async def run_tool(self, name):

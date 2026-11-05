@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal, assert_never
 
-from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.integrations.patient_middleware import Appointment, Receipt
 from abita_s2s.integrations.scheduling_http import (
     Booking,
@@ -88,14 +87,11 @@ def booked_appointment(
         time=slot.time,
         provider=provider_name(receipt.providerName or slot.provider),
         facility=receipt.locationName or get_office_profile(office).display_name,
-        office=receipt.office,
         officeId=receipt.officeId,
         visitType=receipt.visitType,
         cancellationToken=receipt.cancellationToken,
         type=receipt.appointmentTypeName or "Appointment",
-        appointmentTypeId=receipt.appointmentTypeId,
         rescheduleToken=receipt.rescheduleToken,
-        confirmed=True,
     )
 
 
@@ -255,10 +251,6 @@ class Scheduling:
             office,
             writing=bool(self._write_task and not self._write_task.done()),
         )
-
-    @property
-    def closed(self) -> bool:
-        return self._closed
 
     async def book(
         self,
@@ -499,12 +491,6 @@ class Scheduling:
                     and not self._cancelled(p.patientId, saved.booked.id)
                 ):
                     return self._replay(p, saved)
-        if not insurance_ready(self.state):
-            self._offers.invalidate()
-            return reply(
-                "needs_input",
-                "needs_input: Finish new-patient registration or resolve the pending or uncertain insurance update before booking.",
-            )
         if old and old.visitType is None:
             return reply(
                 "needs_staff_review",
