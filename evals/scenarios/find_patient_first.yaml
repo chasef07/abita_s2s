@@ -1,0 +1,100 @@
+name: Find the patient first
+# Regression: 2026-11-05 production calls saved 52 of 79 staff drafts with no patient
+# and told callers it could not see appointments. Sandbox fixtures as in
+# insurance_plan_ids.yaml: Maya Singleproof, DOB 05/12/1985, +12025550148, one upcoming
+# visit. Simulation disables staff task delivery, so save_staff_task may report a
+# failure; grade the tool calls. Makes no chart or booking writes.
+scenarios:
+  - label: Caller forgot their appointment time
+    instructions: >
+      You are Maya Singleproof, born May 12, 1985. Open with: "Hi, I forgot what time my
+      appointment is. Can you tell me?" Give your first name when asked and DOB if asked.
+      Once told the date and time, thank the agent and say goodbye. If offered a staff
+      request instead, accept and say goodbye.
+    agent_expectations: >
+      Asks for the patient's name, calls resolve_patient, and tells the caller the date
+      and time of their upcoming visit from the result. Does not say it cannot check
+      appointments, and does not call save_staff_task.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Caller is running late
+    instructions: >
+      You are Maya Singleproof, born May 12, 1985. Open with: "Hi, I'm running about twenty
+      minutes late." Give your first name when asked and DOB if asked. If asked whether you
+      need anything else, say no and goodbye. If told a request could not be sent, say okay,
+      that's fine, and goodbye.
+    agent_expectations: >
+      Calls resolve_patient for the patient before any save_staff_task call, so any staff
+      note is tied to an identified patient. A save_staff_task result saying delivery is not configured is expected in this simulation and is not a failure, and neither is the agent saying so.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Named caller with a contact lens request
+    instructions: >
+      Open with: "Hi, this is Maya Singleproof. My trial contact lenses made things worse and
+      I'd like the optical team to call me." You were born May 12, 1985. It is not urgent.
+      Do not ask for a person. Accept a staff request if offered. If told a request could
+      not be sent, decline any transfer and say goodbye.
+    agent_expectations: >
+      Calls resolve_patient using the name the caller gave before calling save_staff_task
+      with category optical. Does not ask the caller for their first name again as if it
+      had not been given, other than the date of birth the lookup needs. A save_staff_task result saying delivery is not configured is expected in this simulation and is not a failure, and neither is the agent saying so.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Caller with an appointment was asked to call back about insurance
+    instructions: >
+      You are Maya Singleproof, born May 12, 1985. Open with: "I got two calls asking me to
+      call back about my insurance. I have an appointment coming up." You do not know any more
+      than that. Give your first name when asked and DOB if asked. Accept a staff request if
+      offered. If told a request could not be sent, say that's fine and goodbye.
+    agent_expectations: >
+      Calls resolve_patient before calling save_staff_task, so staff know which patient
+      called. Mentions the upcoming visit from the result or otherwise uses it. A save_staff_task result saying delivery is not configured is expected in this simulation and is not a failure, and neither is the agent saying so.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Parent wants a visit confirmed and a referral answer
+    instructions: >
+      You are calling for your daughter Maya Singleproof, born May 12, 1985. Open with: "Hi,
+      my daughter has an appointment coming up. I'd like to confirm it, and do we need a
+      referral?" Give her first name when asked and her DOB if asked. Accept a staff request
+      for the referral question if offered. If told a request could not be sent, say that's
+      fine and goodbye.
+    agent_expectations: >
+      Calls resolve_patient and confirms the upcoming visit's date and time from the result on
+      the call instead of leaving the confirmation to staff. A save_staff_task result saying delivery is not configured is expected in this simulation and is not a failure, and neither is the agent saying so.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Contrast vendor leaves a message without a patient
+    instructions: >
+      You are Sam Vendor from a lens supply company. Open with: "Hi, I'm a sales rep with a
+      lens supplier. Can I leave a message for your office manager?" Your callback number is the one
+      you are calling from. Do not ask for a transfer. Accept a staff request. If told it could not be
+      sent, say that's fine and goodbye.
+    agent_expectations: >
+      Does not ask for a patient's name or date of birth, does not call resolve_patient, and
+      offers or saves a staff request for the message. A save_staff_task result saying delivery is not configured is expected in this simulation and is not a failure, and neither is the agent saying so.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550186'
+
+  - label: Contrast office hours need no lookup
+    instructions: >
+      Open with: "Hi, what time do you close on Friday?" After the answer, thank the agent and say goodbye.
+    agent_expectations: >
+      Answers 1 PM from office knowledge and does not ask for a patient's name or call
+      resolve_patient.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550187'
+      office_knowledge:
+        - title: Hours
+          text: Monday to Thursday 8:00 AM to 5:00 PM. Friday 8:00 AM to 1:00 PM. Closed Saturday and Sunday.

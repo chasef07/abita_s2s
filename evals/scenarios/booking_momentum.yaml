@@ -1,0 +1,152 @@
+name: Booking momentum
+# Regression: 2026-11-05 production calls lost booking callers before any date was
+# offered. Sandbox fixtures as in insurance_plan_ids.yaml: Maya Singleproof, DOB
+# 05/12/1985, +12025550148, at Spring Hill with carrier AETNA on file, Cigna Sure
+# Fit not confirmed yet, self-pay offered. New-patient callers stop at the read-back
+# so no chart is written. Nothing is booked.
+scenarios:
+  - label: Caller asks who they would see in the middle of intake
+    instructions: >
+      You are a new patient named Dana Referral who has never been to this office.
+      Open with: "Hi, I need to schedule an appointment, my rheumatologist referred me
+      because of a medication." Answer the first question you are asked with "A medical
+      eye check." The next time the agent asks you anything, do not answer it; say "But
+      who would I be seeing?" If it names a doctor, say "Okay, and is that doctor good
+      with medication checks?" If it does not name a doctor, ask again "Who would I be
+      seeing?" After it has answered both, say your plan is Humana Medicare PPO. When the
+      agent asks you to spell your name, say you need to call back and end the call.
+    agent_expectations: >
+      Answers each of the caller's questions directly in its very next reply, naming Dr.
+      Lena Moss from office knowledge, before returning to its own questions. Does not ask
+      about the reason for the visit more than once after the caller has said it is a
+      medical eye check for a medication.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550181'
+      office_knowledge:
+        - title: Providers
+          text: >-
+            Dr. Lena Moss is a comprehensive ophthalmologist and sees patients for
+            medication-related eye checks and referrals from other doctors. Dr. Omar
+            Reed is an optometrist who does glasses and contact lens exams.
+
+  - label: Caller offers self-pay when their plan cannot be confirmed
+    instructions: >
+      You are a new patient named Kit Fallback who has never been to this office.
+      Open with: "Hi, I need to book an appointment for dry, itchy eyes." If asked
+      about insurance say only "I have Cigna Sure Fit." When the agent says it cannot confirm
+      that plan and offers a staff request, say "Okay, sure." Right after the agent notes the request or
+      asks anything else, say "If it doesn't cover it, I'll just pay myself. I'd like to book for next
+      Wednesday." Do not mention paying yourself before then. If asked for details: spell K-I-T, F-A-L-L-B-A-C-K, born March 3, 1984; address
+      40 Palm Court, Spring Hill, Florida 34609; this phone number is fine; no email;
+      female. When the agent asks whether you are male or female, or starts reading your
+      details back, say "Sorry, I have to run, I'll call back" and end the call.
+    agent_expectations: >
+      After the caller says they will pay themselves, continues registration as self-pay: it
+      goes on to ask for the caller's name and address, and keeps collecting details until the
+      caller leaves. The caller leaving during intake is expected and is not a failure. Never asks for a member ID. Does not tell the caller that coverage
+      must be verified before registration can continue, and does not end the
+      booking at a staff request.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550182'
+
+  - label: New patient has no member ID when asked
+    instructions: >
+      You are a new patient named Theo Nocard who has never been to this office,
+      calling for your son. Open with: "Hi, I need a medical eye visit for my son,
+      his eyelid is a little swollen, no pain and no vision changes." His insurance is Humana
+      Medicare PPO. Spell his name T-H-E-O, N-O-C-A-R-D, born May 13, 2016. When asked
+      for the member ID say "I don't have the card or the number with me and I can't get it
+      today. His name is on the card." If asked for an address or email, give
+      9 Wren Lane, Spring Hill, Florida 34609 and no email. If offered a staff request,
+      accept, then say goodbye.
+    agent_expectations: >
+      As soon as the caller says the member ID is not available, offers a staff
+      request for help finishing registration in that same reply or the next one,
+      and does not go on to ask for the mailing address, phone, email, or sex first.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550183'
+
+  - label: Existing patient objects to the plan question
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
+      Open with: "Hi, I'm an existing patient. I'd like the next open appointment for a new
+      glaucoma check, separate from the visit I already have." Give your first name when asked and DOB only if needed. If
+      asked which insurance plan you have, say "You have my insurance on file. I'm an
+      existing patient." If the agent explains why it needs the plan name from the card,
+      say "Oh okay, it's Aetna Medicare PPO." If it asks the plan again with no
+      explanation, say "I don't understand why you need that, can I talk to a person?"
+      Once you hear actual dates and times, say you will check your calendar and call
+      back, then end. Your insurance has not changed.
+    agent_expectations: >
+      When the caller says the insurance is on file, acknowledges that and briefly
+      explains why it still needs the plan name from the card, in a friendly way,
+      without offering a staff request or transfer. After the caller names the plan,
+      searches openings with insurancePlanId aetna-medicare-ppo and reads real times.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Severity question is asked once
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
+      Open with: "Hi, I need a new appointment, separate from the one I have, my eye has been
+      hurting on and off for a couple of weeks." If asked whether it is sudden or severe, say "No, not severe,
+      it just comes and goes and gets worse when I read." If asked again about pain,
+      severity, sudden changes, halos, or nausea, say "You already asked me that." Your
+      plan is Aetna Medicare PPO and has not changed. Give your first name when asked and DOB
+      only if needed. Once you hear actual dates and times, say you will check your
+      calendar and call back, then end.
+    agent_expectations: >
+      Asks about sudden or severe symptoms at most once, accepts the answer, and moves
+      on to the booking. Does not transfer. Searches medical openings and reads real
+      times.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Caller says hello in English then asks in broken Spanish
+    instructions: >
+      You are a Spanish speaker who knows only a few English words. When the agent greets you,
+      say "Hello." Then, after the agent replies, say "Necesito hacer un appointment." After that
+      answer anything only in Spanish. After the agent has replied to you twice more, say "Gracias,
+      llamo después" and end the call. Never ask the agent to switch languages.
+    agent_expectations: >
+      Replies in Spanish from its first reply after "Necesito hacer un appointment" and stays in
+      Spanish, without being asked to switch.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550184'
+
+  - label: Caller says the soonest opening is too far away
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
+      Open with: "Hi, I need the soonest new appointment you have for a glaucoma check, separate
+      from the visit I already have." Your
+      plan is Aetna Medicare PPO and has not changed. Give your first name when asked
+      and DOB only if needed. When you hear dates, say "That's too far out, I need
+      something much sooner, I'll probably try another doctor." If the agent offers to
+      have staff look for something sooner, accept and say goodbye. If it does not, say
+      "Okay, bye" and end.
+    agent_expectations: >
+      After the caller says the date is too far and they may go elsewhere, offers a
+      staff request to look for an earlier opening before ending the call, rather than
+      simply saying goodbye.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Contrast clean self-pay from the start
+    instructions: >
+      You are a new patient named Pia Plainpay who has never been to this office. Open
+      with: "Hi, I don't have insurance, I'll pay myself. My eyes have been dry for a few
+      months." Spell P-I-A, P-L-A-I-N-P-A-Y, born October 22, 1990; address 5 Lark Lane,
+      Spring Hill, Florida 34608; this number is fine; no email; female. When the
+      agent asks whether you are male or female, or starts reading details back, say "Sorry, I have to run, I'll call back" and end.
+    agent_expectations: >
+      Uses self-pay, never asks for a member ID or card holder, and keeps collecting intake details until the caller leaves. The caller leaving during intake is expected and is not a failure.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550185'
