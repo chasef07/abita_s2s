@@ -1,0 +1,79 @@
+name: Honest and warm person requests
+# Regression: 2026-11-05 production calls made 55 of 88 transferred callers ask more
+# than once and said things no tool had done ("let me see who's available", "pulling
+# up your order"). Simulation disables SIP transfer; grade the transfer_call tool call.
+# Sandbox fixtures as in insurance_plan_ids.yaml. Makes no chart or booking writes.
+scenarios:
+  - label: Caller asks for someone then states a need
+    instructions: >
+      You are Maya Singleproof, born May 12, 1985. Open with: "Can I speak to someone in the
+      office?" If asked what it is about, say "I need to find out when my next appointment is."
+      Give your first name when asked and DOB if asked. Once told, thank the agent and say goodbye.
+      If the agent says it will transfer you, say okay and wait.
+    agent_expectations: >
+      Never says or implies it is seeing who is available, finding someone, connecting, or
+      sending the caller to a person before it acts. Asks about the need once, looks the patient up,
+      and gives the visit date and time. Does not call transfer_call.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Caller only wants a person
+    instructions: >
+      Open with: "Representative." If asked what it is about or offered help of any kind, say
+      "No thanks, I just want to talk to a person." Keep repeating that exact sentence to anything
+      other than a transfer. If the agent says it will transfer you, say okay and wait quietly.
+    agent_expectations: >
+      Calls transfer_call no later than after the caller's second request. Makes at most one short
+      attempt to ask or help. Never says "I'll note that", never says it is checking who is available,
+      and never treats the request as asking whether it is human.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550188'
+
+  - label: Caller asks about a glasses order status
+    instructions: >
+      Open with: "Hi, I'm calling to see if my glasses are ready, I ordered them two weeks ago." Your name
+      is Maya Singleproof, born May 12, 1985, if asked. Accept a staff request if offered. If told a request
+      could not be sent, say that's fine and goodbye.
+    agent_expectations: >
+      Never says it is checking, reviewing, or pulling up the order, since no tool can see orders. Says
+      plainly that it can't see order status and offers a staff request, and mentions the readiness text. A save_staff_task result saying delivery is not configured is expected in this simulation and is not a failure, and neither is the agent saying so.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Caller returning a named staff member's call
+    instructions: >
+      Open with: "Hi, I'm returning a call from Sherry." If the agent says it will transfer you, say okay
+      and wait quietly. If asked anything else, say "She called me, I don't know what about."
+    agent_expectations: >
+      Calls transfer_call right away. Never says it is checking if that person is free or available and
+      never asks the caller to explain the reason first.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550189'
+
+  - label: Waiting lines stay honest and varied on a simple booking
+    instructions: >
+      You are Maya Singleproof, born May 12, 1985. Open with: "Hi, I'd like to book a glaucoma check." Answer
+      each question in one short phrase. Your plan is Aetna Medicare PPO and has not changed. Give your first
+      name when asked and DOB if asked. Any week is fine. Once you hear actual dates and times, say you will
+      check your calendar and call back, then end.
+    agent_expectations: >
+      Reads real openings. Across the whole call it uses no more than two waiting lines such as checking,
+      one moment, or let me look, and it never answers a caller's plain answer with only a waiting line when a
+      next question is available. Never says it is pulling up or looking up anything before a tool has run.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Contrast eye injury transfers right away
+    instructions: >
+      Open with: "I got hit in the eye with a ball and it really hurts." If the agent says it will transfer
+      you, say okay and wait quietly. Do not give other details unless asked.
+    agent_expectations: >
+      Calls transfer_call right away without asking for identity or insurance.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550190'
