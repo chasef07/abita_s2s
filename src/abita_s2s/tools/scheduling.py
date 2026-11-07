@@ -75,7 +75,7 @@ class SchedulingTools:
         context: RunContext[CallState],
         appointmentSlotRef: str,
         appointmentReason: str,
-        referringDoctor: str,
+        referringDoctor: str | None,
         readBack: Literal[True] | None,
         referringDoctorPhone: str | None = None,
         referringDoctorAddress: str | None = None,
@@ -89,8 +89,8 @@ class SchedulingTools:
             appointmentSlotRef: The slot reference copied from the result line whose time you read back.
             appointmentReason: The visit reason the caller already gave, in their words. Never diagnose.
             readBack: True only after the caller confirms the read-back; otherwise null.
-            referringDoctor: The referring doctor's name, or "none" if not referred or an
-                existing patient. Never narrate "none".
+            referringDoctor: The referring doctor's name, or null if not referred or an
+                existing patient.
             referringDoctorPhone: The referring doctor's phone, or null if unknown.
             referringDoctorAddress: The referring doctor's office address, or null if unknown.
         """
@@ -136,11 +136,8 @@ class SchedulingTools:
         context: RunContext[CallState],
         oldAppointmentRef: str,
         appointmentSlotRef: str,
-        referringDoctor: str,
         readBack: Literal[True] | None,
         appointmentReason: str | None = None,
-        referringDoctorPhone: str | None = None,
-        referringDoctorAddress: str | None = None,
     ) -> str:
         """Move a loaded appointment to a confirmed slot from a search that sent its reference.
 
@@ -150,12 +147,9 @@ class SchedulingTools:
             oldAppointmentRef: The private reference of the loaded appointment being moved,
                 the same one its search sent.
             appointmentSlotRef: As book_appointment describes.
-            referringDoctor: As book_appointment describes.
             readBack: True only after the caller confirms the old appointment and the new
                 date, time and provider; otherwise null.
             appointmentReason: Only a new reason the caller volunteered; never ask for one.
-            referringDoctorPhone: As book_appointment describes.
-            referringDoctorAddress: As book_appointment describes.
         """
         if not bound(self._scheduling, context):
             return UNAVAILABLE
@@ -163,9 +157,6 @@ class SchedulingTools:
             old_ref=oldAppointmentRef,
             slot_ref=appointmentSlotRef,
             reason=appointmentReason,
-            referrer=referringDoctor,
-            referrer_phone=referringDoctorPhone,
-            referrer_address=referringDoctorAddress,
             confirmed=readBack,
             call_id=context.function_call.call_id,
         )

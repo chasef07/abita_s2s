@@ -243,7 +243,6 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
                         visitCategory="medical",
                         appointmentReason="Blurry vision",
                         visitReason="Blurry vision",
-                        referringDoctor="none",
                     )
                 ),
                 {
@@ -254,7 +253,6 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
                     "visitCategory": "medical",
                     "appointmentReason": "Blurry vision",
                     "visitReason": "Blurry vision",
-                    "referringDoctor": "none",
                 },
             ),
             (
@@ -390,7 +388,6 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
                 visitCategory="medical",
                 appointmentReason="Blurry vision",
                 visitReason="Blurry vision",
-                referringDoctor="none",
             )
         )
         adapter = SchedulingHTTP(self.client(Recorder(*responses)), CONFIG)

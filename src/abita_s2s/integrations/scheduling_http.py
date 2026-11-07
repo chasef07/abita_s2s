@@ -58,7 +58,7 @@ class Booking(Request):
     visitCategory: CoverageType
     appointmentReason: str
     visitReason: str
-    referringDoctor: str
+    referringDoctor: str | None = None
     referringDoctorPhone: str | None = None
     referringDoctorAddress: str | None = None
     rescheduleToken: str | None = None

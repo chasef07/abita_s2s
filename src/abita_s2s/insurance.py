@@ -35,8 +35,7 @@ class Registration(Record):
     firstName: str
     lastName: str
     dob: str
-    phone: str | None
-    inboundPhoneConfirmed: Literal[True] | None
+    callback: str
     email: str | None
     street: str
     aptSuite: str | None
@@ -176,20 +175,22 @@ class InsuranceRegistration:
         if isinstance(plan, dict):
             return plan
         self_pay = plan.selfPay
-        phone = r.phone or (
-            self.state.call.caller_phone if r.inboundPhoneConfirmed else None
-        )
+        caller_phone = self.state.call.caller_phone
+        inbound = r.callback.strip().casefold() == "inbound"
+        phone = caller_phone if inbound else r.callback
         if not phone:
             return reply(
                 "needs_callback",
-                "needs_input: Confirm the inbound number is a good callback number, or ask for a callback number for the patient.",
+                "needs_input: Confirm the inbound number is a good callback number, or ask for a callback number for the patient."
+                if caller_phone
+                else "needs_input: No inbound number is available; ask for a callback number.",
             )
-        callback = e164(phone)
-        if callback is None or not callback.startswith("+1") or len(callback) != 12:
+        number = e164(phone)
+        if number is None or not number.startswith("+1") or len(number) != 12:
             return reply(
                 "needs_callback", "needs_input: Ask for a valid callback phone number."
             )
-        digits = callback[2:]
+        digits = number[2:]
         if (
             not all((r.firstName, r.lastName, r.street, r.city, r.state, r.zip))
             or not parse_dob(r.dob)
