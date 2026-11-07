@@ -354,7 +354,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
 
         for repeated_decision in (None, decision("VSP", "routine_vision")):
             with self.subTest(repeated_decision=repeated_decision):
-                state, _, owner = await self.prepared(
+                state, resolver, owner = await self.prepared(
                     [created(insuranceDecision=repeated_decision)]
                 )
                 await owner.add(registration(**VISION))
@@ -369,6 +369,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                 ) as client:
                     scheduling = Scheduling(
                         state,
+                        resolver,
                         SchedulingHTTP(client, CONFIG),
                         now=lambda: datetime(2026, 9, 14, 17, tzinfo=UTC),
                     )

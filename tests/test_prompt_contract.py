@@ -104,6 +104,25 @@ class PromptContractTests(unittest.TestCase):
     def test_every_registry_entry_builds_when_every_owner_is_present(self):
         self.assertEqual(len(offer(EVERY_OWNER)), len(TOOLS))
 
+    def test_every_tool_a_judge_names_is_offered(self):
+        self.assertLessEqual(
+            {
+                "book_appointment",
+                "cancel_appointment",
+                "end_call",
+                "reschedule_appointment",
+                "save_staff_task",
+                "transfer_call",
+            },
+            set(schemas()),
+        )
+
+    def test_thinker_searches_again_when_a_different_appointment_is_moving(self):
+        self.assertIn(
+            "which appointment is moving changes",
+            flat(surfaces()["prompts/thinker.md"]),
+        )
+
     def test_thinker_keeps_internal_names_out_of_speech(self):
         self.assertIn(
             "Never say vendor or system names, field names, or tokens from tool results.",

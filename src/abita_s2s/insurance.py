@@ -361,6 +361,7 @@ class InsuranceRegistration:
                 outcome, answer = "uncertain", staff("uncertain")
             else:
                 outcome = "written"
+                self.state.insurance.coverage_changed.add(active.patientId)
                 if active.patientId in self.state.insurance.registrations:
                     self.state.insurance.registrations[active.patientId] = "created"
                 decision = result.insuranceDecision

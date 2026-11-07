@@ -25,6 +25,7 @@ OWNERS = {
     "revision": "state",
     "plans": "runtime",
     "registrations": "insurance",
+    "coverage_changed": "insurance",
     "write_pending": "insurance",
     "write_uncertain": "insurance",
 }

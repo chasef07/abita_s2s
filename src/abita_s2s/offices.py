@@ -113,6 +113,18 @@ def same_office(office_id: str, key: str) -> bool:
     return office_id.replace("_", "-") == key
 
 
+def office_key(office_id: str | None) -> str | None:
+    """This app's key for a middleware office ID, or None when no office here has it."""
+    return next(
+        (
+            office.key
+            for office in OFFICES
+            if office_id and same_office(office_id, office.key)
+        ),
+        None,
+    )
+
+
 def e164(phone: str | None) -> E164 | None:
     text = (phone or "").strip()
     digits = re.sub(r"\D", "", text)

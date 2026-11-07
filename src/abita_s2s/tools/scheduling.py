@@ -29,21 +29,22 @@ class SchedulingTools:
         """Find eligible slots for the active patient in a 14-day Eastern-time window.
 
         Requires patient resolution or completed registration and no unfinished insurance write.
-        With a plan, only doctors who take it are searched. Without one, only the moved
-        appointment's doctor is searched.
+        With a plan, only doctors who take it are searched. With a null plan and a
+        reference, only that appointment's doctor at its own office is searched.
 
         Args:
             visitType: medical or routine_vision; match the existing visit when rescheduling.
             insurancePlanId: The caller-confirmed plan's ID from the Insurance list for visitType.
                 Null only when moving a loaded appointment and the caller says their
                 insurance has not changed since it was booked.
-            rescheduleAppointmentRef: The loaded appointment being moved; required when
-                insurancePlanId is null.
+            rescheduleAppointmentRef: The loaded appointment being moved. Every search for a
+                move sends it; omit it for a new visit.
             startDate: YYYY-MM-DD, tomorrow or later; null defaults to tomorrow.
                 To search the next window, use the day after the returned searched-through date.
             office: Required caller-selected office for Hollywood/Sweetwater calls;
-                omit for other offices. Hollywood routine_vision callers may also
-                choose north-miami-beach-optical; the result says what to ask first.
+                omit for other offices and to keep a moved appointment at its office.
+                Hollywood routine_vision callers may also choose north-miami-beach-optical;
+                the result says what to ask first.
         """
         if not bound(self._scheduling, context):
             return UNAVAILABLE
@@ -141,12 +142,13 @@ class SchedulingTools:
         referringDoctorPhone: str | None = None,
         referringDoctorAddress: str | None = None,
     ) -> str:
-        """Move the caller-confirmed loaded appointment to a confirmed returned slot.
+        """Move a loaded appointment to a confirmed slot from a search that sent its reference.
 
         Books first, then cancels the old visit. Report partial success and never repeat an uncertain booking.
 
         Args:
-            oldAppointmentRef: The private reference of the loaded appointment being moved.
+            oldAppointmentRef: The private reference of the loaded appointment being moved,
+                the same one its search sent.
             appointmentSlotRef: As book_appointment describes.
             referringDoctor: As book_appointment describes.
             readBack: True only after the caller confirms the old appointment and the new
@@ -158,12 +160,12 @@ class SchedulingTools:
         if not bound(self._scheduling, context):
             return UNAVAILABLE
         return await self._scheduling.reschedule(
+            old_ref=oldAppointmentRef,
             slot_ref=appointmentSlotRef,
             reason=appointmentReason,
             referrer=referringDoctor,
             referrer_phone=referringDoctorPhone,
             referrer_address=referringDoctorAddress,
             confirmed=readBack,
-            old_ref=oldAppointmentRef,
             call_id=context.function_call.call_id,
         )

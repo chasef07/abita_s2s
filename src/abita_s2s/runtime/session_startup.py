@@ -311,7 +311,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         owners = Owners(
             office,
             resolver=resolver,
-            scheduling=Scheduling(state, SchedulingHTTP(client, config)),
+            scheduling=Scheduling(state, resolver, SchedulingHTTP(client, config)),
             insurance=InsuranceRegistration(state, resolver, registration),
             staff_tasks=StaffTasks(state, resolver, product),
             call_control=control,

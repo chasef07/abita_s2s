@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal, NamedTuple
 
+from abita_s2s.identity import PatientResolver
 from abita_s2s.integrations.scheduling_http import (
     Booking,
     Cancellation,
@@ -22,8 +23,10 @@ from abita_s2s.results import reply
 from abita_s2s.scheduling import answers
 from abita_s2s.scheduling.answers import (
     CHOOSE_LOADED_APPOINTMENT,
+    COULD_NOT_RELOAD,
     PATIENT_CHANGED_DURING_WRITE,
     RELOAD_BEFORE_MOVE,
+    RELOAD_TO_CHANGE,
     STALE_BEFORE_WRITE,
     UNAVAILABLE,
     BookOutcome,
@@ -31,9 +34,12 @@ from abita_s2s.scheduling.answers import (
     MoveOutcome,
 )
 from abita_s2s.scheduling.availability import (
+    MoveSearch,
     OfferedSlot,
     Offers,
+    PlanSearch,
     SchedulingContext,
+    Selection,
     scheduling_context,
 )
 from abita_s2s.state import CallState
@@ -157,15 +163,23 @@ class MutationReceipt:
     result: dict
     booked: Appointment | None = None
     cancelled_id: int | None = None
-    offered: OfferedSlot | None = None
+    selection: Selection | None = None
 
 
 Operation = Callable[..., Awaitable[dict]]
 
 
 class Scheduling:
-    def __init__(self, state: CallState, http: SchedulingHTTP, *, now=None):
+    def __init__(
+        self,
+        state: CallState,
+        resolver: PatientResolver,
+        http: SchedulingHTTP,
+        *,
+        now=None,
+    ):
         self.state = state
+        self._resolver = resolver
         self.http = http
         self.now = now or (lambda: datetime.now(UTC))
         self._offers = Offers(state, http, lambda: self.now())
@@ -221,6 +235,8 @@ class Scheduling:
         if not appointments:
             if patient and patient.appointmentsStatus == "none":
                 return "\nNo upcoming appointments."
+            if patient and patient.appointmentsStatus == "error":
+                return f"\n{RELOAD_TO_CHANGE}"
             return ""
         lines = ["Existing appointments:"]
         for appointment in appointments:
@@ -231,37 +247,90 @@ class Scheduling:
             )
         return "\n" + "\n".join(lines)
 
-    async def availability(
-        self, visit, plan_id: str | None, start=None, office=None, old_ref=None
-    ):
-        if self._closed:
-            return reply("unavailable", "blocked: Scheduling has closed for this call.")
-        plan: str | Appointment | None = plan_id
-        if plan is None:
-            p = self.state.patient.active
-            if p and old_ref and p.appointmentsStatus == "error":
-                self._offers.invalidate()
-                return reply("needs_input", RELOAD_BEFORE_MOVE)
-            plan = self._target(p, "reschedule", old_ref)[0] if p and old_ref else None
-            if plan is None:
-                self._offers.invalidate()
+    def _writing(self) -> bool:
+        return bool(self._write_task and not self._write_task.done())
+
+    def _search_mode(
+        self, visit, plan_id: str | None, old_ref: str | None
+    ) -> PlanSearch | MoveSearch | dict:
+        """Parse the search arguments into a mode, or the reply refusing them.
+
+        Receipts apply first, so a reload that lags a write this call keeps its effects.
+        """
+        self._reconcile_receipts()
+        p = self.state.patient.active
+        if not (p and old_ref):
+            if plan_id is None:
                 return reply(
                     "needs_input",
                     "needs_input: Send the confirmed plan ID. Send null only to move a loaded appointment, with its reference, after the caller says their insurance has not changed.",
                 )
-            if plan.visitType != visit:
-                self._offers.invalidate()
-                return reply(
-                    "needs_input",
-                    "needs_input: Search the moved appointment's own visit type. If it is unknown, offer a staff request to reschedule.",
-                )
+            return PlanSearch(plan_id)
+        moved = self._target(p, "reschedule", old_ref)[0]
+        if moved is None:
+            return reply("needs_input", CHOOSE_LOADED_APPOINTMENT)
+        if moved.visitType != visit:
+            return reply(
+                "needs_input",
+                "needs_input: Search the moved appointment's own visit type. If it is unknown, offer a staff request to reschedule.",
+            )
+        if not moved.rescheduleToken:
+            return reply("needs_staff_review", COULD_NOT_RELOAD)
+        if plan_id is not None:
+            return PlanSearch(plan_id, moved)
+        if p.patientId in self.state.insurance.coverage_changed:
+            return reply(
+                "needs_input",
+                "needs_input: Insurance changed on this call, so a move needs the plan confirmed. Search with the confirmed plan ID and this appointment's reference.",
+            )
+        return MoveSearch(moved)
+
+    async def _search(
+        self, visit, plan_id: str | None, start, office, old_ref: str | None
+    ) -> dict:
+        mode = self._search_mode(visit, plan_id, old_ref)
+        if isinstance(mode, dict):
+            self._offers.invalidate()
+            return mode
         return await self._offers.search(
-            visit,
-            plan,
-            start,
-            office,
-            writing=bool(self._write_task and not self._write_task.done()),
+            visit, mode, start, office, writing=self._writing()
         )
+
+    def _revoke_authority(self) -> None:
+        """Loaded tokens stop counting until a newer load, and a read under way predates this."""
+        if self.state.patient.active:
+            self.state.patient.mark_appointments_stale()
+        self._resolver.fence_reads()
+
+    def _move_needs_reload(self, old_ref: str) -> bool:
+        p = self.state.patient.active
+        if p is None:
+            return False
+        moved = self._target(p, "reschedule", old_ref)[0]
+        return p.appointmentsStatus == "error" or (
+            moved is not None and not moved.rescheduleToken
+        )
+
+    async def availability(
+        self, visit, plan_id: str | None, start=None, office=None, old_ref=None
+    ):
+        """Search slots. A move reloads a revoked chart first, and retries once if Go refuses its token."""
+        if self._closed:
+            return reply("unavailable", "blocked: Scheduling has closed for this call.")
+        if old_ref and not self._writing() and self._move_needs_reload(old_ref):
+            if not await self._resolver.reload_chart():
+                self._offers.invalidate()
+                return reply("needs_staff_review", COULD_NOT_RELOAD)
+        result = await self._search(visit, plan_id, start, office, old_ref)
+        if result["outcome"] != "invalid_reschedule_token":
+            return result
+        self._revoke_authority()
+        if await self._resolver.reload_chart():
+            result = await self._search(visit, plan_id, start, office, old_ref)
+            if result["outcome"] != "invalid_reschedule_token":
+                return result
+        self._offers.invalidate()
+        return reply("needs_staff_review", COULD_NOT_RELOAD)
 
     async def book(
         self,
@@ -391,13 +460,17 @@ class Scheduling:
         *,
         target: Appointment | None,
     ) -> None:
-        """Spend the target's authority when the outcome says so, then keep or forget the receipt."""
-        if (
-            target is not None
-            and write_effect(outcome).spends_target
-            and self._context().patient_id == captured.patient_id
-        ):
-            self.state.patient.mark_appointments_stale()
+        """Spend the target's authority when the outcome says so, then keep or forget the receipt.
+
+        A write that took effect outdates a read under way for its patient. Another
+        patient's lookup is untouched, because this write changed nothing it reads.
+        """
+        effect = write_effect(outcome)
+        if self._context().patient_id == captured.patient_id:
+            if target is not None and effect.spends_target:
+                self._revoke_authority()
+            if effect.replays:
+                self._resolver.fence_reads()
         self._ledger.record(key, outcome, receipt)
 
     async def _cancel(
@@ -415,7 +488,7 @@ class Scheduling:
         if old is None:
             return reply("needs_input", CHOOSE_LOADED_APPOINTMENT)
         if not old.cancellationToken:
-            self.state.patient.mark_appointments_stale()
+            self._revoke_authority()
             return reply(
                 "needs_input",
                 "needs_input: Reload appointments to obtain cancellation authorization, then reconfirm the exact appointment.",
@@ -423,8 +496,7 @@ class Scheduling:
         if confirmed is not True:
             return reply(
                 "needs_confirmation",
-                f"needs_input: Confirm cancellation of {old.date} at {old.time} Eastern"
-                f" with {old.doctor} before cancelling.",
+                f"needs_input: Confirm cancellation of {old.read_back} before cancelling.",
             )
         self._offers.invalidate()
         self._ledger.record(
@@ -467,16 +539,21 @@ class Scheduling:
         old: Appointment | None = None,
     ) -> dict:
         slot_ref = slot_ref.strip().upper()
+        issued = self._offers.issued(slot_ref)
+        offered = self._offers.get(slot_ref)
         key = (
             WriteKey(p.patientId, "reschedule", old.id)
             if old
-            else WriteKey(
-                p.patientId, "book", (slot_ref, self._offers.issued(slot_ref))
-            )
+            else WriteKey(p.patientId, "book", issued.selection if issued else slot_ref)
         )
         if not old and (saved := self._ledger.get(key)):
-            return self._replay(p, saved)
-        offered = self._offers.get(slot_ref)
+            rebooking = (
+                offered
+                and saved.booked
+                and self._cancelled(p.patientId, saved.booked.id)
+            )
+            if not rebooking:
+                return self._replay(p, saved)
         if not offered:
             return reply(
                 "needs_input",
@@ -488,32 +565,18 @@ class Scheduling:
                 "needs_input",
                 "needs_input: Search availability again and choose a current returned slot.",
             )
-        if offered.moved_id is not None and (old is None or old.id != offered.moved_id):
+        if not old and offered.moved_id is not None:
             return reply(
                 "needs_input",
-                "needs_input: That slot was found without a plan, only to move one appointment. Confirm the plan and search again for this change.",
+                "needs_input: That slot was found to move an existing appointment, so it cannot book a new one. Reschedule with it, or search again without the appointment's reference for a new visit.",
             )
-        if not old:
-            for saved in self._ledger.receipts(p.patientId):
-                if (
-                    saved.offered
-                    and saved.booked
-                    and saved.offered.selection == offered.selection
-                    and not self._cancelled(p.patientId, saved.booked.id)
-                ):
-                    return self._replay(p, saved)
-        if old and old.visitType is None:
-            return reply(
-                "needs_staff_review",
-                "blocked: The existing appointment's visit type could not be verified. Ask staff to reschedule it; no appointment was changed.",
-            )
-        if old and old.visitType != offered.visit:
+        if old and offered.moved_id != old.id:
             return reply(
                 "needs_input",
-                f"needs_input: Load {old.visitType} availability to match the existing appointment.",
+                "needs_input: That slot was not found for this appointment. Search again with this appointment's reference and reconfirm the move.",
             )
         if old and not old.rescheduleToken:
-            self.state.patient.mark_appointments_stale()
+            self._revoke_authority()
             return reply(
                 "needs_input",
                 "needs_input: Reload appointments to obtain reschedule authorization, then reconfirm the move.",
@@ -537,7 +600,9 @@ class Scheduling:
         if confirmed is not True:
             return reply(
                 "needs_confirmation",
-                f"needs_input: Confirm {description} before booking.",
+                f"needs_input: Confirm moving the appointment on {old.read_back} to {description} before rescheduling."
+                if old
+                else f"needs_input: Confirm {description} before booking.",
             )
         booking = Booking(
             patientId=p.patientId,
@@ -577,7 +642,7 @@ class Scheduling:
             captured,
             key,
             outcome,
-            MutationReceipt(answer, booked=new, offered=offered if new else None),
+            MutationReceipt(answer, booked=new),
             target=None,
         )
         return answer
@@ -633,13 +698,12 @@ class Scheduling:
             answer,
             booked=new,
             cancelled_id=old.id if cancelled else None,
-            offered=offered,
+            selection=offered.selection,
         )
         self._settle(captured, key, outcome, receipt, target=old)
-        if cancelled:
-            self._ledger.record(
-                WriteKey(p.patientId, "reschedule", new.id), outcome, receipt
-            )
+        self._ledger.record(
+            WriteKey(p.patientId, "book", offered.selection), outcome, receipt
+        )
         return answer
 
     async def _reschedule(
@@ -657,27 +721,20 @@ class Scheduling:
         call_id: str,
     ) -> dict:
         old, key = self._target(p, "reschedule", old_ref)
-        saved = self._ledger.get(key)
-        offered = self._offers.get(slot_ref.strip().upper())
-        if saved:
-            different = (
-                offered
-                and saved.offered
-                and offered.selection != saved.offered.selection
-            )
-            replacement_move = (
-                old
-                and saved.booked
-                and old.id == saved.booked.id
-                and saved.cancelled_id is not None
-            )
-            if not (replacement_move and (different or offered is None)):
-                if different and saved.cancelled_id is not None:
-                    return reply(
-                        "needs_input",
-                        "needs_input: Choose the current appointment reference for a different move.",
-                    )
-                return self._replay(p, saved)
+        if saved := self._ledger.get(key):
+            issued = self._offers.issued(slot_ref.strip().upper())
+            if (
+                saved.cancelled_id is not None
+                and issued is not None
+                and issued.selection != saved.selection
+            ):
+                return reply(
+                    "needs_input",
+                    "needs_input: That appointment has already moved. Search again with its current reference for a different move.",
+                )
+            return self._replay(p, saved)
+        if p.appointmentsStatus == "error":
+            return reply("needs_input", RELOAD_BEFORE_MOVE)
         if old is None:
             return reply("needs_input", CHOOSE_LOADED_APPOINTMENT)
         return await self._book(
