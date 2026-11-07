@@ -46,6 +46,11 @@ class Appointment(Record):
         """The name the caller hears. Cancellation evidence reports the chart's provider."""
         return provider_name(self.provider)
 
+    @property
+    def read_back(self) -> str:
+        """The date, time and doctor to read back to the caller."""
+        return f"{self.date} at {self.time} Eastern with {self.doctor}"
+
 
 class Candidate(Record):
     status: Literal["candidate"]

@@ -14,6 +14,7 @@ class InsuranceState:
     registrations: dict[str, Literal["created", "partial"]] = field(
         default_factory=dict
     )
+    coverage_changed: set[str] = field(default_factory=set)
     write_pending: bool = False
     write_uncertain: bool = False
 

@@ -101,6 +101,10 @@ To add a capability:
   and written only through `insurance_state`.
 - **Writes are sent once.** Uncertain chart, insurance, and appointment writes are never
   retried; they block repeats for the rest of the call and go to staff.
+- **A move searches from its appointment.** A search with `rescheduleAppointmentRef` binds
+  its slots to that appointment, and `reschedule_appointment` refuses a slot found for any
+  other. The search reloads a revoked chart once. A settled write or a revocation discards a
+  read under way for that patient.
 - **Config owns the environment.** Only `config.py` and call startup read environment
   variables. Named LiveKit deployments are sandboxes: no human transfers, no Product writes.
 - **Shutdown drains owners.** Startup closes admission on every owner, then waits for

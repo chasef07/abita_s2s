@@ -47,6 +47,7 @@ class SlotSearch(Request):
     visitType: CoverageType
     insurancePlanId: str | None
     dob: str
+    rescheduleToken: str | None = None
 
 
 class Booking(Request):
@@ -112,6 +113,8 @@ class Inventory(Record):
         "no_eligible_providers",
         "availability_search_incomplete",
         "insurance_not_cleared",
+        "invalid_reschedule_token",
+        "move_needs_staff",
     ]
     slots: list[Slot]
     insuranceDecision: InsuranceDecision | None = None
@@ -128,12 +131,16 @@ class Inventory(Record):
 
     @model_validator(mode="after")
     def validate_inventory(self):
-        if self.outcome == "invalid_input" and (
+        if self.outcome in ("invalid_input", "invalid_reschedule_token") and (
             self.status != "error"
             or self.shouldRetrySameSearch
             or not self.message.strip()
         ):
             raise ValueError("Invalid search failure")
+        if self.outcome == "move_needs_staff" and (
+            self.status != "success" or not self.message.strip()
+        ):
+            raise ValueError("A move for staff needs its reason")
         if self.outcome == "insurance_not_cleared" and (
             self.status != "success"
             or self.insuranceDecision is None

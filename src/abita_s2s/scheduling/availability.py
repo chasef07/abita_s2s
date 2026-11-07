@@ -1,4 +1,4 @@
-"""Availability: slot identity, readable references, office choice and the offered inventory."""
+"""Availability: slot identity, readable references, search modes and the offered inventory."""
 
 import asyncio
 from collections.abc import Callable
@@ -15,12 +15,14 @@ from abita_s2s.integrations.scheduling_http import (
     Slot,
     SlotSearch,
 )
-from abita_s2s.offices import EASTERN, same_office
+from abita_s2s.offices import EASTERN, office_key
 from abita_s2s.records import Appointment
 from abita_s2s.results import reply
 from abita_s2s.state import CallState
 
 SHARED_OFFICE_CHOICE = "needs_input: Ask for Hollywood or Sweetwater on those office calls; omit office for other calls."
+
+Selection = tuple[str, CoverageType, tuple[str, datetime]]
 
 
 def slot_identity(slot: Slot) -> tuple[str, datetime]:
@@ -90,12 +92,27 @@ def scheduling_context(state: CallState) -> SchedulingContext:
 
 
 @dataclass(frozen=True, repr=False)
+class PlanSearch:
+    """Doctors who take a confirmed plan, for a new visit or bound to one move."""
+
+    plan_id: str
+    moved: Appointment | None = None
+
+
+@dataclass(frozen=True, repr=False)
+class MoveSearch:
+    """The moved appointment's own doctor and office, with no plan to confirm."""
+
+    moved: Appointment
+
+
+@dataclass(frozen=True, repr=False)
 class AvailabilitySearch:
     context: SchedulingContext
     office: str
     visit: CoverageType
     plan_id: str | None
-    provider: str | None
+    doctor: str | None
     moved_id: int | None
     start: date
     today: date
@@ -111,7 +128,7 @@ class OfferedSlot:
     moved_id: int | None
 
     @property
-    def selection(self):
+    def selection(self) -> Selection:
         return self.office, self.visit, slot_identity(self.slot)
 
 
@@ -131,7 +148,7 @@ class Offers:
         self.http = http
         self._now = now
         self._slots: dict[str, OfferedSlot] = {}
-        self._issued: dict[str, int] = {}
+        self._issued: dict[str, OfferedSlot] = {}
         self._generation = 0
         self._search_key: AvailabilitySearch | None = None
         self._search: PendingRead | None = None
@@ -143,8 +160,8 @@ class Offers:
     def get(self, ref: str) -> OfferedSlot | None:
         return self._slots.get(ref)
 
-    def issued(self, ref: str) -> int | None:
-        """The search generation that issued a reference, which keys a booking."""
+    def issued(self, ref: str) -> OfferedSlot | None:
+        """The last offer made under a reference, kept after it stops being offered, which keys a replay."""
         return self._issued.get(ref)
 
     def invalidate(self) -> None:
@@ -177,10 +194,40 @@ class Offers:
             return office.key, None
         return None, SHARED_OFFICE_CHOICE
 
+    def _search_office(
+        self, mode: PlanSearch | MoveSearch, requested, visit
+    ) -> tuple[str, None] | tuple[None, dict]:
+        """The office to search, or the reply to give first. A move knows its office before any question."""
+        home = office_key(mode.moved.officeId) if mode.moved else None
+        if isinstance(mode, MoveSearch):
+            if home is None:
+                return None, reply(
+                    "needs_staff_review",
+                    "blocked: This appointment's office could not be confirmed. Offer a staff request to reschedule it.",
+                )
+            if requested not in (None, home):
+                return None, reply(
+                    "needs_input",
+                    "needs_input: Without a plan, search only the moved appointment's office. For another office, confirm the plan as for a new visit.",
+                )
+            return home, None
+        if home and requested in (None, home):
+            return home, None
+        choice = self._office(requested, visit)
+        if choice[1] is not None:
+            return None, reply("needs_input", choice[1])
+        return choice[0], None
+
     async def search(
-        self, visit, plan: str | Appointment, start=None, office=None, *, writing: bool
+        self,
+        visit,
+        mode: PlanSearch | MoveSearch,
+        start=None,
+        office=None,
+        *,
+        writing: bool,
     ) -> dict:
-        """Search with a listed plan ID, or without a plan for a moved visit's doctor and office."""
+        """Search for a new visit or a plan-gated move with a listed plan ID, or a move without one."""
         context = scheduling_context(self.state)
         today = self._now().astimezone(EASTERN).date()
         try:
@@ -198,10 +245,10 @@ class Offers:
                 "needs_input",
                 "needs_input: Same-day and past dates cannot be scheduled here. Ask whether tomorrow or later works; do not silently change the date.",
             )
-        choice = self._office(office, visit)
+        choice = self._search_office(mode, office, visit)
         if choice[1] is not None:
             self.invalidate()
-            return reply("needs_input", choice[1])
+            return choice[1]
         selected = choice[0]
         p = self.state.patient.active
         if p is None or not insurance_ready(self.state):
@@ -210,17 +257,11 @@ class Offers:
                 "needs_input",
                 "needs_input: Verify the patient, finish new-patient registration, or resolve the pending or uncertain insurance update before scheduling.",
             )
-        plan_id = provider = moved_id = None
-        if isinstance(plan, Appointment):
-            if not (plan.officeId and same_office(plan.officeId, selected)):
-                self.invalidate()
-                return reply(
-                    "needs_input",
-                    "needs_input: Without a plan, search only the moved appointment's office. For another office, confirm the plan as for a new visit.",
-                )
-            provider, moved_id = plan.doctor, plan.id
+        plan_id = doctor = None
+        if isinstance(mode, MoveSearch):
+            doctor = mode.moved.doctor
         else:
-            listed = listed_plan(self.state, plan, visit)
+            listed = listed_plan(self.state, mode.plan_id, visit)
             if isinstance(listed, dict):
                 self.invalidate()
                 return listed
@@ -231,7 +272,14 @@ class Offers:
                 "blocked: An appointment change is in progress. Wait for its result.",
             )
         key = AvailabilitySearch(
-            context, selected, visit, plan_id, provider, moved_id, first, today
+            context,
+            selected,
+            visit,
+            plan_id,
+            doctor,
+            mode.moved.id if mode.moved else None,
+            first,
+            today,
         )
         if self._search_key != key:
             self.invalidate()
@@ -254,6 +302,7 @@ class Offers:
                 visitType=visit,
                 insurancePlanId=plan_id,
                 dob=p.dob,
+                rescheduleToken=mode.moved.rescheduleToken if mode.moved else None,
             )
             task = asyncio.create_task(self._load(search, key, self._generation))
             pending = self._search = PendingRead(task)
@@ -311,23 +360,15 @@ class Offers:
                 expiry = result.bookingTokenExpiresAt
                 if expiry is not None and expiry > self._now():
                     self._failures.pop(key, None)
-                    slots = [
-                        slot
-                        for slot in result.slots
-                        if key.provider is None or slot.provider == key.provider
-                    ]
-                    if slots:
-                        return self._offer(slots, key, generation, expiry)
-                    return self._remember(
-                        reply(
-                            "none",
-                            f"no_results: No openings with {key.provider} in the searched window. Ask what other dates work. To see another doctor, confirm the plan first.",
-                            searchedFrom=first,
-                            searchedThrough=through,
-                        )
-                    )
+                    return self._offer(result.slots, key, expiry)
                 expired = True
                 result = SchedulingFailure(reason="expired_inventory")
+        if (
+            not isinstance(result, SchedulingFailure)
+            and result.outcome == "invalid_reschedule_token"
+        ):
+            self._failures.pop(key, None)
+            return reply("invalid_reschedule_token", f"needs_input: {result.message}")
         if (
             not isinstance(result, SchedulingFailure)
             and result.outcome == "invalid_input"
@@ -357,26 +398,33 @@ class Offers:
                 retry_same_search=retry and count < 2,
             )
         self._failures.pop(key, None)
+        if result.outcome == "move_needs_staff":
+            return self._remember(
+                reply(
+                    "needs_staff_review",
+                    f"blocked: {result.message} Do not retry this search; offer a staff request.",
+                )
+            )
         if result.outcome == "no_eligible_providers":
             answer = reply(
                 "unsupported",
-                "blocked: No providers are eligible for the selected office, visit type, and patient requirements. Confirm the office and visit type or ask staff for help; changing dates will not resolve this restriction.",
+                f"blocked: {key.doctor} is no longer eligible for this visit. To see another doctor, confirm the plan first, or offer a staff request; changing dates will not resolve this restriction."
+                if key.doctor
+                else "blocked: No providers are eligible for the selected office, visit type, and patient requirements. Confirm the office and visit type or ask staff for help; changing dates will not resolve this restriction.",
             )
             return self._remember(answer)
         answer = reply(
             "none",
-            "no_results: No eligible openings in the searched window. Ask what other dates work.",
+            f"no_results: No openings with {key.doctor} in the searched window. Ask what other dates work. To see another doctor, confirm the plan first."
+            if key.doctor
+            else "no_results: No eligible openings in the searched window. Ask what other dates work.",
             searchedFrom=first,
             searchedThrough=through,
         )
         return self._remember(answer)
 
     def _offer(
-        self,
-        slots: list[Slot],
-        key: AvailabilitySearch,
-        generation: int,
-        expiry: datetime,
+        self, slots: list[Slot], key: AvailabilitySearch, expiry: datetime
     ) -> dict:
         first = key.start.isoformat()
         through = (key.start + timedelta(days=13)).isoformat()
@@ -392,10 +440,9 @@ class Offers:
             while ref in self._slots:
                 collision += 1
                 ref = f"{base}-{collision}"
-            self._slots[ref] = OfferedSlot(
+            self._slots[ref] = self._issued[ref] = OfferedSlot(
                 slot, key.context, key.office, key.visit, expiry, key.moved_id
             )
-            self._issued[ref] = generation
         answer = reply(
             "found",
             "success: Found eligible openings.",

@@ -271,12 +271,7 @@ class PatientResolver:
         ):
             receipt = chart
         else:
-            receipt = await self._middleware.resolve(
-                ResolveRequest(
-                    patientId=candidate.patientId,
-                    office=self.state.call.office.key,
-                )
-            )
+            receipt = await self._read_chart(candidate.patientId)
         if not self._current(token):
             return superseded()
         matcher = (
@@ -309,6 +304,41 @@ class PatientResolver:
             and patient.active.patientId == patient_id
             and patient.revision == revision
         )
+
+    def _read_chart(self, patient_id: str):
+        return self._middleware.resolve(
+            ResolveRequest(patientId=patient_id, office=self.state.call.office.key)
+        )
+
+    async def reload_chart(self) -> bool:
+        """Re-read the active chart for fresh appointment tokens; report whether it committed.
+
+        A patient change, a settled write, or a revocation during the read discards it,
+        and a read with no appointments leaves the chart revoked.
+        """
+        active = self.state.patient.active
+        if self._closed or active is None:
+            return False
+        token = self._begin_lookup()
+        try:
+            receipt = await self._read_chart(active.patientId)
+            if (
+                not self._current(token)
+                or not isinstance(receipt, Receipt)
+                or receipt.patientId != active.patientId
+                or not dob_matches(receipt.dob, active.dob)
+                or receipt.appointmentsStatus == "error"
+            ):
+                return False
+            self.state.patient.activate(receipt)
+            return True
+        finally:
+            if self._token is token:
+                self._token = None
+
+    def fence_reads(self) -> None:
+        """A write settled or loaded authority was revoked, so a read under way is older than both."""
+        self._token = None
 
     def refresh_insurance(
         self, patient_id: str, carrier: str, carrier_id: str | None, revision: int

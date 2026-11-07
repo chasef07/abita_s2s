@@ -11,7 +11,11 @@ from abita_s2s.scheduling.availability import afternoon
 UNAVAILABLE = "blocked: Scheduling is unavailable."
 STALE_BEFORE_WRITE = "blocked: The call, patient, or insurance changed before the appointment operation started."
 CHOOSE_LOADED_APPOINTMENT = "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed."
-RELOAD_BEFORE_MOVE = "needs_input: This appointment must be reloaded before moving it. Resolve the patient again to reload appointments, then repeat this search."
+RELOAD_BEFORE_MOVE = "needs_input: This appointment must be reloaded before moving it. Resolve the patient again to reload appointments, then repeat the move."
+COULD_NOT_RELOAD = "blocked: This appointment's details could not be reloaded. Do not retry this search; offer a staff request to reschedule it."
+RELOAD_TO_CHANGE = (
+    "Resolve the patient again to reload appointments before moving or cancelling."
+)
 PATIENT_CHANGED_DURING_WRITE = " This result is for the patient who was active when it started; the active patient has since changed."
 
 BookOutcome = Literal[
@@ -155,9 +159,12 @@ def move(
     reason: SchedulingOutcome | None,
     message: str,
 ) -> dict:
-    """A move the middleware refused keeps today's failed label; only its answer is specific."""
+    """A move the middleware refused keeps today's failed label; only its answer is specific.
+
+    The old appointment is called unchanged only when the refusal came before Go touched
+    it. ownership_mismatch says it changed, and write_failed can mean Go could not read it.
+    """
     unchanged = f"Your old appointment on {old.date} at {old.time} was not changed."
-    reload_first = "Resolve the patient again to reload appointments, then search again"
     match outcome:
         case "written":
             return reply(
@@ -175,7 +182,16 @@ def move(
                 sentences(
                     "needs_input: That time was just taken.",
                     unchanged,
-                    f"{reload_first} and offer another time.",
+                    "Search again with this appointment's reference and offer another time.",
+                ),
+            )
+        case "refused" if reason == "ownership_mismatch":
+            return reply(
+                "failed",
+                sentences(
+                    "needs_input: The reschedule was refused.",
+                    message,
+                    "Resolve the patient again to reload appointments, then confirm which appointment to move.",
                 ),
             )
         case "refused":
@@ -185,7 +201,7 @@ def move(
                     "needs_input: The reschedule was refused.",
                     message,
                     unchanged,
-                    f"{reload_first} and reconfirm the move, or offer a staff request.",
+                    "Search again with this appointment's reference and reconfirm the move, or offer a staff request.",
                 ),
             )
         case "expired":
@@ -195,7 +211,7 @@ def move(
                     "needs_input: The appointment details expired.",
                     message,
                     unchanged,
-                    f"{reload_first} and reconfirm the move.",
+                    "Search again with this appointment's reference and reconfirm the move.",
                 ),
             )
         case "failed":
@@ -203,9 +219,8 @@ def move(
                 "failed",
                 sentences(
                     "blocked: The reschedule failed.",
-                    unchanged,
                     message,
-                    "Reload appointments or ask staff to reconcile before another change.",
+                    "Resolve the patient again to reload appointments, or ask staff to reconcile, before another change.",
                 ),
             )
         case "uncertain":

@@ -1,0 +1,60 @@
+name: Abita moves searched from the appointment
+# Sandbox prerequisites, the same chart as hollywood_promotion.yaml:
+# Exactly one chart on +12025550161: Rosa Hollyproof, DOB 03/08/1978, with a
+# complete receipt, accepted on-file medical insurance, valid routing, no
+# authorization requirement, and no pending insurance change. Provide eligible
+# medical slots at Hollywood on at least two later dates in the initial 14-day
+# window, with Dr. Bach and one other doctor.
+# Each case books, moves and cancels the visit it creates, so the chart ends where it
+# started. A failure partway through can leave that visit behind; cancel it first.
+# Userdata does not seed fixtures. Requires the middleware release that accepts
+# rescheduleToken on POST /api/scheduler/slots.
+# Judge the move against tool arguments: the search for a move sends
+# rescheduleAppointmentRef, and reschedule_appointment sends the same reference as
+# oldAppointmentRef.
+scenarios:
+  - label: Moving a visit on a shared-office call does not ask for the office
+    instructions: >
+      You are Rosa Hollyproof, an existing patient, born March 8, 1978. Ask to book
+      the soonest medical appointment for a red, irritated left eye for a few days,
+      with no pain, injury, or sudden vision change. You have no referring doctor.
+      If asked which office, choose Hollywood. Choose an actual returned opening and
+      approve an accurate read-back. After the booking is confirmed, say that date
+      no longer works and ask to move that same appointment to a later date. If
+      asked, your insurance has not changed. Do not name an office when asking to
+      move. Choose an actual later opening and approve an accurate read-back. After
+      the move is confirmed, say your plans changed and ask to cancel the moved
+      appointment. Approve an accurate read-back and end after the cancellation
+      result is explained.
+    agent_expectations: >
+      Books a returned Hollywood opening. For the move, asks at most once whether
+      insurance has changed, does not ask which office, does not confirm the plan,
+      and does not mention North Miami Beach. The search for the move sends a null
+      insurancePlanId and rescheduleAppointmentRef for the booked visit, and
+      reschedule_appointment sends that reference as oldAppointmentRef and moves that
+      visit to the slot read back. Cancels the moved
+      visit after approval. Describes each result accurately.
+    userdata:
+      office: hollywood
+      caller_phone: "+12025550161"
+
+  - label: Moving a visit to another doctor confirms the plan and keeps the reference
+    instructions: >
+      You are Rosa Hollyproof, an existing patient, born March 8, 1978. Ask to book
+      the soonest medical appointment for a red, irritated left eye for a few days,
+      with no pain, injury, or sudden vision change. You have no referring doctor.
+      If asked which office, choose Hollywood. Choose an actual returned opening and
+      approve an accurate read-back. After the booking is confirmed, ask to move that
+      same appointment to a different doctor. If asked, your insurance has not
+      changed and the plan on file is still current. Choose an actual opening with
+      another doctor and approve an accurate read-back. After the move is confirmed,
+      say your plans changed and ask to cancel the moved appointment. Approve an
+      accurate read-back and end after the cancellation result is explained.
+    agent_expectations: >
+      Confirms the plan for the move, then searches with insurancePlanId and
+      rescheduleAppointmentRef for the booked visit. Moves that visit to a returned
+      opening with another doctor after approval, then cancels it after approval.
+      Describes each result accurately.
+    userdata:
+      office: hollywood
+      caller_phone: "+12025550161"

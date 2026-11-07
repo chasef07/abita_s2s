@@ -45,6 +45,7 @@ async def main(url):
         )
         scheduler = Scheduling(
             state,
+            resolver,
             SchedulingHTTP(client, config),
             now=lambda: datetime.fromisoformat(fixture["now"]),
         )

@@ -349,7 +349,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         ]
         r, _ = self.resolver(responses)
         await self.preload(r)
-        scheduling = Scheduling(r.state, Mock())
+        scheduling = Scheduling(r.state, r, Mock())
         tools = PatientTools(r, Mock(), scheduling)
         context = SimpleNamespace(
             userdata=r.state, function_call=SimpleNamespace(call_id="tool-call")
@@ -363,6 +363,77 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(repeated, "needs_input: What is the patient's date of birth?")
         self.assertIs(r.state.patient.active, active)
+
+    async def test_a_reload_after_a_phone_chart_reads_fresh_tokens(self):
+        def chart(token):
+            return receipt(
+                appointmentsStatus="found",
+                appointments=[
+                    {
+                        "id": 77,
+                        "date": "2026-09-20",
+                        "time": "10:00 AM",
+                        "provider": "Dr. Bach",
+                        "cancellationToken": f"{token}-cancel",
+                        "rescheduleToken": f"{token}-reschedule",
+                    }
+                ],
+            )
+
+        r, requests = self.resolver(
+            [chart("call-start"), chart("reloaded"), chart("again")]
+        )
+        await self.preload(r)
+        await r.resolve("Jane", None)
+        self.assertEqual(len(requests), 1)
+        r.state.patient.mark_appointments_stale()
+
+        await r.resolve("Jane", None)
+
+        self.assertEqual(
+            requests[-1], {"patientId": "chart-jane", "office": "spring-hill"}
+        )
+        tokens = r.state.patient.active.appointments[0]
+        self.assertEqual(
+            (tokens.cancellationToken, tokens.rescheduleToken),
+            ("reloaded-cancel", "reloaded-reschedule"),
+        )
+        self.assertTrue(await r.reload_chart())
+        self.assertEqual(
+            r.state.patient.active.appointments[0].rescheduleToken, "again-reschedule"
+        )
+        r.state.patient.deactivate()
+        self.assertFalse(await r.reload_chart())
+        self.assertEqual(len(requests), 3)
+
+    async def test_reload_is_discarded_when_the_patient_changes_during_it(self):
+        started, release = asyncio.Event(), asyncio.Event()
+
+        async def slow(request):
+            started.set()
+            await release.wait()
+            return httpx.Response(200, json=receipt())
+
+        r, _ = self.resolver(
+            [receipt(), slow, receipt("chart-john", "John", "03/04/1990")],
+            call_state(None),
+        )
+        await r.resolve("Jane", "01/02/1980")
+        reloading = asyncio.create_task(r.reload_chart())
+        await started.wait()
+        self.assertEqual((await r.resolve("John", "03/04/1990"))["outcome"], "switched")
+        release.set()
+        self.assertFalse(await reloading)
+        self.assertEqual(r.state.patient.active.patientId, "chart-john")
+
+    async def test_reload_never_activates_a_different_chart(self):
+        for chart in (receipt("chart-john"), receipt(dob="05/06/2010")):
+            with self.subTest(chart=chart["patientId"], dob=chart["dob"]):
+                r, _ = self.resolver([receipt(), chart], call_state(None))
+                await r.resolve("Jane", "01/02/1980")
+                active = r.state.patient.active
+                self.assertFalse(await r.reload_chart())
+                self.assertIs(r.state.patient.active, active)
 
     async def test_no_caller_id_requires_dob_then_hydrates(self):
         r, calls = self.resolver([receipt()], call_state(None))

@@ -6,13 +6,18 @@ from datetime import datetime
 from types import SimpleNamespace
 
 import httpx
+from insurance_fixtures import plan_id
 from test_patient_resolution import call_state
-from test_scheduling import PLAN, verified
+from test_scheduling import verified
 
+from abita_s2s.identity import PatientResolver
+from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.integrations.scheduling_http import SchedulingHTTP
 from abita_s2s.offices import get_office_profile
 from abita_s2s.scheduling.appointments import Scheduling
 from abita_s2s.tools.scheduling import SchedulingTools
+
+PLAN = "self-pay-medical"
 
 
 async def main(url):
@@ -25,6 +30,7 @@ async def main(url):
         state = call_state(None)
         owner = Scheduling(
             state,
+            PatientResolver(state, PatientMiddleware(client, config)),
             SchedulingHTTP(client, config),
             now=lambda: datetime.fromisoformat(fixture["now"]),
         )
@@ -54,7 +60,9 @@ async def main(url):
                 update={"insuranceCarrier": loaded["insuranceCarrier"]}
             )
             old_ref = owner.appointments()[0]["appointmentRef"]
-            available = await owner.availability("medical", PLAN, "2026-06-03")
+            available = await owner.availability(
+                "medical", PLAN, "2026-06-03", old_ref=old_ref
+            )
             assert available["outcome"] == "found", available
             slot_ref = available["slots"][0]["appointmentSlotRef"]
             args = dict(
@@ -92,14 +100,23 @@ async def main(url):
                     assert appointment.visitType == "medical"
                     assert appointment.officeId == "spring_hill"
                     assert appointment.cancellationToken and appointment.rescheduleToken
-            for office, visit in (
-                ("crystal-river", "routine_vision"),
-                ("north-miami-beach-optical", "medical"),
+            for office, visit, answer in (
+                (
+                    "crystal-river",
+                    "routine_vision",
+                    "blocked: This office does not accept insurance for routine vision exams. Offer a staff request or transfer; do not schedule.",
+                ),
+                (
+                    "north-miami-beach-optical",
+                    "medical",
+                    "blocked: This office does not accept insurance for medical visits. Offer a staff request or transfer; do not schedule.",
+                ),
             ):
                 office_state = call_state(None, get_office_profile(office))
                 verified(office_state, patient_id="12345", dob="01/15/1980")
                 office_owner = Scheduling(
                     office_state,
+                    PatientResolver(office_state, PatientMiddleware(client, config)),
                     SchedulingHTTP(client, config),
                     now=lambda: datetime.fromisoformat(fixture["now"]),
                 )
@@ -109,14 +126,9 @@ async def main(url):
                     ).list_available_appointments(
                         SimpleNamespace(userdata=office_state),
                         visitType=visit,
-                        insurancePlanId=PLAN,
+                        insurancePlanId=plan_id("Self Pay", visit),
                     )
-                    assert response.startswith("blocked: No providers are eligible"), (
-                        response
-                    )
-                    assert (
-                        "Searched" not in response and "other dates" not in response
-                    ), response
+                    assert response == answer, response
                 finally:
                     await office_owner.aclose()
             print(
