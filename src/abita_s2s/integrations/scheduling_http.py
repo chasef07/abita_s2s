@@ -160,16 +160,7 @@ class WriteReceipt(Record):
     providerName: Annotated[str, AfterValidator(provider_name)] | None = None
     locationName: str | None = None
     appointmentTypeName: str | None = None
-    missing: list[
-        Literal[
-            "patientStatus",
-            "dob",
-            "routing",
-            "routeToSpringHill",
-            "appointmentLane",
-            "office",
-        ]
-    ] = Field(default_factory=list)
+    message: str = ""
 
 
 class RescheduleReceipt(Record):
@@ -177,6 +168,7 @@ class RescheduleReceipt(Record):
     outcome: Outcome = None
     booking: WriteReceipt | None = None
     cancellation: WriteReceipt | None = None
+    message: str = ""
 
     @model_validator(mode="after")
     def validate_effects(self):

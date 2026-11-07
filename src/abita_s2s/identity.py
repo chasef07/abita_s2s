@@ -23,13 +23,6 @@ from abita_s2s.results import reply
 from abita_s2s.state import CallState
 
 
-def candidate_first_name(candidate: Candidate | Receipt) -> str:
-    if isinstance(candidate, Candidate):
-        return candidate.firstName
-    names = first_names(candidate.name)
-    return names[0] if names else ""
-
-
 def failed() -> dict:
     return reply(
         "lookup_failed",
@@ -63,6 +56,7 @@ class PatientResolver:
         self._previous_id: str | None = None
         self._token: object | None = None
         self._verified_as: tuple[str, str] | None = None
+        self._phone_chart: Receipt | None = None
 
     def staff_task_patient(self) -> dict[str, str] | None:
         """Snapshot current caller-reported identity without promoting it to verified."""
@@ -97,22 +91,28 @@ class PatientResolver:
         token = self._begin_lookup()
         self._precall = asyncio.create_task(self._lookup_phone(token))
 
-    async def _lookup_phone(self, token: object) -> tuple[Candidate | Receipt, ...]:
+    async def _lookup_phone(self, token: object) -> tuple[Candidate, ...]:
+        """Identify the caller's charts; a single chart serves only the call's first activation."""
         result = await self._middleware.resolve(
             ResolveRequest(
                 phone=self.state.call.caller_phone,
                 office=self.state.call.office.key,
             )
         )
-        if isinstance(result, Receipt):
-            matches = [result]
-        elif isinstance(result, Multiple):
+        matches: list[Candidate] = []
+        if isinstance(result, Multiple):
             matches = result.matches
-        else:
-            matches = []
-        if len({c.patientId for c in matches}) != len(matches) or any(
-            not candidate_first_name(c) for c in matches
-        ):
+        elif isinstance(result, Receipt) and (names := first_names(result.name)):
+            self._phone_chart = result
+            matches = [
+                Candidate(
+                    status="candidate",
+                    patientId=result.patientId,
+                    firstName=names[0],
+                    dob=result.dob,
+                )
+            ]
+        if len({c.patientId for c in matches}) != len(matches):
             matches = []
         candidates = tuple(matches)
         if self._current(token):
@@ -206,7 +206,7 @@ class PatientResolver:
         selected = [
             c
             for c in self.state.patient.candidates
-            if phone_name_matches(name, candidate_first_name(c))
+            if phone_name_matches(name, c.firstName)
             and (not dob or dob_matches(dob, c.dob))
         ]
         active = self.state.patient.active
@@ -261,15 +261,16 @@ class PatientResolver:
     ) -> dict:
         if not self._current(token):
             return superseded()
-        active = self.state.patient.active
-        receipt = (
-            active
-            if phone and active and active.patientId == candidate.patientId
-            else candidate
-        )
-        if not isinstance(receipt, Receipt) or (
-            phone and receipt.appointmentsStatus == "error"
+        chart = self._phone_chart
+        if not phone:
+            receipt = candidate
+        elif (
+            chart
+            and chart.patientId == candidate.patientId
+            and chart.appointmentsStatus != "error"
         ):
+            receipt = chart
+        else:
             receipt = await self._middleware.resolve(
                 ResolveRequest(
                     patientId=candidate.patientId,
@@ -291,6 +292,7 @@ class PatientResolver:
         previous_id = previous.patientId if previous else self._previous_id
         switched = previous_id not in (None, receipt.patientId)
         self._token = None
+        self._phone_chart = None
         self.state.patient.activate(receipt)
         self._pending = (None, None)
         self._previous_id = None
@@ -299,16 +301,23 @@ class PatientResolver:
             receipt, "switched" if switched else "verified", call_id=call_id
         )
 
-    def refresh_insurance(self, expected: Receipt, carrier: str, revision: int) -> bool:
+    def unchanged_since(self, patient_id: str, revision: int) -> bool:
+        """Whether a write's patient is still active. A reload replaces the chart object and keeps both."""
+        patient = self.state.patient
+        return (
+            patient.active is not None
+            and patient.active.patientId == patient_id
+            and patient.revision == revision
+        )
+
+    def refresh_insurance(
+        self, patient_id: str, carrier: str, carrier_id: str | None, revision: int
+    ) -> bool:
         """Commit validated coverage, fencing older patient reads."""
-        if (
-            self._closed
-            or self.state.patient.revision != revision
-            or self.state.patient.active is not expected
-        ):
+        if self._closed or not self.unchanged_since(patient_id, revision):
             return False
         self._token = None
-        self.state.patient.update_insurance(carrier)
+        self.state.patient.update_insurance(carrier, carrier_id)
         return True
 
     def begin_registration(self, first_name: str, dob: str) -> bool:
@@ -345,6 +354,7 @@ class PatientResolver:
         if not self.registering(first_name, dob):
             return False
         self._token = None
+        self._phone_chart = None
         self.state.patient.activate(receipt)
         self._pending = (None, None)
         self._previous_id = None

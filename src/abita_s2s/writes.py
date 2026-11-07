@@ -4,9 +4,9 @@ Outcomes of a sent write:
     written      the change is confirmed.
     partial      part of the change is confirmed; staff must finish it.
     uncertain    the change may or may not have happened.
-    refused      the middleware refused the request; the target record is unchanged.
-    expired      the middleware refused the target's token; the target record is unchanged.
-    failed       the middleware could not write; the target record is unchanged.
+    refused      the middleware refused the request; the write did not take effect.
+    expired      the middleware refused the target's token; the write did not take effect.
+    failed       the middleware could not write; the write did not take effect.
     unsent       the request never reached the record.
     needs_input  the middleware needs more facts; nothing changed.
 """

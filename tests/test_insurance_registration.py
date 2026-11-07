@@ -6,11 +6,12 @@ import unittest
 from unittest.mock import Mock
 
 import httpx
-from insurance_fixtures import decision
+from insurance_fixtures import decision, listed
 from test_patient_resolution import CONFIG, call_state, receipt, search
 
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration, Registration
+from abita_s2s.insurance_list import OfficePlans
 from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
@@ -101,6 +102,43 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         state, resolver, owner = self.owner([search(), *responses])
         await resolver.resolve("Jane", "01/02/1980")
         return state, resolver, owner
+
+    async def test_update_replaces_the_carrier_and_note_a_repeat_resolve_shows(self):
+        state, resolver, owner = self.owner(
+            [
+                receipt(
+                    insuranceCarrier="Aetna",
+                    insuranceCarrierId="car-aetna",
+                    insuranceNote="Aetna PPO per front desk",
+                ),
+                updated(
+                    newInsurance="BCBS",
+                    insuranceDecision=decision("BCBS", carrierId="car-bcbs"),
+                ),
+            ]
+        )
+        state.insurance.plans = OfficePlans.model_validate(
+            {
+                "medical": [
+                    listed("Aetna PPO", carrierId="car-aetna"),
+                    listed("BCBS", carrierId="car-bcbs"),
+                ],
+                "routine_vision": [],
+            }
+        )
+        await resolver.resolve("Jane", "01/02/1980")
+
+        result = await owner.update("bcbs", "medical", "member-1")
+
+        self.assertEqual(result["outcome"], "updated")
+        active = state.patient.active
+        self.assertEqual(active.insuranceCarrierId, "car-bcbs")
+        self.assertIsNone(active.insuranceNote)
+        repeat = (await resolver.resolve("Jane", None))["answer"]
+        self.assertIn("Insurance on file: BCBS.", repeat)
+        self.assertIn("BCBS `bcbs`", repeat)
+        self.assertNotIn("Aetna", repeat)
+        self.assertNotIn("Staff note", repeat)
 
     async def test_two_new_patients_register_without_lookup(self):
         state, resolver, owner = self.owner(
@@ -583,6 +621,68 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["outcome"], "updated")
         self.assertIn("context changed", result["answer"])
         self.assertIsNone(state.patient.active)
+
+    async def update_around(self, change, *reads):
+        """Run an update with its reply held until `change` has run on the chart."""
+        entered, finish = asyncio.Event(), asyncio.Event()
+
+        async def delayed(request):
+            entered.set()
+            await finish.wait()
+            return httpx.Response(200, json=updated())
+
+        state, resolver, owner = self.owner([delayed, *reads])
+        state.patient.active = Receipt.model_validate(receipt())
+        task = asyncio.create_task(owner.update("aetna", "medical", "member-example"))
+        await entered.wait()
+        await change(state, resolver)
+        finish.set()
+        return state, await task
+
+    async def test_a_same_patient_reload_during_an_update_applies_the_new_carrier(self):
+        async def reload(state, resolver):
+            state.patient.mark_appointments_stale()
+            await resolver.resolve("Jane", None)
+            self.assertEqual(state.patient.active.insuranceCarrier, "Test Insurance")
+
+        state, result = await self.update_around(reload, receipt())
+
+        self.assertTrue(result["answer"].startswith("success: Updated"), result)
+        self.assertEqual(state.patient.active.insuranceCarrier, "Aetna")
+        self.assertEqual(len(self.requests), 2)
+
+    async def test_an_appointment_change_during_an_update_applies_the_new_carrier(self):
+        async def revoked(state, resolver):
+            state.patient.mark_appointments_stale()
+
+        state, result = await self.update_around(revoked)
+
+        self.assertTrue(result["answer"].startswith("success: Updated"), result)
+        self.assertEqual(state.patient.active.insuranceCarrier, "Aetna")
+
+    async def test_leaving_and_returning_during_an_update_is_a_patient_change(self):
+        async def returned(state, resolver):
+            await resolver.resolve("John", "02/03/1982")
+            self.assertEqual(state.patient.active.patientId, "chart-john")
+            await resolver.resolve("Jane", "01/02/1980")
+            self.assertEqual(state.patient.active.patientId, "chart-jane")
+
+        state, result = await self.update_around(
+            returned, receipt("chart-john", "John", "02/03/1982"), receipt()
+        )
+
+        self.assertIn("context changed", result["answer"])
+        self.assertEqual(state.patient.active.insuranceCarrier, "Test Insurance")
+
+    async def test_an_update_starts_when_a_same_patient_chart_was_just_replaced(self):
+        state, _, owner = self.owner([updated()])
+        state.patient.active = Receipt.model_validate(receipt())
+        asyncio.get_running_loop().call_soon(state.patient.mark_appointments_stale)
+
+        result = await owner.update("aetna", "medical", "member-example")
+
+        self.assertTrue(result["answer"].startswith("success: Updated"), result)
+        self.assertEqual(len(self.requests), 1)
 
     async def test_update_survives_cancellation(self):
         entered, finish = asyncio.Event(), asyncio.Event()

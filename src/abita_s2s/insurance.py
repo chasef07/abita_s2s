@@ -363,8 +363,12 @@ class InsuranceRegistration:
                 outcome = "written"
                 if active.patientId in self.state.insurance.registrations:
                     self.state.insurance.registrations[active.patientId] = "created"
+                decision = result.insuranceDecision
                 if self._resolver.refresh_insurance(
-                    active, result.newInsurance, revision
+                    active.patientId,
+                    result.newInsurance,
+                    decision.carrierId if decision else None,
+                    revision,
                 ):
                     answer = reply(
                         "updated", f"success: Updated insurance to {plan.label}."
@@ -386,9 +390,6 @@ class InsuranceRegistration:
             return self._record(key, outcome, answer)
 
         return await self._run_write(
-            lambda: (
-                self.state.patient.active is active
-                and self.state.patient.revision == revision
-            ),
+            lambda: self._resolver.unchanged_since(active.patientId, revision),
             update,
         )

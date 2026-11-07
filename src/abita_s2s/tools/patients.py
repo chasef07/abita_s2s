@@ -45,7 +45,9 @@ class PatientTools:
         result = await self._resolver.resolve(
             firstName, dob, call_id=context.function_call.call_id
         )
-        return result["answer"] + self._scheduling.appointments_text()
+        if result["outcome"] in ("verified", "switched"):
+            return result["answer"] + self._scheduling.appointments_text()
+        return result["answer"]
 
     @function_tool
     async def add_patient(
