@@ -15,7 +15,7 @@ from livekit.agents import AgentSession, llm
 from livekit.agents.llm.tool_context import ToolContext
 from livekit.agents.llm.utils import build_strict_openai_schema
 from owner_fixtures import call_owners
-from test_patient_resolution import CONFIG, call_state, receipt
+from test_patient_resolution import CONFIG, call_state, candidate, receipt
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.identity import PatientResolver
@@ -34,10 +34,10 @@ from abita_s2s.offices import (
     SPRING_HILL,
     get_office_profile,
 )
-from abita_s2s.records import Receipt
+from abita_s2s.records import Candidate, Receipt
 from abita_s2s.runtime.reporting import CallReporter
 from abita_s2s.scheduling.answers import BookOutcome, CancelOutcome, MoveOutcome
-from abita_s2s.scheduling.appointments import Scheduling
+from abita_s2s.scheduling.appointments import REFUSALS, Scheduling
 from abita_s2s.scheduling.availability import SHARED_OFFICE_CHOICE
 from abita_s2s.tools.scheduling import SchedulingTools
 
@@ -768,7 +768,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         owner, requests = self.owner([{"status": "cancelled", "appointmentId": 77}])
         verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
         ref = owner.appointments()[0]["appointmentRef"]
-        owner.state.patient.update_insurance("Aetna")
+        owner.state.patient.update_insurance("Aetna", "car1")
         self.assertEqual(owner.appointments()[0]["appointmentRef"], ref)
         cancelled = await self.tool(
             owner, "cancel_appointment", appointmentRef=ref, readBack=True
@@ -1538,7 +1538,9 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     [a.id for a in owner.state.patient.active.appointments], [77]
                 )
                 self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
-                owner.state.patient.candidates = (owner.state.patient.active,)
+                owner.state.patient.record_candidates(
+                    (Candidate.model_validate(candidate()),)
+                )
                 resolver = PatientResolver(
                     owner.state, PatientMiddleware(owner.http._client, CONFIG)
                 )
@@ -1559,8 +1561,9 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             ({"status": "error", "outcome": "provider_rejected"}, "rejected"),
             ({"status": "error", "outcome": "provider_conflict"}, "rejected"),
             ({"status": "error", "outcome": "patient_context_mismatch"}, "rejected"),
-            ({"status": "error"}, "failed"),
-            ({"status": "error", "outcome": ""}, "failed"),
+            ({"status": "error"}, "rejected"),
+            ({"status": "error", "outcome": ""}, "rejected"),
+            ({"status": "error", "outcome": "validation"}, "rejected"),
         ):
             with self.subTest(rejection=rejection):
                 owner, requests = self.owner(
@@ -1733,7 +1736,8 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(requests[-1][1]["appointmentReason"], "eye problems")
         self.assertIn("Existing appointments", result)
 
-    async def test_missing_booking_facts_survive_plain_text(self):
+    async def test_unresolved_appointment_type_gives_the_reason_not_its_fields(self):
+        reason = "Post-op appointments must use a medical scheduling lane."
         owner, requests = self.owner(
             [
                 inventory(),
@@ -1741,14 +1745,275 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     "status": "error",
                     "outcome": "appointment_type_unresolved",
                     "missing": ["routing"],
+                    "message": reason,
                 },
+                inventory(),
+                booking(),
             ]
         )
         ref = await self.slots(owner)
         result = await self.book(owner, ref)
-        self.assertIn("needs_input: Booking needs additional facts: routing.", result)
+        self.assertTrue(result.startswith("needs_input:"), result)
+        self.assertIn(reason, result)
+        self.assertIn("staff request", result)
+        self.assertNotIn("routing", result)
         self.assertEqual(owner.state.patient.active.appointments, [])
+        retried = await self.book(owner, await self.slots(owner))
+        self.assertTrue(retried.startswith("success:"), retried)
+        self.assertEqual(len(requests), 4)
+
+    async def test_no_effect_refusals_show_the_middlewares_reason(self):
+        reason = "The destination does not support the existing appointment type."
+        move = dict(
+            appointmentReason="Follow up", referringDoctor="none", readBack=True
+        )
+        cases = {
+            "book provider_rejected": (
+                "book",
+                {"status": "error", "outcome": "provider_rejected", "message": reason},
+            ),
+            "book validation": (
+                "book",
+                {"status": "error", "outcome": "validation", "message": reason},
+            ),
+            "book blank": ("book", {"status": "error", "message": reason}),
+            "book write_failed": (
+                "book",
+                {"status": "error", "outcome": "write_failed", "message": reason},
+            ),
+            "cancel provider_rejected": (
+                "cancel",
+                {"status": "error", "outcome": "provider_rejected", "message": reason},
+            ),
+            "cancel validation": (
+                "cancel",
+                {"status": "error", "outcome": "validation", "message": reason},
+            ),
+            "cancel blank": ("cancel", {"status": "error", "message": reason}),
+            "cancel expired": (
+                "cancel",
+                {
+                    "status": "error",
+                    "outcome": "invalid_cancellation_token",
+                    "message": reason,
+                },
+            ),
+            "move validation": (
+                "move",
+                {"status": "failed", "outcome": "validation", "message": reason},
+            ),
+            "move blank": ("move", {"status": "failed", "message": reason}),
+            "move provider_rejected": (
+                "move",
+                {"status": "failed", "outcome": "provider_rejected", "message": reason},
+            ),
+            "move expired": (
+                "move",
+                {
+                    "status": "failed",
+                    "outcome": "invalid_reschedule_token",
+                    "message": reason,
+                },
+            ),
+            "move write_failed": (
+                "move",
+                {"status": "failed", "outcome": "write_failed", "message": reason},
+            ),
+        }
+        for case, (write, response) in cases.items():
+            with self.subTest(case=case):
+                owner, _ = self.owner(
+                    [response] if write == "cancel" else [inventory(), response]
+                )
+                verified(
+                    owner.state,
+                    appointmentsStatus="found",
+                    appointments=[appointment()],
+                )
+                old_ref = owner.appointments()[0]["appointmentRef"]
+                if write == "book":
+                    result = await self.book(owner, await self.slots(owner))
+                elif write == "cancel":
+                    result = await self.tool(
+                        owner,
+                        "cancel_appointment",
+                        appointmentRef=old_ref,
+                        readBack=True,
+                    )
+                else:
+                    result = await self.tool(
+                        owner,
+                        "reschedule_appointment",
+                        oldAppointmentRef=old_ref,
+                        appointmentSlotRef=await self.slots(owner),
+                        **move,
+                    )
+                self.assertIn(reason, result)
+                self.assertNotIn("could not be confirmed", result)
+                self.assertFalse(owner._ledger.blocking("chart-jane"))
+                self.assertEqual(
+                    [a.id for a in owner.state.patient.active.appointments], [77]
+                )
+
+    async def test_uncertain_writes_do_not_pass_the_middlewares_message_on(self):
+        said = "AdvancedMD may have booked the appointment."
+        for write, response in (
+            ("book", {"status": "error", "outcome": "indeterminate_write"}),
+            ("move", {"status": "uncertain", "outcome": "indeterminate_write"}),
+        ):
+            with self.subTest(write=write):
+                owner, _ = self.owner([inventory(), response | {"message": said}])
+                verified(
+                    owner.state,
+                    appointmentsStatus="found",
+                    appointments=[appointment()],
+                )
+                old_ref = owner.appointments()[0]["appointmentRef"]
+                if write == "book":
+                    result = await self.book(owner, await self.slots(owner))
+                else:
+                    result = await self.tool(
+                        owner,
+                        "reschedule_appointment",
+                        oldAppointmentRef=old_ref,
+                        appointmentSlotRef=await self.slots(owner),
+                        referringDoctor="none",
+                        readBack=True,
+                    )
+                self.assertIn("could not be confirmed", result)
+                self.assertNotIn(said, result)
+
+    async def test_an_outcome_outside_the_vocabulary_fails_closed(self):
+        self.assertNotIn("unclassified", get_args(SchedulingOutcome))
+        unclassified = {"outcome": "unclassified", "message": "Unexpected failure."}
+        for write, response in (
+            ("book", {"status": "error"} | unclassified),
+            ("cancel", {"status": "error"} | unclassified),
+            ("move", {"status": "failed"} | unclassified),
+        ):
+            with self.subTest(write=write):
+                owner, requests = self.owner(
+                    [response] if write == "cancel" else [inventory(), response]
+                )
+                verified(
+                    owner.state,
+                    appointmentsStatus="found",
+                    appointments=[appointment()],
+                )
+                old_ref = owner.appointments()[0]["appointmentRef"]
+                if write == "book":
+                    result = await self.book(owner, await self.slots(owner))
+                elif write == "cancel":
+                    result = await self.tool(
+                        owner,
+                        "cancel_appointment",
+                        appointmentRef=old_ref,
+                        readBack=True,
+                    )
+                else:
+                    result = await self.tool(
+                        owner,
+                        "reschedule_appointment",
+                        oldAppointmentRef=old_ref,
+                        appointmentSlotRef=await self.slots(owner),
+                        referringDoctor="none",
+                        readBack=True,
+                    )
+                self.assertIn("could not be confirmed", result)
+                self.assertNotIn("Unexpected failure", result)
+                self.assertTrue(owner._ledger.blocking("chart-jane"))
+                sent = len(requests)
+                repeat = await self.tool(
+                    owner, "cancel_appointment", appointmentRef=old_ref, readBack=True
+                )
+                self.assertIn("could not be confirmed", repeat)
+                self.assertEqual(len(requests), sent)
+
+    async def test_lost_move_race_says_the_slot_was_taken_and_a_reload_recovers(self):
+        owner, requests = self.owner(
+            [
+                inventory(),
+                {
+                    "status": "failed",
+                    "outcome": "slot_unavailable",
+                    "message": "This time slot is no longer available.",
+                },
+                receipt(
+                    appointmentsStatus="found",
+                    appointments=[appointment(cancellationToken="fresh-cancel")],
+                ),
+                inventory(),
+            ]
+        )
+        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        old_ref = owner.appointments()[0]["appointmentRef"]
+
+        lost = await self.tool(
+            owner,
+            "reschedule_appointment",
+            oldAppointmentRef=old_ref,
+            appointmentSlotRef=await self.slots(owner),
+            referringDoctor="none",
+            readBack=True,
+        )
+
+        self.assertTrue(lost.startswith("needs_input:"), lost)
+        self.assertIn("taken", lost)
+        self.assertIn("2026-09-20 at 10:00 AM was not changed", lost)
+        self.assertIn("search again", lost)
+        self.assertNotIn("staff", lost)
+        self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
+        self.assertFalse(owner._ledger.blocking("chart-jane"))
+
+        stale = await self.tool(
+            owner,
+            "list_available_appointments",
+            visitType="medical",
+            insurancePlanId=None,
+            rescheduleAppointmentRef=old_ref,
+        )
+        self.assertTrue(stale.startswith("needs_input:"), stale)
+        self.assertIn("reload", stale.lower())
+        self.assertNotIn("reference", stale)
+        self.assertNotIn("plan", stale)
         self.assertEqual(len(requests), 2)
+
+        resolver = PatientResolver(
+            owner.state, PatientMiddleware(owner.http._client, CONFIG)
+        )
+        self.addAsyncCleanup(resolver.aclose)
+        self.assertEqual((await resolver.resolve("Jane", None))["outcome"], "verified")
+        self.assertEqual(owner.appointments()[0]["appointmentRef"], old_ref)
+        retried = await self.tool(
+            owner,
+            "list_available_appointments",
+            visitType="medical",
+            insurancePlanId=None,
+            rescheduleAppointmentRef=old_ref,
+        )
+        self.assertTrue(retried.startswith("success:"), retried)
+
+    async def test_insurance_moving_during_a_write_is_not_called_a_patient_change(self):
+        async def insurance_moved(request):
+            owner.state.patient.update_insurance("Aetna", "car1")
+            return httpx.Response(200, json=booking())
+
+        owner, _ = self.owner([inventory(), insurance_moved])
+        result = await self.book(owner, await self.slots(owner))
+        self.assertTrue(result.startswith("success: Booked"), result)
+        self.assertNotIn("patient", result.replace("for Doe, Jane", "").lower())
+        self.assertEqual([a.id for a in owner.state.patient.active.appointments], [888])
+
+    async def test_a_real_patient_change_during_a_write_is_still_reported(self):
+        async def switched(request):
+            owner.state.patient.revision += 1
+            verified(owner.state, "chart-john")
+            return httpx.Response(200, json=booking())
+
+        owner, _ = self.owner([inventory(), switched])
+        result = await self.book(owner, await self.slots(owner))
+        self.assertTrue(result.startswith("success: Booked"), result)
+        self.assertIn("the active patient has since changed", result)
 
     async def test_cancellation_exact_target_token_and_expired_details(self):
         owner, requests = self.owner(
@@ -2264,7 +2529,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     referringDoctor="none",
                     readBack=True,
                 )
-                self.assertIn("reschedule failed", result)
+                self.assertIn("was not changed", result)
                 self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
                 await resolve_patient(speech_context(owner.state), "Jane", None)
                 self.assertEqual(len(requests), 3)
@@ -2288,6 +2553,31 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     unconfirmed,
                 )
                 self.assertEqual(len(requests), 3)
+
+    async def test_a_refused_write_revokes_the_chart_when_only_insurance_moved(self):
+        async def insurance_moved(request):
+            owner.state.patient.update_insurance("Aetna", "car1")
+            return httpx.Response(
+                200,
+                json={
+                    "status": "error",
+                    "outcome": "provider_rejected",
+                    "message": "AdvancedMD rejected the cancellation. Please load appointments again or contact the office.",
+                },
+            )
+
+        owner, requests = self.owner([insurance_moved])
+        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        ref = owner.appointments()[0]["appointmentRef"]
+
+        await self.tool(owner, "cancel_appointment", appointmentRef=ref, readBack=True)
+
+        self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
+        repeat = await self.tool(
+            owner, "cancel_appointment", appointmentRef=ref, readBack=True
+        )
+        self.assertTrue(repeat.startswith("needs_input: Choose"), repeat)
+        self.assertEqual(len(requests), 1)
 
     async def test_rejected_reschedule_does_not_stale_a_new_patient_context(self):
         async def switched(request):
@@ -2715,10 +3005,10 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 WriteReceipt(
                     status="error",
                     outcome="appointment_type_unresolved",
-                    missing=["routing"],
+                    message="Post-op appointments must use a medical scheduling lane.",
                 ),
                 "needs_input",
-                "needs_input: Booking needs additional facts: routing.",
+                "needs_input: That slot could not be booked. Post-op appointments",
                 (False, False, False),
             ),
             "uncertain": (
@@ -2823,6 +3113,18 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 ("booked", "uncertain"),
                 "blocked: The new appointment is booked for 2026-09-15",
                 (True, True, False),
+            ),
+            "refused": (
+                RescheduleReceipt(status="failed", outcome="provider_rejected"),
+                ("failed", "not_attempted"),
+                "needs_input: The reschedule was refused. Your old appointment on 2026-09-20 at 10:00 AM was not changed.",
+                (False, False, True),
+            ),
+            "expired": (
+                RescheduleReceipt(status="failed", outcome="invalid_reschedule_token"),
+                ("failed", "not_attempted"),
+                "needs_input: The appointment details expired. Your old appointment on 2026-09-20 at 10:00 AM was not changed.",
+                (False, False, True),
             ),
             "failed": (
                 RescheduleReceipt(status="failed", outcome="write_failed"),
@@ -2954,28 +3256,27 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(owner._write_task.result()["outcome"], outcome)
                 self.assertEqual(reporter.outcomes, [outcome])
 
-    async def test_every_middleware_outcome_is_classified_for_booking_and_cancellation(
-        self,
-    ):
+    async def test_every_middleware_outcome_is_classified_for_each_write(self):
         errors = {
-            "validation": ("uncertain", "uncertain"),
-            "invalid_booking_token": ("rejected", "uncertain"),
-            "invalid_cancellation_token": ("uncertain", "rejected"),
-            "invalid_reschedule_token": ("rejected", "uncertain"),
-            "booking_token_required": ("rejected", "uncertain"),
-            "appointment_type_unresolved": ("uncertain", "uncertain"),
-            "patient_context_mismatch": ("rejected", "uncertain"),
-            "slot_unavailable": ("rejected", "uncertain"),
-            "provider_conflict": ("rejected", "rejected"),
-            "provider_rejected": ("rejected", "rejected"),
-            "ownership_mismatch": ("uncertain", "rejected"),
-            "write_failed": ("failed", "failed"),
-            "indeterminate_write": ("uncertain", "uncertain"),
-            None: ("failed", "uncertain"),
+            "validation": ("rejected", "rejected", "failed"),
+            "invalid_booking_token": ("rejected", "uncertain", "failed"),
+            "invalid_cancellation_token": ("uncertain", "rejected", "uncertain"),
+            "invalid_reschedule_token": ("rejected", "uncertain", "failed"),
+            "booking_token_required": ("rejected", "uncertain", "failed"),
+            "appointment_type_unresolved": ("needs_input", "uncertain", "failed"),
+            "patient_context_mismatch": ("rejected", "uncertain", "failed"),
+            "slot_unavailable": ("rejected", "uncertain", "failed"),
+            "provider_conflict": ("rejected", "rejected", "failed"),
+            "provider_rejected": ("rejected", "rejected", "failed"),
+            "ownership_mismatch": ("uncertain", "rejected", "failed"),
+            "write_failed": ("failed", "failed", "failed"),
+            "indeterminate_write": ("uncertain", "uncertain", "uncertain"),
+            None: ("rejected", "rejected", "failed"),
         }
         self.assertEqual(set(errors), {*get_args(SchedulingOutcome), None})
+        self.assertEqual(set(errors), set(REFUSALS))
         cases = [
-            (WriteReceipt(status="error", outcome=outcome), expected)
+            (WriteReceipt(status="error", outcome=outcome), expected[:2])
             for outcome, expected in errors.items()
         ] + [
             (
@@ -2983,6 +3284,10 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 ("rejected", "uncertain"),
             ),
             (WriteReceipt(status="booked"), ("uncertain", "uncertain")),
+            (
+                WriteReceipt(status="booked", outcome="validation"),
+                ("uncertain", "uncertain"),
+            ),
             (
                 WriteReceipt(status="cancelled", outcome="write_failed"),
                 ("uncertain", "uncertain"),
@@ -3022,6 +3327,31 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                         ]["status"],
                     ),
                     expected,
+                )
+        for outcome, (_, _, moved) in errors.items():
+            with self.subTest(move=outcome):
+                owner, _ = self.owner([inventory()])
+                verified(
+                    owner.state,
+                    appointmentsStatus="found",
+                    appointments=[appointment()],
+                )
+                owner.http.reschedule = AsyncMock(
+                    return_value=RescheduleReceipt(status="failed", outcome=outcome)
+                )
+                await self.tool(
+                    owner,
+                    "reschedule_appointment",
+                    oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
+                    appointmentSlotRef=await self.slots(owner),
+                    referringDoctor="none",
+                    readBack=True,
+                )
+                self.assertEqual(
+                    owner.state.reporter.appointment.call_args.args[0]["bookingResult"][
+                        "status"
+                    ],
+                    moved,
                 )
 
     def test_schema_has_no_patient_ids_or_tokens(self):

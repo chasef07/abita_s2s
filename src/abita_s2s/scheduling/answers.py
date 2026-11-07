@@ -1,18 +1,18 @@
 """What the offered slots and each scheduling write outcome tell the model."""
 
-from collections.abc import Sequence
 from datetime import date
 from typing import Literal, assert_never
 
+from abita_s2s.integrations.scheduling_http import SchedulingOutcome
 from abita_s2s.records import Appointment
 from abita_s2s.results import reply
 from abita_s2s.scheduling.availability import afternoon
 
 UNAVAILABLE = "blocked: Scheduling is unavailable."
-STALE_BEFORE_WRITE = (
-    "blocked: The call or patient changed before the appointment operation started."
-)
+STALE_BEFORE_WRITE = "blocked: The call, patient, or insurance changed before the appointment operation started."
 CHOOSE_LOADED_APPOINTMENT = "needs_input: Choose and confirm the exact currently loaded appointment. Reload patient appointments if needed."
+RELOAD_BEFORE_MOVE = "needs_input: This appointment must be reloaded before moving it. Resolve the patient again to reload appointments, then repeat this search."
+PATIENT_CHANGED_DURING_WRITE = " This result is for the patient who was active when it started; the active patient has since changed."
 
 BookOutcome = Literal[
     "written", "refused", "expired", "failed", "unsent", "needs_input", "uncertain"
@@ -20,7 +20,7 @@ BookOutcome = Literal[
 CancelOutcome = Literal[
     "written", "refused", "expired", "failed", "unsent", "uncertain"
 ]
-MoveOutcome = Literal["written", "partial", "failed", "uncertain"]
+MoveOutcome = Literal["written", "partial", "refused", "expired", "failed", "uncertain"]
 
 
 def slot_lines(slots: list[dict], soonest: list[str], today: date) -> list[str]:
@@ -62,10 +62,19 @@ def slot_lines(slots: list[dict], soonest: list[str], today: date) -> list[str]:
     return lines
 
 
-def failed(noun: str) -> dict:
+def sentences(*parts: str) -> str:
+    """One answer from its parts, leaving out a middleware reason that was not sent."""
+    return " ".join(part.strip() for part in parts if part.strip())
+
+
+def failed(noun: str, message: str = "") -> dict:
     return reply(
         "failed",
-        f"blocked: The {noun} failed. Ask staff for help or explicitly retry after resolving the failure.",
+        sentences(
+            f"blocked: The {noun} failed.",
+            message,
+            "Ask staff for help or explicitly retry after resolving the failure.",
+        ),
     )
 
 
@@ -76,29 +85,37 @@ def uncertain(noun: str) -> dict:
     )
 
 
-def booking(outcome: BookOutcome, description: str, missing: Sequence[str]) -> dict:
+def booking(outcome: BookOutcome, description: str, message: str) -> dict:
     match outcome:
         case "written":
             return reply("booked", f"success: Booked {description}.")
         case "refused" | "expired":
             return reply(
                 "rejected",
-                "needs_input: That slot could not be booked. Reload availability or the existing appointment as needed before confirming another choice.",
+                sentences(
+                    "needs_input: That slot could not be booked.",
+                    message,
+                    "Reload availability or the existing appointment as needed before confirming another choice.",
+                ),
             )
         case "needs_input":
             return reply(
                 "needs_input",
-                f"needs_input: Booking needs additional facts: {', '.join(missing)}. Clarify these before trying again.",
+                sentences(
+                    "needs_input: That slot could not be booked.",
+                    message,
+                    "If a different search resolves this, search again; otherwise offer a staff request.",
+                ),
             )
         case "failed" | "unsent":
-            return failed("booking")
+            return failed("booking", message)
         case "uncertain":
             return uncertain("booking")
         case _:
             assert_never(outcome)
 
 
-def cancellation(outcome: CancelOutcome) -> dict:
+def cancellation(outcome: CancelOutcome, message: str) -> dict:
     match outcome:
         case "written":
             return reply(
@@ -107,22 +124,40 @@ def cancellation(outcome: CancelOutcome) -> dict:
         case "expired":
             return reply(
                 "rejected",
-                "needs_input: The appointment details expired. Reload appointments and reconfirm the exact cancellation.",
+                sentences(
+                    "needs_input: The appointment details expired.",
+                    message,
+                    "Reload appointments and reconfirm the exact cancellation.",
+                ),
             )
         case "refused":
             return reply(
                 "rejected",
-                "needs_input: Cancellation was not completed. Reload appointments and reconfirm the exact appointment, or ask office staff for help.",
+                sentences(
+                    "needs_input: Cancellation was not completed.",
+                    message,
+                    "Reload appointments and reconfirm the exact appointment, or ask office staff for help.",
+                ),
             )
         case "failed" | "unsent":
-            return failed("cancellation")
+            return failed("cancellation", message)
         case "uncertain":
             return uncertain("cancellation")
         case _:
             assert_never(outcome)
 
 
-def move(outcome: MoveOutcome, description: str, old: Appointment) -> dict:
+def move(
+    outcome: MoveOutcome,
+    description: str,
+    old: Appointment,
+    *,
+    reason: SchedulingOutcome | None,
+    message: str,
+) -> dict:
+    """A move the middleware refused keeps today's failed label; only its answer is specific."""
+    unchanged = f"Your old appointment on {old.date} at {old.time} was not changed."
+    reload_first = "Resolve the patient again to reload appointments, then search again"
     match outcome:
         case "written":
             return reply(
@@ -134,10 +169,44 @@ def move(outcome: MoveOutcome, description: str, old: Appointment) -> dict:
                 "partial_reschedule",
                 f"blocked: The new appointment is booked for {description}, but cancellation of the old appointment requires staff reconciliation. Do not book again.",
             )
+        case "refused" if reason == "slot_unavailable":
+            return reply(
+                "failed",
+                sentences(
+                    "needs_input: That time was just taken.",
+                    unchanged,
+                    f"{reload_first} and offer another time.",
+                ),
+            )
+        case "refused":
+            return reply(
+                "failed",
+                sentences(
+                    "needs_input: The reschedule was refused.",
+                    message,
+                    unchanged,
+                    f"{reload_first} and reconfirm the move, or offer a staff request.",
+                ),
+            )
+        case "expired":
+            return reply(
+                "failed",
+                sentences(
+                    "needs_input: The appointment details expired.",
+                    message,
+                    unchanged,
+                    f"{reload_first} and reconfirm the move.",
+                ),
+            )
         case "failed":
             return reply(
                 "failed",
-                f"blocked: The reschedule failed. Your old appointment on {old.date} at {old.time} was not changed. Reload appointments or ask staff to reconcile before another change.",
+                sentences(
+                    "blocked: The reschedule failed.",
+                    unchanged,
+                    message,
+                    "Reload appointments or ask staff to reconcile before another change.",
+                ),
             )
         case "uncertain":
             return uncertain("reschedule")

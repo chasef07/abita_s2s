@@ -27,6 +27,7 @@ class InsuranceDecision(BaseModel):
     participation: Literal["accepted", "not_accepted", "unknown"]
     planId: str = ""
     canonicalPlan: str = ""
+    carrierId: str = ""
     coverageType: CoverageType
     officeId: str
     allowedProviders: list[str]

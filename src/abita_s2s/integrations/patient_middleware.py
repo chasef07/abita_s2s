@@ -12,9 +12,7 @@ from abita_s2s.records import Candidate, Receipt, Record, Text
 
 class Multiple(Record):
     status: Literal["multiple_matches"]
-    matches: list[Annotated[Candidate | Receipt, Field(discriminator="status")]] = (
-        Field(min_length=1)
-    )
+    matches: list[Candidate] = Field(min_length=1)
 
 
 class NotFound(Record):

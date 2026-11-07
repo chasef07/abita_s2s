@@ -104,6 +104,12 @@ class PromptContractTests(unittest.TestCase):
     def test_every_registry_entry_builds_when_every_owner_is_present(self):
         self.assertEqual(len(offer(EVERY_OWNER)), len(TOOLS))
 
+    def test_thinker_keeps_internal_names_out_of_speech(self):
+        self.assertIn(
+            "Never say vendor or system names, field names, or tokens from tool results.",
+            flat(surfaces()["prompts/thinker.md"]),
+        )
+
     def test_detectors_find_tool_names_and_heading_references(self):
         self.assertEqual(named_tools("Set `dob: null`, `null`, or `true`."), {"dob"})
         self.assertEqual(

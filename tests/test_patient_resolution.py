@@ -5,6 +5,7 @@ import json
 import unittest
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import httpx
 from insurance_fixtures import decision, listed, office_plans
@@ -21,9 +22,11 @@ from abita_s2s.insurance_list import OfficePlans
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.name_matcher import phone_name_matches
 from abita_s2s.offices import SPRING_HILL
-from abita_s2s.records import Receipt
+from abita_s2s.records import Candidate, Receipt
+from abita_s2s.scheduling.appointments import Scheduling
 from abita_s2s.staff_tasks import _same_patient
 from abita_s2s.state import CallContext, CallState
+from abita_s2s.tools.patients import PatientTools
 
 DOB = "01/02/1980"
 SAME_PATIENT = (
@@ -284,6 +287,82 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(private, json.dumps(result))
         self.assertEqual((await r.resolve("Jane", None))["outcome"], "verified")
         self.assertEqual(len(calls), 1)
+
+    async def test_phone_chart_serves_one_activation_and_later_returns_read_fresh(self):
+        r, calls = self.resolver(
+            [
+                receipt(insuranceCarrier="At call start"),
+                receipt("chart-john", "John", "03/04/1990"),
+                receipt(insuranceCarrier="Read fresh"),
+            ]
+        )
+        await self.preload(r)
+        self.assertEqual(
+            r.state.patient.candidates,
+            (Candidate.model_validate(candidate()),),
+        )
+        self.assertEqual((await r.resolve("Jane", None))["outcome"], "verified")
+        self.assertEqual(r.state.patient.active.insuranceCarrier, "At call start")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual((await r.resolve("John", "03/04/1990"))["outcome"], "switched")
+
+        back = await r.resolve("Jane", None)
+
+        self.assertEqual(back["outcome"], "switched")
+        self.assertEqual(r.state.patient.active.insuranceCarrier, "Read fresh")
+        self.assertEqual(calls[-1]["patientId"], "chart-jane")
+        self.assertEqual(len(calls), 3)
+
+    async def test_phone_chart_is_dropped_when_another_patient_activates_first(self):
+        r, calls = self.resolver(
+            [
+                receipt(insuranceCarrier="At call start"),
+                receipt("chart-john", "John", "03/04/1990"),
+                receipt(insuranceCarrier="Read fresh"),
+            ]
+        )
+        await self.preload(r)
+        self.assertEqual((await r.resolve("John", "03/04/1990"))["outcome"], "verified")
+
+        self.assertEqual((await r.resolve("Jane", None))["outcome"], "switched")
+
+        self.assertEqual(r.state.patient.active.insuranceCarrier, "Read fresh")
+        self.assertEqual(calls[-1]["patientId"], "chart-jane")
+
+    async def test_ambiguous_repeat_keeps_the_patient_and_omits_chart_text(self):
+        responses = [
+            {
+                "status": "multiple_matches",
+                "matches": [candidate(), candidate("chart-jane-2", dob="05/06/2010")],
+            },
+            receipt(
+                appointmentsStatus="found",
+                appointments=[
+                    {
+                        "id": 77,
+                        "date": "2026-09-20",
+                        "time": "10:00 AM",
+                        "provider": "Dr. Bach",
+                    }
+                ],
+            ),
+        ]
+        r, _ = self.resolver(responses)
+        await self.preload(r)
+        scheduling = Scheduling(r.state, Mock())
+        tools = PatientTools(r, Mock(), scheduling)
+        context = SimpleNamespace(
+            userdata=r.state, function_call=SimpleNamespace(call_id="tool-call")
+        )
+
+        loaded = await tools.resolve_patient(context, "Jane", "01/02/1980")
+        self.assertIn("Existing appointments:", loaded)
+        active = r.state.patient.active
+
+        repeated = await tools.resolve_patient(context, "Jane", None)
+
+        self.assertEqual(repeated, "needs_input: What is the patient's date of birth?")
+        self.assertIs(r.state.patient.active, active)
 
     async def test_no_caller_id_requires_dob_then_hydrates(self):
         r, calls = self.resolver([receipt()], call_state(None))

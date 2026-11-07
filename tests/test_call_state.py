@@ -3,12 +3,12 @@ from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock
 
-from test_patient_resolution import call_state, receipt
+from test_patient_resolution import call_state, candidate, receipt
 
 from abita_s2s.identity import PatientResolver
 from abita_s2s.integrations.patient_middleware import NotFound
 from abita_s2s.offices import get_office_profile
-from abita_s2s.records import Appointment, Receipt
+from abita_s2s.records import Appointment, Candidate, Receipt
 from abita_s2s.state import CallContext, CallState, PatientState
 
 
@@ -46,7 +46,7 @@ class CallStateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(patient.revision, 1)
         self.assertEqual(patient.active.appointments, [booked])
         self.assertEqual(patient.active.appointmentsStatus, "error")
-        patient.update_insurance("Other Plan")
+        patient.update_insurance("Other Plan", "car-other")
         self.assertEqual(patient.revision, 2)
         patient.activate(Receipt.model_validate(receipt("chart-john", "John")))
         self.assertEqual(patient.revision, 3)
@@ -65,7 +65,7 @@ class CallStateTests(unittest.IsolatedAsyncioTestCase):
         other = CallState(resolver.state.call)
         patient = Receipt.model_validate(receipt())
         await resolver._load_patient(
-            patient, "Jane", None, resolver._begin_lookup(), phone=True
+            patient, "Jane", None, resolver._begin_lookup(), phone=False
         )
         self.assertIs(resolver.state.patient.active, patient)
         self.assertIsNone(other.patient.active)
@@ -81,13 +81,13 @@ class CallStateTests(unittest.IsolatedAsyncioTestCase):
         current = resolver._begin_lookup()
         patient = Receipt.model_validate(receipt())
         self.assertEqual(
-            (await resolver._load_patient(patient, "Jane", None, old, phone=True))[
+            (await resolver._load_patient(patient, "Jane", None, old, phone=False))[
                 "outcome"
             ],
             "superseded",
         )
         self.assertEqual(
-            (await other._load_patient(patient, "Jane", None, current, phone=True))[
+            (await other._load_patient(patient, "Jane", None, current, phone=False))[
                 "outcome"
             ],
             "superseded",
@@ -95,7 +95,7 @@ class CallStateTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(resolver.state.patient.active)
         self.assertIsNone(other.state.patient.active)
         self.assertEqual(
-            (await resolver._load_patient(patient, "Jane", None, current, phone=True))[
+            (await resolver._load_patient(patient, "Jane", None, current, phone=False))[
                 "outcome"
             ],
             "verified",
@@ -105,7 +105,7 @@ class CallStateTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 (
                     await resolver._load_patient(
-                        patient, "Jane", None, token, phone=True
+                        patient, "Jane", None, token, phone=False
                     )
                 )["outcome"],
                 "superseded",
@@ -130,9 +130,12 @@ class CallStateTests(unittest.IsolatedAsyncioTestCase):
         await resolver._lookup_phone(token)
         self.assertIsNone(resolver.state.patient.active)
         await resolver._lookup_phone(token)
-        self.assertEqual(resolver.state.patient.candidates, (patient,))
+        self.assertEqual(
+            resolver.state.patient.candidates,
+            (Candidate.model_validate(candidate()),),
+        )
         await resolver._load_patient(
-            patient, "Jane", None, resolver._begin_lookup(), phone=True
+            patient, "Jane", None, resolver._begin_lookup(), phone=False
         )
         await resolver._lookup_phone(resolver._begin_lookup())
         self.assertIs(resolver.state.patient.active, patient)

@@ -42,7 +42,7 @@ class PatientState:
     tests/test_state_ownership.py names the modules that may call each method.
     """
 
-    candidates: tuple[Candidate | Receipt, ...] = ()
+    candidates: tuple[Candidate, ...] = ()
     active: Receipt | None = None
     revision: int = 0
 
@@ -56,9 +56,15 @@ class PatientState:
         self.active = None
         self.revision += 1
 
-    def update_insurance(self, carrier: str) -> None:
-        """Record a completed insurance write on the active chart."""
-        self.active = self._chart().model_copy(update={"insuranceCarrier": carrier})
+    def update_insurance(self, carrier: str, carrier_id: str | None) -> None:
+        """Record a completed insurance write; the old carrier's staff note no longer applies."""
+        self.active = self._chart().model_copy(
+            update={
+                "insuranceCarrier": carrier,
+                "insuranceCarrierId": carrier_id,
+                "insuranceNote": None,
+            }
+        )
         self.revision += 1
 
     def update_appointments(self, appointments: list[Appointment]) -> None:
@@ -79,7 +85,7 @@ class PatientState:
         """Revoke the loaded appointments' authority until identity reloads the chart."""
         self.active = self._chart().model_copy(update={"appointmentsStatus": "error"})
 
-    def record_candidates(self, candidates: tuple[Candidate | Receipt, ...]) -> None:
+    def record_candidates(self, candidates: tuple[Candidate, ...]) -> None:
         """Keep the caller-phone lookup's well-formed candidates, or none."""
         self.candidates = candidates
 

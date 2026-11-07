@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal, assert_never
+from typing import Literal, NamedTuple
 
 from abita_s2s.integrations.scheduling_http import (
     Booking,
@@ -22,6 +22,8 @@ from abita_s2s.results import reply
 from abita_s2s.scheduling import answers
 from abita_s2s.scheduling.answers import (
     CHOOSE_LOADED_APPOINTMENT,
+    PATIENT_CHANGED_DURING_WRITE,
+    RELOAD_BEFORE_MOVE,
     STALE_BEFORE_WRITE,
     UNAVAILABLE,
     BookOutcome,
@@ -37,37 +39,43 @@ from abita_s2s.scheduling.availability import (
 from abita_s2s.state import CallState
 from abita_s2s.writes import WriteKey, WriteLedger, WriteOutcome, write_effect
 
-Refusal = Literal["refused", "expired", "failed", "unsent", "uncertain"]
+
+class Refusal(NamedTuple):
+    """What one middleware error outcome means for each write.
+
+    Go errors after it touches the provider are always typed, so blank and validation
+    mean the provider was never asked. An outcome a write's path cannot produce stays
+    uncertain.
+    """
+
+    book: BookOutcome
+    cancel: CancelOutcome
+    move: MoveOutcome
 
 
-def refusal(
-    action: Literal["book", "cancel"], outcome: SchedulingOutcome | None
-) -> Refusal:
-    """What a middleware error outcome means for a booking or for a cancellation."""
-    booking = action == "book"
-    match outcome:
-        case "provider_conflict" | "provider_rejected":
-            return "refused"
-        case "slot_unavailable" | "patient_context_mismatch":
-            return "refused" if booking else "uncertain"
-        case (
-            "invalid_booking_token"
-            | "booking_token_required"
-            | "invalid_reschedule_token"
-        ):
-            return "expired" if booking else "uncertain"
-        case "invalid_cancellation_token":
-            return "uncertain" if booking else "expired"
-        case "ownership_mismatch":
-            return "uncertain" if booking else "refused"
-        case "write_failed":
-            return "failed"
-        case None:
-            return "unsent" if booking else "uncertain"
-        case "validation" | "indeterminate_write" | "appointment_type_unresolved":
-            return "uncertain"
-        case _:
-            assert_never(outcome)
+REFUSALS: dict[SchedulingOutcome | None, Refusal] = {
+    None: Refusal("refused", "refused", "refused"),
+    "validation": Refusal("refused", "refused", "refused"),
+    "invalid_booking_token": Refusal("expired", "uncertain", "expired"),
+    "booking_token_required": Refusal("expired", "uncertain", "expired"),
+    "invalid_reschedule_token": Refusal("expired", "uncertain", "expired"),
+    "invalid_cancellation_token": Refusal("uncertain", "expired", "uncertain"),
+    "appointment_type_unresolved": Refusal("needs_input", "uncertain", "refused"),
+    "patient_context_mismatch": Refusal("refused", "uncertain", "refused"),
+    "slot_unavailable": Refusal("refused", "uncertain", "refused"),
+    "provider_conflict": Refusal("refused", "refused", "refused"),
+    "provider_rejected": Refusal("refused", "refused", "refused"),
+    "ownership_mismatch": Refusal("uncertain", "refused", "refused"),
+    "write_failed": Refusal("failed", "failed", "failed"),
+    "indeterminate_write": Refusal("uncertain", "uncertain", "uncertain"),
+}
+
+
+def said_by_middleware(
+    result: WriteReceipt | RescheduleReceipt | SchedulingFailure,
+) -> str:
+    """The middleware's own reason, shown only for a refusal that changed nothing."""
+    return "" if isinstance(result, SchedulingFailure) else result.message
 
 
 def booked_appointment(
@@ -97,17 +105,16 @@ def booked_appointment(
 def booking_outcome(
     result: WriteReceipt | SchedulingFailure, new: Appointment | None
 ) -> BookOutcome:
-    """A booking refusal counts whatever the receipt status; other non-error receipts are uncertain."""
+    """A named booking refusal counts whatever the receipt status; other non-error receipts are uncertain."""
     if new is not None:
         return "written"
     if isinstance(result, SchedulingFailure):
         return "uncertain" if result.uncertain else "unsent"
-    if result.outcome == "appointment_type_unresolved" and result.missing:
-        return "needs_input"
-    outcome = refusal("book", result.outcome)
-    if result.status != "error" and outcome not in ("refused", "expired"):
-        return "uncertain"
-    return outcome
+    outcome = REFUSALS[result.outcome].book
+    if result.status == "error":
+        return outcome
+    named = result.outcome not in (None, "validation")
+    return outcome if named and outcome in ("refused", "expired") else "uncertain"
 
 
 def cancellation_outcome(
@@ -120,7 +127,7 @@ def cancellation_outcome(
         return "written"
     if result.status != "error":
         return "uncertain"
-    return refusal("cancel", result.outcome)
+    return REFUSALS[result.outcome].cancel
 
 
 def move_outcome(
@@ -131,7 +138,9 @@ def move_outcome(
     if not isinstance(result, RescheduleReceipt):
         return "uncertain"
     if new is None:
-        return "failed" if result.status == "failed" else "uncertain"
+        return (
+            REFUSALS[result.outcome].move if result.status == "failed" else "uncertain"
+        )
     cancellation = result.cancellation
     cancelled = (
         result.status == "completed"
@@ -230,6 +239,9 @@ class Scheduling:
         plan: str | Appointment | None = plan_id
         if plan is None:
             p = self.state.patient.active
+            if p and old_ref and p.appointmentsStatus == "error":
+                self._offers.invalidate()
+                return reply("needs_input", RELOAD_BEFORE_MOVE)
             plan = self._target(p, "reschedule", old_ref)[0] if p and old_ref else None
             if plan is None:
                 self._offers.invalidate()
@@ -383,7 +395,7 @@ class Scheduling:
         if (
             target is not None
             and write_effect(outcome).spends_target
-            and self._context() == captured
+            and self._context().patient_id == captured.patient_id
         ):
             self.state.patient.mark_appointments_stale()
         self._ledger.record(key, outcome, receipt)
@@ -422,7 +434,7 @@ class Scheduling:
             Cancellation(patientId=p.patientId, cancellationToken=old.cancellationToken)
         )
         outcome = cancellation_outcome(result, old.id)
-        answer = answers.cancellation(outcome)
+        answer = answers.cancellation(outcome, said_by_middleware(result))
         self._report(
             p,
             answer["outcome"],
@@ -552,8 +564,7 @@ class Scheduling:
         result = await self.http.book(booking)
         new = booked_appointment(result, slot, offered.office)
         outcome = booking_outcome(result, new)
-        missing = result.missing if isinstance(result, WriteReceipt) else []
-        answer = answers.booking(outcome, description, missing)
+        answer = answers.booking(outcome, description, said_by_middleware(result))
         self._report(
             p,
             answer["outcome"],
@@ -586,7 +597,13 @@ class Scheduling:
         booked = result.booking if isinstance(result, RescheduleReceipt) else None
         new = booked_appointment(booked, slot, offered.office)
         outcome = move_outcome(result, old.id, new)
-        answer = answers.move(outcome, description, old)
+        answer = answers.move(
+            outcome,
+            description,
+            old,
+            reason=result.outcome if isinstance(result, RescheduleReceipt) else None,
+            message=said_by_middleware(result),
+        )
         if new is None:
             lost = isinstance(result, SchedulingFailure) and result.uncertain
             self._report(
@@ -751,11 +768,7 @@ class Scheduling:
         self.state.patient.update_appointments(list(appointments.values()))
 
     def _finish_change(self, result: dict, captured: SchedulingContext) -> dict:
-        if self._context() != captured:
-            return {
-                **result,
-                "answer": result["answer"]
-                + " This result belongs to the earlier patient context; the patient changed during the operation.",
-            }
+        if self._context().patient_id != captured.patient_id:
+            return {**result, "answer": result["answer"] + PATIENT_CHANGED_DURING_WRITE}
         self._reconcile_receipts()
         return result
