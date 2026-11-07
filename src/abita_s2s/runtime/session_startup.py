@@ -269,7 +269,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         office_knowledge_text(product, office.key, scenario_knowledge),
         office_plans(registration, office.key, scenario_plans),
     )
-    state.insurance.plans = plans
+    state.plans = plans
     insurance_list = render_insurance_list(plans)
     if config.interaction_url and not ctx.is_fake_job():
         if call.caller_phone:

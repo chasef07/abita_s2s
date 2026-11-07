@@ -4,11 +4,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from abita_s2s.insurance_state import InsuranceState
+from abita_s2s.call_record import CallRecord
 from abita_s2s.offices import OfficeProfile, get_product_office_key
 from abita_s2s.records import Appointment, Candidate, Receipt
 
 if TYPE_CHECKING:
+    from abita_s2s.insurance_list import OfficePlans
     from abita_s2s.runtime.reporting import CallReporter
 
 
@@ -98,6 +99,7 @@ class PatientState:
 @dataclass(repr=False)
 class CallState:
     call: CallContext
+    plans: "OfficePlans | None" = None
     patient: PatientState = field(default_factory=PatientState)
-    insurance: InsuranceState = field(default_factory=InsuranceState)
+    record: CallRecord = field(default_factory=CallRecord)
     reporter: "CallReporter | None" = None

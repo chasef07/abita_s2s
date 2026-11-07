@@ -7,13 +7,13 @@ from types import SimpleNamespace
 
 import httpx
 from insurance_fixtures import listed
+from owner_fixtures import insurance_ready, write_uncertain
 from test_patient_resolution import call_state
 from test_scheduling import PLAN
 
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.insurance_list import OfficePlans
-from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
 from abita_s2s.integrations.scheduling_http import (
@@ -81,7 +81,7 @@ async def main(url):
                     scenario == "availability_read_failure"
                 ), result
             elif scenario.startswith("insurance_"):
-                state.insurance.plans = OfficePlans.model_validate(
+                state.plans = OfficePlans.model_validate(
                     {"medical": [listed("Meritain Health")], "routine_vision": []}
                 )
                 original = state.patient.active
@@ -105,11 +105,11 @@ async def main(url):
                     )
                 elif expected == "failed":
                     assert state.patient.active is original
-                    assert not state.insurance.write_uncertain
+                    assert not write_uncertain(state)
                     assert "Do not repeat" not in result["answer"]
                 else:
                     assert not insurance_ready(state)
-                    assert state.insurance.write_uncertain
+                    assert write_uncertain(state)
                     if expected == "partial":
                         assert "replacement was not attached" in result["answer"]
                     repeated = await insurance.update(

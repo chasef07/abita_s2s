@@ -17,7 +17,12 @@ from livekit.agents.llm.utils import (
     build_legacy_openai_schema,
     build_strict_openai_schema,
 )
-from owner_fixtures import call_owners
+from owner_fixtures import (
+    call_owners,
+    insurance_write_open,
+    insurance_write_uncertain,
+    registered,
+)
 from test_patient_resolution import CONFIG, call_state, candidate, receipt
 
 from abita_s2s.agent import AbitaAgent
@@ -279,7 +284,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     appointmentsStatus="found",
                     appointments=[appointment()],
                 )
-                owner.state.insurance.registrations["chart-jane"] = "created"
+                registered(owner.state, "chart-jane", "created")
                 old_ref = owner.appointments()[0]["appointmentRef"]
                 ref = await self.slots(
                     owner, **({"rescheduleAppointmentRef": old_ref} if move else {})
@@ -389,7 +394,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(plan=plan, unloaded=unloaded):
                 owner, requests = self.owner([inventory()])
                 if unloaded:
-                    owner.state.insurance.plans = None
+                    owner.state.plans = None
                 result = await self.tool(
                     owner,
                     "list_available_appointments",
@@ -462,11 +467,11 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 owner, requests = self.owner([inventory()])
                 ref = await self.slots(owner)
                 if guard == "partial":
-                    owner.state.insurance.registrations["chart-jane"] = "partial"
+                    registered(owner.state, "chart-jane", "partial")
                 elif guard == "pending":
-                    owner.state.insurance.write_pending = True
+                    insurance_write_open(owner.state)
                 else:
-                    owner.state.insurance.write_uncertain = True
+                    insurance_write_uncertain(owner.state)
                 self.assertFalse((await self.book(owner, ref)).startswith("success:"))
                 self.assertEqual(len(requests), 1)
 
@@ -852,18 +857,14 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 1)
 
     async def test_missing_prerequisites_and_office_care(self):
-        owner, requests = self.owner([])
         for change in ("partial", "uncertain", "pending", "patient"):
-            verified(owner.state)
-            owner.state.insurance.registrations.clear()
-            owner.state.insurance.write_uncertain = False
-            owner.state.insurance.write_pending = False
+            owner, requests = self.owner([])
             if change == "partial":
-                owner.state.insurance.registrations["chart-jane"] = "partial"
+                registered(owner.state, "chart-jane", "partial")
             elif change == "uncertain":
-                owner.state.insurance.write_uncertain = True
+                insurance_write_uncertain(owner.state)
             elif change == "pending":
-                owner.state.insurance.write_pending = True
+                insurance_write_open(owner.state)
             else:
                 owner.state.patient.active = None
             self.assertEqual(
@@ -1422,7 +1423,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         owner.state.patient.revision += 1
         verified(owner.state, "chart-john")
         release.set()
-        await asyncio.shield(owner._write_task)
+        await asyncio.shield(owner._writes._last_sent)
         self.assertFalse(owner.state.patient.active.appointments)
         owner.state.patient.revision += 1
         verified(owner.state)
@@ -4143,7 +4144,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                         appointmentReason="Follow up",
                         readBack=True,
                     )
-                self.assertEqual(owner._write_task.result()["outcome"], outcome)
+                self.assertEqual(owner._writes._last_sent.result()["outcome"], outcome)
                 self.assertEqual(reporter.outcomes, [outcome])
 
     async def test_every_middleware_outcome_is_classified_for_each_write(self):

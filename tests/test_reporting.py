@@ -11,6 +11,7 @@ import httpx
 from livekit.agents import AgentSession, llm
 from livekit.agents.voice.events import CloseEvent, CloseReason
 from livekit.agents.voice.report import SessionReport
+from owner_fixtures import registered as record_registration
 from test_call_labels import choice
 from test_patient_resolution import CONFIG, call_state, receipt
 
@@ -617,7 +618,7 @@ class ReportingTests(unittest.IsolatedAsyncioTestCase):
                 reporter = self.reporter()
                 state = call_state(None)
                 state.reporter = reporter
-                state.insurance.registrations["chart-jane"] = registered
+                record_registration(state, "chart-jane", registered)
                 reporter.record(
                     "patient",
                     {

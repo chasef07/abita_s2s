@@ -8,7 +8,6 @@ from datetime import date, datetime, timedelta
 from abita_s2s.insurance import decision_answer
 from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.insurance_list import listed_plan
-from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.integrations.scheduling_http import (
     SchedulingFailure,
     SchedulingHTTP,
@@ -71,23 +70,18 @@ class SchedulingContext:
     patient_revision: int
     patient_id: str | None
     dob: str | None
-    insurance_write_pending: bool
-    insurance_write_uncertain: bool
-    registration: str | None
+    insurance_ready: bool
 
 
 def scheduling_context(state: CallState) -> SchedulingContext:
-    """The patient and insurance facts an offer or a write was made under."""
+    """The patient and insurance facts an offer was made under."""
     p = state.patient.active
-    insurance = state.insurance
-    registration = insurance.registrations.get(p.patientId) if p else None
+    patient_id = p.patientId if p else None
     return SchedulingContext(
         patient_revision=state.patient.revision,
-        patient_id=p.patientId if p else None,
+        patient_id=patient_id,
         dob=p.dob if p else None,
-        insurance_write_pending=insurance.write_pending,
-        insurance_write_uncertain=insurance.write_uncertain,
-        registration=registration,
+        insurance_ready=state.record.insurance_ready(patient_id),
     )
 
 
@@ -251,7 +245,7 @@ class Offers:
             return choice[1]
         selected = choice[0]
         p = self.state.patient.active
-        if p is None or not insurance_ready(self.state):
+        if p is None or not context.insurance_ready:
             self.invalidate()
             return reply(
                 "needs_input",

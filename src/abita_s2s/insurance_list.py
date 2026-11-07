@@ -88,7 +88,7 @@ def listed_plan(
     state: CallState, plan_id: str, coverage: CoverageType
 ) -> PlanSummary | dict:
     """The plan a tool names from this visit type's list, or the reply refusing it."""
-    plans = state.insurance.plans
+    plans = state.plans
     if plans is None:
         return reply(
             "insurance_list_unavailable",

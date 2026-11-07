@@ -206,7 +206,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         )
         owner = args["dependencies"].insurance
         pending = asyncio.create_task(asyncio.Event().wait())
-        owner._task = pending
+        owner._writes._last_sent = pending
         try:
             with (
                 patch.object(startup, "DRAIN", replace(DRAIN, seconds=0.01)),
@@ -214,7 +214,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
             ):
                 await ctx.add_shutdown_callback.call_args.args[0]()
             self.assertTrue(owner._middleware._client.is_closed)
-            self.assertTrue(owner._closed)
+            self.assertTrue(owner.state.record.closed)
             self._cleanups.pop()
         finally:
             pending.cancel()

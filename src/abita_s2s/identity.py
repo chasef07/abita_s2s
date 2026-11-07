@@ -52,11 +52,14 @@ class PatientResolver:
         self._pending: tuple[str | None, str | None] = (None, None)
         self._task: asyncio.Task | None = None
         self._precall: asyncio.Task | None = None
-        self._closed = False
         self._previous_id: str | None = None
         self._token: object | None = None
         self._verified_as: tuple[str, str] | None = None
         self._phone_chart: Receipt | None = None
+
+    @property
+    def _closed(self) -> bool:
+        return self.state.record.closed
 
     def staff_task_patient(self) -> dict[str, str] | None:
         """Snapshot current caller-reported identity without promoting it to verified."""
@@ -121,10 +124,10 @@ class PatientResolver:
         return candidates
 
     def close_admission(self) -> None:
-        self._closed = True
+        self.state.record.close()
 
     async def aclose(self) -> None:
-        self._closed = True
+        self.close_admission()
         self._token = None
         tasks = [t for t in (self._task, self._precall) if t is not None]
         for task in tasks:
@@ -394,7 +397,7 @@ class PatientResolver:
         self, receipt: Receipt, outcome: str, *, call_id: str | None = None
     ) -> dict:
         if self.state.reporter:
-            registered = self.state.insurance.registrations.get(receipt.patientId)
+            registered = self.state.record.registration(receipt.patientId)
             for recorded in (outcome, registered) if registered else (outcome,):
                 self.state.reporter.record(
                     "patient",
@@ -406,7 +409,7 @@ class PatientResolver:
             f"success: I found the patient record for {receipt.name}. DOB is on file; do not ask for DOB."
             f" Insurance on file: {receipt.insuranceCarrier or 'none recorded'}."
             + chart_plans(
-                self.state.insurance.plans,
+                self.state.plans,
                 receipt.insuranceCarrierId,
                 receipt.insuranceNote,
             ),

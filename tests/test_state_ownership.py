@@ -6,11 +6,10 @@ import inspect
 import unittest
 from pathlib import Path
 
-from abita_s2s.insurance_state import InsuranceState
 from abita_s2s.state import CallState, PatientState
 
 PACKAGE = Path(__file__).parents[1] / "src" / "abita_s2s"
-STATE_CLASSES = (CallState, PatientState, InsuranceState)
+STATE_CLASSES = (CallState, PatientState)
 FIELD_CLASS = {
     f.name: cls.__name__ for cls in STATE_CLASSES for f in dataclasses.fields(cls)
 }
@@ -19,15 +18,11 @@ OWNERS = {
     "call": "runtime",
     "reporter": "runtime",
     "patient": "state",
-    "insurance": "state",
+    "record": "state",
     "candidates": "state",
     "active": "state",
     "revision": "state",
     "plans": "runtime",
-    "registrations": "insurance",
-    "coverage_changed": "insurance",
-    "write_pending": "insurance",
-    "write_uncertain": "insurance",
 }
 CALLERS = {
     "activate": ("identity",),
@@ -170,15 +165,13 @@ class StateOwnershipTests(unittest.TestCase):
 def change(self, patient, context):
     self.state.patient.active = None
     patient.revision += 1
-    self.state.insurance.registrations["1"] = "created"
-    self.state.insurance.registrations.pop("1")
-    del self.state.insurance.plans
-    setattr(self.state.insurance, "write_pending", True)
+    del self.state.plans
+    setattr(self.state, "reporter", None)
     self.state.patient.active.model_copy(update={})
     context.userdata.patient = None
     self.state.patient.activate(None)
     self.state.patient.mark_appointments_stale()
-    held, ins = self.state.patient, self.state.insurance
+    held, ins = self.state.patient, self.state.record
 """
         self.assertEqual(
             [
@@ -190,18 +183,12 @@ def change(self, patient, context):
                 " call PatientState.update_appointments or mark_appointments_stale",
                 "4 increments PatientState.revision;"
                 " call PatientState.update_appointments or mark_appointments_stale",
-                "5 assigns InsuranceState.registrations;"
-                " only insurance writes it; move the change there",
-                "6 calls pop on InsuranceState.registrations;"
-                " only insurance writes it; move the change there",
-                "7 deletes InsuranceState.plans;"
-                " only runtime writes it; move the change there",
-                "8 setattr InsuranceState.write_pending;"
-                " only insurance writes it; move the change there",
-                "9 copies PatientState.active;"
+                "5 deletes CallState.plans; only runtime writes it; move the change there",
+                "6 setattr CallState.reporter; only runtime writes it; move the change there",
+                "7 copies PatientState.active;"
                 " call PatientState.update_appointments or mark_appointments_stale",
-                "10 assigns CallState.patient; only state writes it; move the change there",
-                "11 calls PatientState.activate, which only identity may call;"
+                "8 assigns CallState.patient; only state writes it; move the change there",
+                "9 calls PatientState.activate, which only identity may call;"
                 f" {RESOLVER}",
             ],
         )

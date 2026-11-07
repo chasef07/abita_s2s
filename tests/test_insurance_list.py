@@ -369,7 +369,7 @@ class ListedPlanTests(unittest.TestCase):
 
     def test_unloaded_list_blocks_instead_of_trusting_plan_words(self):
         state = call_state()
-        state.insurance.plans = None
+        state.plans = None
         result = listed_plan(state, "aetna", "medical")
         self.assertEqual(result["outcome"], "insurance_list_unavailable")
         self.assertTrue(result["answer"].startswith("blocked: "))

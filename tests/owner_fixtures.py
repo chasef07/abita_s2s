@@ -2,6 +2,12 @@
 
 from unittest.mock import Mock
 
+from abita_s2s.call_record import (
+    INSURANCE_WRITES,
+    Registered,
+    WriteKey,
+    WriteSettled,
+)
 from abita_s2s.offices import SPRING_HILL
 from abita_s2s.tools.registry import Owners
 
@@ -17,3 +23,43 @@ def call_owners(office=SPRING_HILL, **given) -> Owners:
         "call_control": Mock(),
     }
     return Owners(office, **(stand_ins | given))
+
+
+def insurance_ready(state) -> bool:
+    """Whether the active chart may schedule as far as insurance is concerned."""
+    active = state.patient.active
+    return active is not None and state.record.insurance_ready(active.patientId)
+
+
+def write_pending(state) -> bool:
+    return state.record.in_flight(INSURANCE_WRITES)
+
+
+def write_uncertain(state) -> bool:
+    return bool(state.record.blockers(INSURANCE_WRITES))
+
+
+def registered(state, patient_id, status) -> None:
+    """Record that this call registered the chart, as a settled create would."""
+    state.record.settled(
+        WriteSettled(
+            WriteKey(None, "register", patient_id),
+            "written",
+            {},
+            registered=Registered(patient_id, status),
+        )
+    )
+
+
+def insurance_key(patient_id="chart-jane") -> WriteKey:
+    return WriteKey(patient_id, "update_insurance", "plan")
+
+
+def insurance_write_open(state, patient_id="chart-jane") -> None:
+    """An insurance write sent and not yet settled."""
+    state.record.sent(insurance_key(patient_id))
+
+
+def insurance_write_uncertain(state, patient_id="chart-jane") -> None:
+    """An insurance write whose outcome could not be confirmed."""
+    state.record.settled(WriteSettled(insurance_key(patient_id), "uncertain", {}))

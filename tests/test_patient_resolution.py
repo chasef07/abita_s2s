@@ -60,7 +60,7 @@ def call_state(phone="+15555550101", office=SPRING_HILL):
     state = CallState(
         CallContext("call", datetime.now(UTC), office, caller_phone=phone)
     )
-    state.insurance.plans = office_plans()
+    state.plans = office_plans()
     return state
 
 
@@ -146,7 +146,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
 
     def icare_state(self):
         state = call_state()
-        state.insurance.plans = OfficePlans.model_validate(
+        state.plans = OfficePlans.model_validate(
             {
                 "medical": [
                     listed("Humana Medicaid HMO", carrierId="car303033"),
@@ -232,7 +232,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_resolution_asks_per_visit_type_when_both_have_several_plans(self):
         state = call_state()
-        state.insurance.plans = OfficePlans.model_validate(
+        state.plans = OfficePlans.model_validate(
             {
                 coverage: [
                     listed(label, coverage, carrierId="car40907")
@@ -250,7 +250,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         for plans, carrier in ((None, "car1"), (office_plans(), None)):
             with self.subTest(carrier=carrier):
                 state = call_state()
-                state.insurance.plans = plans
+                state.plans = plans
                 r, _ = self.resolver([receipt(insuranceCarrierId=carrier)], state=state)
                 answer = (await r.resolve("Jane", "01/02/1980"))["answer"]
                 self.assertNotIn("this carrier", answer)

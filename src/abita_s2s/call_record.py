@@ -1,0 +1,284 @@
+"""One call's record of write results, in order, and the one path every write takes.
+
+Outcomes of a sent write:
+    written      the change is confirmed.
+    partial      part of the change is confirmed; staff must finish it.
+    uncertain    the change may or may not have happened.
+    refused      the middleware refused the request; the write did not take effect.
+    expired      the middleware refused the target's token; the write did not take effect.
+    failed       the middleware could not write; the write did not take effect.
+    unsent       the request never reached the record.
+    needs_input  the middleware needs more facts; nothing changed.
+"""
+
+import asyncio
+from collections.abc import Awaitable, Callable, Collection, Hashable, Iterator
+from dataclasses import dataclass
+from typing import Literal
+
+from abita_s2s.records import Appointment
+
+WriteOutcome = Literal[
+    "written",
+    "partial",
+    "uncertain",
+    "refused",
+    "expired",
+    "failed",
+    "unsent",
+    "needs_input",
+]
+WriteAction = Literal["book", "cancel", "reschedule", "register", "update_insurance"]
+APPOINTMENT_WRITES: Collection[WriteAction] = ("book", "cancel", "reschedule")
+INSURANCE_WRITES: Collection[WriteAction] = ("register", "update_insurance")
+REPLAYS: Collection[WriteOutcome] = ("written", "partial", "uncertain")
+BLOCKS: Collection[WriteOutcome] = ("partial", "uncertain")
+SPENDS_TARGET: Collection[WriteOutcome] = ("refused", "expired", "failed")
+
+
+@dataclass(frozen=True)
+class WriteKey:
+    """Whose chart a write changes, the action, and what it acts on. A new chart has no patient yet."""
+
+    patient_id: str | None
+    action: WriteAction
+    target: Hashable = None
+
+
+@dataclass(frozen=True, repr=False)
+class Registered:
+    """The chart a registration created, and whether its insurance attached."""
+
+    patient_id: str
+    status: Literal["created", "partial"]
+
+
+@dataclass(frozen=True, repr=False)
+class WriteSent:
+    key: WriteKey
+
+
+@dataclass(frozen=True, repr=False)
+class WriteSettled:
+    """How a write ended: the answer it gave, and the effects it confirmed on the chart."""
+
+    key: WriteKey
+    outcome: WriteOutcome
+    answer: dict
+    booked: Appointment | None = None
+    cancelled_id: int | None = None
+    selection: Hashable = None
+    coverage: tuple[str, str | None] | None = None
+    registered: Registered | None = None
+
+    @property
+    def revokes(self) -> bool:
+        """A rejected cancel or move means the loaded tokens must be reloaded first."""
+        return self.key.action in ("cancel", "reschedule") and (
+            self.outcome in SPENDS_TARGET
+        )
+
+
+Entry = WriteSent | WriteSettled
+
+
+class CallRecord:
+    """What happened on this call. Everything else about a write is computed from it."""
+
+    def __init__(self) -> None:
+        self._entries: list[Entry] = []
+        self.closed = False
+
+    def close(self) -> None:
+        """Admit nothing more. Writes already sent still settle."""
+        self.closed = True
+
+    def sent(self, key: WriteKey) -> None:
+        self._entries.append(WriteSent(key))
+
+    def settled(self, settled: WriteSettled) -> None:
+        self._entries.append(settled)
+
+    def settlements(self, patient_id: str | None) -> list[WriteSettled]:
+        """The settled writes that may still replay on this chart, oldest first."""
+        return [s for s in self._kept().values() if s.key.patient_id == patient_id]
+
+    def _settled(self) -> Iterator[WriteSettled]:
+        return (e for e in self._entries if isinstance(e, WriteSettled))
+
+    def _kept(self) -> dict[WriteKey, WriteSettled]:
+        """Each key's last settlement when it replays. A later one that does not forgets it."""
+        kept: dict[WriteKey, WriteSettled] = {}
+        for settled in self._settled():
+            kept.pop(settled.key, None)
+            if settled.outcome in REPLAYS:
+                kept[settled.key] = settled
+        return kept
+
+    def in_flight(self, actions: Collection[WriteAction]) -> bool:
+        sent: set[WriteKey] = set()
+        for entry in self._entries:
+            if isinstance(entry, WriteSent) and entry.key.action in actions:
+                sent.add(entry.key)
+            elif isinstance(entry, WriteSettled):
+                sent.discard(entry.key)
+        return bool(sent)
+
+    def blockers(self, actions: Collection[WriteAction]) -> list[WriteSettled]:
+        """Half-done or uncertain writes among these actions: staff must finish them first."""
+        return [
+            s
+            for s in self._kept().values()
+            if s.key.action in actions and s.outcome in BLOCKS
+        ]
+
+    def blocker(
+        self, patient_id: str | None, actions: Collection[WriteAction]
+    ) -> WriteSettled | None:
+        """The write that answers every later write on this chart, if any."""
+        return next(
+            (s for s in self.blockers(actions) if s.key.patient_id == patient_id),
+            None,
+        )
+
+    def replayable(self, key: WriteKey) -> WriteSettled | None:
+        """The settlement a repeat of this write answers from. A chart's blocker comes first."""
+        kept = self._kept().get(key)
+        if kept is None or key.patient_id is None:
+            return kept
+        lane = (
+            APPOINTMENT_WRITES if key.action in APPOINTMENT_WRITES else INSURANCE_WRITES
+        )
+        blocker = self.blocker(key.patient_id, lane)
+        return kept if blocker is None or blocker.key == key else None
+
+    def latest(
+        self, patient_id: str, actions: Collection[WriteAction]
+    ) -> WriteKey | None:
+        """The last kept write among these actions on this chart."""
+        keys = [
+            key
+            for key in self._kept()
+            if key.patient_id == patient_id and key.action in actions
+        ]
+        return keys[-1] if keys else None
+
+    def cancelled(self, patient_id: str, appointment_id: int) -> bool:
+        return any(
+            s.key.patient_id == patient_id and s.cancelled_id == appointment_id
+            for s in self._settled()
+        )
+
+    def coverage_writes(self, patient_id: str) -> int:
+        """How many insurance updates this call confirmed on this chart."""
+        return sum(
+            s.key.patient_id == patient_id and s.coverage is not None
+            for s in self._settled()
+        )
+
+    def registration(self, patient_id: str) -> Literal["created", "partial"] | None:
+        """How this call registered the chart. A later insurance update finishes a partial one."""
+        status = None
+        for settled in self._settled():
+            if settled.registered and settled.registered.patient_id == patient_id:
+                status = settled.registered.status
+            elif status and settled.coverage and settled.key.patient_id == patient_id:
+                status = "created"
+        return status
+
+    def insurance_ready(self, patient_id: str | None) -> bool:
+        """No insurance write is open or unresolved, and the chart's registration finished."""
+        return not (
+            self.in_flight(INSURANCE_WRITES)
+            or self.blockers(INSURANCE_WRITES)
+            or (patient_id and self.registration(patient_id) == "partial")
+        )
+
+
+@dataclass(frozen=True, repr=False)
+class Send:
+    """A write ready to go: the request, the answer to keep if its result is lost, and
+    why it must not leave after all, for a change that landed as its task started."""
+
+    request: Callable[[], Awaitable[WriteSettled]]
+    unknown: dict
+    stale: Callable[[], dict | None]
+
+
+def replay_answer(settled: WriteSettled) -> dict | None:
+    return settled.answer
+
+
+@dataclass(frozen=True, repr=False)
+class WritePlan:
+    """One write: its key, what checks it needs before sending, and when a repeat replays."""
+
+    key: WriteKey
+    prepare: Callable[[], Send | dict]
+    replay: Callable[[WriteSettled], dict | None] = replay_answer
+
+
+class WritePath:
+    """Every write takes these steps in this order:
+
+    closed, in-flight, replay, block, prepare, WriteSent, shielded send, settle.
+
+    Each owner has its own path, so a write in flight blocks only that owner's writes.
+    Admission finishes before the first await, so nothing else can run between the checks
+    and WriteSent. An exception settles the write as uncertain and fails the drain.
+    """
+
+    def __init__(
+        self,
+        record: CallRecord,
+        actions: Collection[WriteAction],
+        *,
+        closed: dict,
+        busy: dict,
+        blocked: Callable[[WriteKey], dict | None],
+        spoken: Callable[[WriteSettled], dict] = lambda settled: settled.answer,
+    ):
+        self._record = record
+        self._actions = actions
+        self._closed = closed
+        self._busy = busy
+        self._blocked = blocked
+        self._spoken = spoken
+        self._last_sent: asyncio.Task[dict] | None = None
+
+    async def run(self, plan: Callable[[], WritePlan | dict]) -> dict:
+        if self._record.closed:
+            return self._closed
+        if self._record.in_flight(self._actions):
+            return self._busy
+        write = plan()
+        if isinstance(write, dict):
+            return write
+        kept = self._record.replayable(write.key)
+        if kept is not None and (answer := write.replay(kept)) is not None:
+            return answer
+        if (answer := self._blocked(write.key)) is not None:
+            return answer
+        prepared = write.prepare()
+        if isinstance(prepared, dict):
+            return prepared
+        self._record.sent(write.key)
+        self._last_sent = asyncio.create_task(self._send(write.key, prepared))
+        return await asyncio.shield(self._last_sent)
+
+    async def _send(self, key: WriteKey, prepared: Send) -> dict:
+        if (answer := prepared.stale()) is not None:
+            self._record.settled(WriteSettled(key, "unsent", answer))
+            return answer
+        try:
+            settled = await prepared.request()
+        except BaseException:
+            self._record.settled(WriteSettled(key, "uncertain", prepared.unknown))
+            raise
+        self._record.settled(settled)
+        return self._spoken(settled)
+
+    async def drain(self) -> None:
+        """Wait for the last write sent. Its exception reaches shutdown, which reports the failed drain."""
+        if self._last_sent:
+            await asyncio.shield(self._last_sent)
