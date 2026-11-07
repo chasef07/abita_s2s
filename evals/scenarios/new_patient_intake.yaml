@@ -4,7 +4,7 @@ name: Abita new patient intake
 # is refused as an existing chart. Spring Hill must list Humana Medicare PPO as
 # accepted for medical visits and have eligible future medical slots. Calls end
 # once openings are offered, so no visit is booked. Userdata does not seed
-# fixtures. Verify the add_patient arguments (insurancePlanId, visitType,
+# fixtures. Verify the add_patient arguments (callback, insurancePlanId, visitType,
 # subscriberName, insuranceMemberId) and count the agent's intake questions.
 scenarios:
   - label: New patient registers with their own insurance in grouped turns
@@ -23,8 +23,8 @@ scenarios:
       Collects intake in grouped turns: name with DOB, card holder with member ID,
       full address in one ask, phone with email, then sex, without asking for each
       detail separately or reconfirming each answer. Gives one full read-back,
-      then calls add_patient with insurancePlanId humana-medicare-ppo and visitType
-      medical. Confirms registration only after success and offers medical
+      then calls add_patient with callback "inbound", insurancePlanId
+      humana-medicare-ppo and visitType medical. Confirms registration only after success and offers medical
       openings. Does not book anything.
     userdata:
       office: spring-hill
@@ -43,8 +43,8 @@ scenarios:
       and call back, then end.
     agent_expectations: >
       Collects intake in grouped turns and does not insist on an email. Calls
-      add_patient with insurancePlanId humana-medicare-ppo, visitType medical, and
-      subscriberName Leila Spousal. Offers medical openings after a successful
+      add_patient with callback "inbound", insurancePlanId humana-medicare-ppo,
+      visitType medical, and subscriberName Leila Spousal. Offers medical openings after a successful
       registration. Does not book anything.
     userdata:
       office: spring-hill
@@ -62,7 +62,8 @@ scenarios:
       calendar and call back, then end.
     agent_expectations: >
       Uses the self-pay plan and never asks for a member ID or card holder. Calls
-      add_patient with insurancePlanId self-pay-medical and visitType medical.
+      add_patient with callback "inbound", insurancePlanId self-pay-medical and
+      visitType medical.
       Offers medical openings after a successful registration. Does not book
       anything.
     userdata:

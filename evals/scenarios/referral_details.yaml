@@ -5,7 +5,9 @@ name: Abita referred new patient details (ACU-137)
 # A failure partway through can leave that visit behind; cancel it before rerunning.
 # Userdata does not seed fixtures.
 # Verify the book_appointment referringDoctor, referringDoctorPhone and
-# referringDoctorAddress arguments, not only spoken claims.
+# referringDoctorAddress arguments, not only spoken claims. No code requires the
+# referral question before a null referringDoctor, so the last scenario checks the
+# prompt does; appointments.yaml's null is an existing patient, who is not asked.
 scenarios:
   - label: Referred new patient gives the doctor's name, phone and address
     instructions: >
@@ -65,3 +67,30 @@ scenarios:
     userdata:
       office: spring-hill
       caller_phone: "+12025550162"
+
+  - label: New patient with no referring doctor is asked before null is sent
+    instructions: >
+      You are a fictional new patient calling Abita Eye Group in Spring Hill.
+      Open with: "Hi, I'm a new patient and I'd like to book an appointment."
+      You have never registered or visited this practice before.
+      Let the receptionist lead: provide details only when asked.
+      Your full name is Ines Soloproof. When asked to spell it, say
+      I-N-E-S, S-O-L-O-P-R-O-O-F. Your DOB is May 9, 1984.
+      Your address is 30 Test Alder Lane, Spring Hill, Florida 34609. Your sex is
+      female. Your callback number is 202-555-0164. You have no email.
+      Your insurance is Aetna commercial PPO medical coverage. You are the
+      subscriber. Your member ID is ABT05098401.
+      Your visit reason is mild dry eyes for several weeks, with no pain or sudden
+      vision changes. No doctor referred you; do not bring it up, and say so only if
+      asked. Confirm accurate read-backs, approve registration, choose an actual
+      returned slot, and approve an accurate booking read-back. After the booking is
+      confirmed, say your plans changed and ask to cancel that appointment. Approve
+      an accurate cancellation read-back and end after the result is explained.
+    agent_expectations: >
+      Registers the patient and asks whether a doctor referred her before calling
+      book_appointment with readBack true. Hearing no, does not ask for a doctor's
+      phone or address, and book_appointment sends a null referringDoctor. Then
+      cancels the same visit with approval and describes each result accurately.
+    userdata:
+      office: spring-hill
+      caller_phone: "+12025550164"

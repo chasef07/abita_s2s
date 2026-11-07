@@ -13,7 +13,10 @@ import httpx
 from insurance_fixtures import decision
 from livekit.agents import AgentSession, llm
 from livekit.agents.llm.tool_context import ToolContext
-from livekit.agents.llm.utils import build_strict_openai_schema
+from livekit.agents.llm.utils import (
+    build_legacy_openai_schema,
+    build_strict_openai_schema,
+)
 from owner_fixtures import call_owners
 from test_patient_resolution import CONFIG, call_state, candidate, receipt
 
@@ -254,7 +257,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             **args,
         )
 
-    async def book(self, owner, ref, referringDoctor="none", **extra):
+    async def book(self, owner, ref, referringDoctor=None, **extra):
         return await self.tool(
             owner,
             "book_appointment",
@@ -288,7 +291,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                         oldAppointmentRef=old_ref,
                         appointmentSlotRef=ref,
                         appointmentReason="Follow up",
-                        referringDoctor="none",
                         readBack=True,
                     )
                 else:
@@ -319,6 +321,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 dict(referringDoctor="Dr. Kim", referringDoctorPhone=""),
                 {"referringDoctor": "Dr. Kim"},
             ),
+            (dict(referringDoctor=None), {}),
         ):
             with self.subTest(expected=expected):
                 owner, requests = self.owner([inventory(), booking()])
@@ -330,6 +333,37 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     {key: body[key] for key in body if key.startswith("referring")},
                     expected,
                 )
+
+    def test_booking_requires_the_referring_doctor_and_null_means_none(self):
+        owner, _ = self.owner([])
+        tool = next(
+            tool
+            for tool in llm.find_function_tools(SchedulingTools(owner))
+            if tool.id == "book_appointment"
+        )
+        parameters = build_legacy_openai_schema(tool, internally_tagged=True)[
+            "parameters"
+        ]
+        self.assertIn("referringDoctor", parameters["required"])
+        doctor = parameters["properties"]["referringDoctor"]
+        self.assertIn({"type": "null"}, doctor["anyOf"])
+        self.assertNotIn('"none"', doctor["description"])
+        self.assertIn("null", doctor["description"])
+
+    async def test_a_move_sends_no_referring_doctor(self):
+        owner, requests = self.owner([inventory(), rescheduled()])
+        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        moved = await self.tool(
+            owner,
+            "reschedule_appointment",
+            oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
+            appointmentSlotRef=await self.move_slot(owner),
+            readBack=True,
+        )
+        self.assertTrue(moved.startswith("success:"), moved)
+        self.assertFalse(
+            [key for key in requests[-1][1] if key.startswith("referring")]
+        )
 
     async def test_retired_booking_statuses_remain_uncertain(self):
         for status in ("partial", "success"):
@@ -407,7 +441,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             "book_appointment",
             appointmentSlotRef=ref,
             appointmentReason="Follow up",
-            referringDoctor="none",
+            referringDoctor=None,
             readBack=None,
         )
         self.assertIn(
@@ -760,7 +794,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 "book_appointment",
                 appointmentSlotRef=ref,
                 appointmentReason="Follow up",
-                referringDoctor="none",
+                referringDoctor=None,
                 readBack=None,
             )
             self.assertTrue(
@@ -1133,9 +1167,8 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         )
         ref = await self.slots(owner)
         for reason, referrer, confirm in (
-            ("", "none", True),
-            ("Routine annual exam", "", True),
-            ("Routine annual exam", "none", None),
+            ("", None, True),
+            ("Routine annual exam", None, None),
         ):
             result = await self.tool(
                 owner,
@@ -1337,7 +1370,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 oldAppointmentRef=old_ref,
                 appointmentSlotRef=slot_ref,
                 appointmentReason="Annual follow up",
-                referringDoctor="none",
                 readBack=True,
             )
             result = await self.tool(owner, "reschedule_appointment", **args)
@@ -1471,7 +1503,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     oldAppointmentRef=old_ref,
                     appointmentSlotRef=slot_ref,
                     appointmentReason="Annual medical follow up",
-                    referringDoctor="none",
                     readBack=True,
                 )
                 result = await self.tool(owner, "reschedule_appointment", **args)
@@ -1793,7 +1824,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         args = dict(
             appointmentSlotRef=ref,
             appointmentReason="eye problems",
-            referringDoctor="none",
+            referringDoctor=None,
             readBack=None,
         )
         result = await self.tool(owner, "book_appointment", **args)
@@ -1833,9 +1864,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_no_effect_refusals_show_the_middlewares_reason(self):
         reason = "The destination does not support the existing appointment type."
-        move = dict(
-            appointmentReason="Follow up", referringDoctor="none", readBack=True
-        )
+        move = dict(appointmentReason="Follow up", readBack=True)
         cases = {
             "book provider_rejected": (
                 "book",
@@ -1962,7 +1991,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                         appointmentSlotRef=await self.slots(
                             owner, rescheduleAppointmentRef=old_ref
                         ),
-                        referringDoctor="none",
                         readBack=True,
                     )
                 self.assertIn("could not be confirmed", result)
@@ -2003,7 +2031,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                         appointmentSlotRef=await self.slots(
                             owner, rescheduleAppointmentRef=old_ref
                         ),
-                        referringDoctor="none",
                         readBack=True,
                     )
                 self.assertIn("could not be confirmed", result)
@@ -2042,7 +2069,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             appointmentSlotRef=await self.slots(
                 owner, rescheduleAppointmentRef=old_ref
             ),
-            referringDoctor="none",
             readBack=True,
         )
 
@@ -2074,7 +2100,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             "reschedule_appointment",
             oldAppointmentRef=old_ref,
             appointmentSlotRef=soonest(retried)[0],
-            referringDoctor="none",
             readBack=True,
         )
         self.assertTrue(moved.startswith("success:"), moved)
@@ -2102,7 +2127,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     "reschedule_appointment",
                     oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
                     appointmentSlotRef=await self.move_slot(owner),
-                    referringDoctor="none",
                     readBack=True,
                 )
                 self.assertIn(said, result)
@@ -2130,7 +2154,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             "reschedule_appointment",
             oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
             appointmentSlotRef=await self.move_slot(owner),
-            referringDoctor="none",
             readBack=True,
         )
         self.assertIn(GO_BOOK_FAILED, result)
@@ -2290,7 +2313,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
                     appointmentSlotRef=await self.move_slot(owner),
                     appointmentReason=reason,
-                    referringDoctor="none",
                     readBack=True,
                 )
                 self.assertTrue(result.startswith("success:"), result)
@@ -2329,7 +2351,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             "reschedule_appointment",
             oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
             appointmentSlotRef=soonest(result)[0],
-            referringDoctor="none",
             readBack=True,
         )
         self.assertTrue(moved.startswith("success:"), moved)
@@ -2372,7 +2393,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     "reschedule_appointment",
                     oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
                     appointmentSlotRef=new_visit,
-                    referringDoctor="none",
                     readBack=read_back,
                 )
                 self.assertTrue(refused.startswith("needs_input:"), refused)
@@ -2685,7 +2705,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             "reschedule_appointment",
             oldAppointmentRef=old_ref,
             appointmentSlotRef=soonest(result)[0],
-            referringDoctor="none",
             readBack=True,
         )
         self.assertTrue(moved.startswith("success:"), moved)
@@ -2943,7 +2962,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         args = dict(
             oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
             appointmentSlotRef=ref,
-            referringDoctor="none",
             readBack=True,
         )
 
@@ -3026,7 +3044,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                         "reschedule_appointment",
                         oldAppointmentRef=old_ref,
                         appointmentSlotRef=ref,
-                        referringDoctor="none",
                         readBack=read_back,
                     )
                     self.assertTrue(refused.startswith("needs_input:"), refused)
@@ -3036,9 +3053,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             [a.id for a in owner.state.patient.active.appointments], [77, 78]
         )
 
-        args = dict(
-            oldAppointmentRef=second, appointmentSlotRef=ref, referringDoctor="none"
-        )
+        args = dict(oldAppointmentRef=second, appointmentSlotRef=ref)
         read_back = await self.tool(
             owner, "reschedule_appointment", readBack=None, **args
         )
@@ -3070,7 +3085,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             "reschedule_appointment",
             oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
             appointmentSlotRef=ref,
-            referringDoctor="none",
             readBack=True,
         )
         self.assertTrue(moved.startswith("success:"), moved)
@@ -3105,11 +3119,8 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             {
                 "oldAppointmentRef",
                 "appointmentSlotRef",
-                "referringDoctor",
                 "readBack",
                 "appointmentReason",
-                "referringDoctorPhone",
-                "referringDoctorAddress",
             },
         )
         self.assertIn(
@@ -3129,7 +3140,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 "oldAppointmentRef": old_ref,
                 "appointmentSlotRef": slot_ref,
                 "appointmentReason": "Annual medical follow up",
-                "referringDoctor": "Dr. Test",
                 "readBack": True,
             }
             unconfirmed = await self.tool(
@@ -3207,7 +3217,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             "oldAppointmentRef": old_ref,
             "appointmentSlotRef": first_slot,
             "appointmentReason": "Annual follow up",
-            "referringDoctor": "none",
             "readBack": True,
         }
         moved = await self.tool(owner, "reschedule_appointment", **args)
@@ -3322,7 +3331,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 oldAppointmentRef=old_ref,
                 appointmentSlotRef=ref,
                 appointmentReason="Follow up",
-                referringDoctor="none",
                 readBack=True,
             )
             result = await self.tool(owner, "reschedule_appointment", **args)
@@ -3413,7 +3421,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
                     appointmentSlotRef=await self.move_slot(owner),
                     appointmentReason="Follow up",
-                    referringDoctor="none",
                     readBack=True,
                 )
                 self.assertEqual("was not changed" in result, unchanged, result)
@@ -3487,7 +3494,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
             appointmentSlotRef=await self.move_slot(owner),
             appointmentReason="Follow up",
-            referringDoctor="none",
             readBack=True,
         )
         self.assertEqual(owner.state.patient.active.patientId, "chart-john")
@@ -3512,7 +3518,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             oldAppointmentRef=old_ref,
             appointmentSlotRef=slot_ref,
             appointmentReason="Follow up",
-            referringDoctor="none",
             readBack=True,
         )
         self.assertIn(
@@ -3557,7 +3562,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             oldAppointmentRef=old_ref,
             appointmentSlotRef=slot_ref,
             appointmentReason="Follow up",
-            referringDoctor="none",
             readBack=True,
         )
         result = await self.tool(owner, "reschedule_appointment", **args)
@@ -3613,7 +3617,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
                     appointmentSlotRef=await self.move_slot(owner),
                     appointmentReason="Follow up",
-                    referringDoctor="none",
                     readBack=True,
                 )
                 self.assertEqual(requests[-1][0], "/api/appointment/reschedule")
@@ -3667,7 +3670,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
             appointmentSlotRef=ref,
             appointmentReason="Annual medical follow up",
-            referringDoctor="none",
             readBack=True,
         )
         self.assertEqual(result.split(":", 1)[0], "success")
@@ -3708,13 +3710,14 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 args = dict(
                     appointmentSlotRef=ref,
                     appointmentReason="Eye exam",
-                    referringDoctor="none",
                     readBack=True,
                 )
                 if move:
                     args["oldAppointmentRef"] = owner.appointments()[0][
                         "appointmentRef"
                     ]
+                else:
+                    args["referringDoctor"] = None
                 action = "reschedule" if move else "book"
                 result = await asyncio.wait_for(
                     getattr(SchedulingTools(owner), action + "_appointment")(
@@ -3741,11 +3744,10 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         change = dict(
             appointmentSlotRef="ST_ABCDEF",
             appointmentReason="Blurry vision",
-            referringDoctor="none",
             readBack=True,
         )
         for name, args in (
-            ("book_appointment", change),
+            ("book_appointment", {**change, "referringDoctor": None}),
             ("reschedule_appointment", {**change, "oldAppointmentRef": "A1"}),
             ("cancel_appointment", {"appointmentRef": "A1", "readBack": True}),
         ):
@@ -4041,7 +4043,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
                     appointmentSlotRef=await self.move_slot(owner),
                     appointmentReason="Follow up",
-                    referringDoctor="none",
                     readBack=True,
                 )
                 first, observed = await self.write_effects(
@@ -4140,7 +4141,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                             owner, rescheduleAppointmentRef=old_ref
                         ),
                         appointmentReason="Follow up",
-                        referringDoctor="none",
                         readBack=True,
                     )
                 self.assertEqual(owner._write_task.result()["outcome"], outcome)
@@ -4234,7 +4234,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     "reschedule_appointment",
                     oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
                     appointmentSlotRef=await self.move_slot(owner),
-                    referringDoctor="none",
                     readBack=True,
                 )
                 self.assertEqual(
@@ -4329,7 +4328,6 @@ class SchedulingStream(llm.LLMStream):
                 args = {
                     "appointmentSlotRef": soonest(previous)[0],
                     "appointmentReason": "Annual medical follow up",
-                    "referringDoctor": "none",
                     "readBack": True,
                 }
                 if user == "move":
@@ -4341,6 +4339,8 @@ class SchedulingStream(llm.LLMStream):
                     args["oldAppointmentRef"] = re.search(
                         r"^(A[0-9]+):", existing, re.MULTILINE
                     )[1]
+                else:
+                    args["referringDoctor"] = None
             delta = llm.ChoiceDelta(
                 role="assistant",
                 tool_calls=[

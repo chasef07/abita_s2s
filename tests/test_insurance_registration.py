@@ -24,8 +24,7 @@ def registration(**changes):
             "firstName": "Jane",
             "lastName": "Doe",
             "dob": "01/02/1980",
-            "phone": None,
-            "inboundPhoneConfirmed": True,
+            "callback": "inbound",
             "email": None,
             "street": "1 Example Street",
             "aptSuite": None,
@@ -74,7 +73,7 @@ VISION = dict(visitType="routine_vision", insurancePlanId="vsp")
 
 
 class RegistrationTests(unittest.IsolatedAsyncioTestCase):
-    def owner(self, responses):
+    def owner(self, responses, state=None):
         self.requests = []
 
         async def handler(request):
@@ -88,7 +87,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
 
         client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         self.addAsyncCleanup(client.aclose)
-        state = call_state()
+        state = state or call_state()
         state.reporter = Mock()
         resolver = PatientResolver(state, PatientMiddleware(client, CONFIG))
         self.addAsyncCleanup(resolver.aclose)
@@ -214,7 +213,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
     ):
         for changes, outcome in (
             ({"insurancePlanId": "unlisted"}, "unknown_plan"),
-            ({"phone": "123"}, "needs_callback"),
+            ({"callback": "123"}, "needs_callback"),
             ({"street": ""}, "needs_registration_details"),
         ):
             with self.subTest(outcome=outcome):
@@ -253,10 +252,11 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_callback_and_readback(self):
         state, _, owner = await self.prepared([])
         self.assertEqual(
-            (await owner.add(registration(**VISION, inboundPhoneConfirmed=None)))[
-                "outcome"
-            ],
-            "needs_callback",
+            await owner.add(registration(**VISION, callback="")),
+            {
+                "outcome": "needs_callback",
+                "answer": "needs_input: Confirm the inbound number is a good callback number, or ask for a callback number for the patient.",
+            },
         )
         result = await owner.add(registration(**VISION, readBack=None))
         self.assertEqual(result["outcome"], "needs_read_back")
@@ -266,6 +266,42 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(len(self.requests), 1)
         self.assertIsNone(state.patient.active)
+
+    async def test_inbound_callback_sends_the_number_the_caller_called_from(self):
+        state, _, owner = await self.prepared([created()])
+        result = await owner.add(registration())
+        self.assertTrue(result["answer"].startswith("success:"), result)
+        self.assertEqual(self.requests[-1][1]["phone"], "5555550101")
+        self.assertEqual(state.call.caller_phone, "+15555550101")
+
+    async def test_a_callback_number_is_sent_instead_of_the_inbound_number(self):
+        _, _, owner = await self.prepared([created()])
+        result = await owner.add(registration(callback="5555550999"))
+        self.assertTrue(result["answer"].startswith("success:"), result)
+        self.assertEqual(self.requests[-1][1]["phone"], "5555550999")
+
+    async def test_inbound_callback_with_no_caller_phone_asks_for_a_number(self):
+        for callback in ("inbound", ""):
+            with self.subTest(callback=callback):
+                self.requests = []
+                _, _, owner = self.owner([], state=call_state(None))
+                result = await owner.add(registration(callback=callback))
+                self.assertEqual(
+                    result,
+                    {
+                        "outcome": "needs_callback",
+                        "answer": "needs_input: No inbound number is available; ask for a callback number.",
+                    },
+                )
+                self.assertEqual(self.requests, [])
+
+    async def test_inbound_callback_ignores_case_and_spaces(self):
+        for callback in ("INBOUND", " Inbound "):
+            with self.subTest(callback=callback):
+                _, _, owner = await self.prepared([created()])
+                result = await owner.add(registration(callback=callback))
+                self.assertTrue(result["answer"].startswith("success:"), result)
+                self.assertEqual(self.requests[-1][1]["phone"], "5555550101")
 
     async def test_callback_must_be_a_us_number(self):
         state, _, owner = await self.prepared([])
@@ -278,9 +314,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(phone=phone):
                 result = await owner.add(
-                    registration(
-                        **VISION, phone=phone, inboundPhoneConfirmed=None, readBack=None
-                    )
+                    registration(**VISION, callback=phone, readBack=None)
                 )
                 if callback:
                     self.assertIn(f"callback {callback}.", result["answer"])
@@ -302,8 +336,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                     insurancePlanId=plan_id,
                     subscriberName="Jane Doe" if member else "",
                     insuranceMemberId=member,
-                    phone="5555550999",
-                    inboundPhoneConfirmed=None,
+                    callback="5555550999",
                     readBack=None,
                 )
             )
@@ -325,8 +358,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                     insurancePlanId=plan_id,
                     subscriberName="Jane Doe",
                     insuranceMemberId=member,
-                    phone="5555550999",
-                    inboundPhoneConfirmed=None,
+                    callback="5555550999",
                 )
             )
             self.assertEqual(

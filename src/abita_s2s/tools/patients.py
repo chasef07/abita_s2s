@@ -56,8 +56,7 @@ class PatientTools:
         firstName: str,
         lastName: str,
         dob: str,
-        phone: str | None,
-        inboundPhoneConfirmed: Literal[True] | None,
+        callback: str,
         email: str | None,
         street: str,
         aptSuite: str | None,
@@ -83,8 +82,7 @@ class PatientTools:
             firstName: Patient's first name.
             lastName: Patient's last name.
             dob: Patient's date of birth in MM/DD/YYYY.
-            phone: Patient's callback number; null only when the inbound number was confirmed.
-            inboundPhoneConfirmed: True if the caller approved the inbound number for the file; otherwise null.
+            callback: The literal "inbound" if the caller approved the number they called from; otherwise the number they gave.
             email: Patient's email address, or null if unavailable or declined.
             street: Street number and street name.
             aptSuite: Apartment, unit, or suite; null if none.
@@ -104,8 +102,7 @@ class PatientTools:
             firstName=firstName,
             lastName=lastName,
             dob=dob,
-            phone=phone,
-            inboundPhoneConfirmed=inboundPhoneConfirmed,
+            callback=callback,
             email=email,
             street=street,
             aptSuite=aptSuite,

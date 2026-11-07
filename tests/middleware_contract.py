@@ -69,7 +69,6 @@ async def main(url):
                 oldAppointmentRef=old_ref,
                 appointmentSlotRef=slot_ref,
                 appointmentReason="Medical follow up",
-                referringDoctor="none",
                 readBack=True,
             )
             result = await SchedulingTools(owner).reschedule_appointment(
