@@ -1883,6 +1883,52 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("could not be confirmed", result)
                 self.assertNotIn(said, result)
 
+    async def test_an_outcome_outside_the_vocabulary_fails_closed(self):
+        self.assertNotIn("unclassified", get_args(SchedulingOutcome))
+        unclassified = {"outcome": "unclassified", "message": "Unexpected failure."}
+        for write, response in (
+            ("book", {"status": "error"} | unclassified),
+            ("cancel", {"status": "error"} | unclassified),
+            ("move", {"status": "failed"} | unclassified),
+        ):
+            with self.subTest(write=write):
+                owner, requests = self.owner(
+                    [response] if write == "cancel" else [inventory(), response]
+                )
+                verified(
+                    owner.state,
+                    appointmentsStatus="found",
+                    appointments=[appointment()],
+                )
+                old_ref = owner.appointments()[0]["appointmentRef"]
+                if write == "book":
+                    result = await self.book(owner, await self.slots(owner))
+                elif write == "cancel":
+                    result = await self.tool(
+                        owner,
+                        "cancel_appointment",
+                        appointmentRef=old_ref,
+                        readBack=True,
+                    )
+                else:
+                    result = await self.tool(
+                        owner,
+                        "reschedule_appointment",
+                        oldAppointmentRef=old_ref,
+                        appointmentSlotRef=await self.slots(owner),
+                        referringDoctor="none",
+                        readBack=True,
+                    )
+                self.assertIn("could not be confirmed", result)
+                self.assertNotIn("Unexpected failure", result)
+                self.assertTrue(owner._ledger.blocking("chart-jane"))
+                sent = len(requests)
+                repeat = await self.tool(
+                    owner, "cancel_appointment", appointmentRef=old_ref, readBack=True
+                )
+                self.assertIn("could not be confirmed", repeat)
+                self.assertEqual(len(requests), sent)
+
     async def test_lost_move_race_says_the_slot_was_taken_and_a_reload_recovers(self):
         owner, requests = self.owner(
             [
