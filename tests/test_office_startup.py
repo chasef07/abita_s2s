@@ -561,7 +561,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call.called_number, "+18135484830")
         self.assertEqual(call.office.key, "spring-hill")
         self.assertEqual(call.caller_phone, "+15555550101")
-        self.assertIsNone(args["userdata"].patient.active)
+        self.assertIsNone(args["userdata"].chart())
 
     async def test_console_requires_explicit_office(self):
         with self.assertRaisesRegex(ValueError, "ABITA_CONSOLE_OFFICE"):

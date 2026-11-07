@@ -53,7 +53,7 @@ class SchedulingTools:
         )
         lines = [result["answer"]]
         if "searchedFrom" in result:
-            patient = self._scheduling.state.patient.active
+            patient = self._scheduling.state.chart()
             lines.append(
                 f"Searched {result['searchedFrom']} through {result['searchedThrough']}"
                 + (f" for {patient.name}." if patient else ".")

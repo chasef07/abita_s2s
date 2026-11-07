@@ -1,4 +1,6 @@
-"""One call's record of write results, in order, and the one path every write takes.
+"""One call's record of chart loads and write results, in order, and the one path every write takes.
+
+The chart is computed from the record: the last load plus the effects writes confirmed.
 
 Outcomes of a sent write:
     written      the change is confirmed.
@@ -16,7 +18,7 @@ from collections.abc import Awaitable, Callable, Collection, Hashable, Iterator
 from dataclasses import dataclass
 from typing import Literal
 
-from abita_s2s.records import Appointment
+from abita_s2s.records import Appointment, Receipt
 
 WriteOutcome = Literal[
     "written",
@@ -54,6 +56,13 @@ class Registered:
 
 
 @dataclass(frozen=True, repr=False)
+class ChartLoaded:
+    """A chart read from the practice system."""
+
+    chart: Receipt
+
+
+@dataclass(frozen=True, repr=False)
 class WriteSent:
     key: WriteKey
 
@@ -78,8 +87,13 @@ class WriteSettled:
             self.outcome in SPENDS_TARGET
         )
 
+    @property
+    def outdates_reads(self) -> bool:
+        """A read of this chart that started before now may predate what this write did."""
+        return self.revokes or self.outcome in REPLAYS
 
-Entry = WriteSent | WriteSettled
+
+Entry = ChartLoaded | WriteSent | WriteSettled
 
 
 class CallRecord:
@@ -93,15 +107,81 @@ class CallRecord:
         """Admit nothing more. Writes already sent still settle."""
         self.closed = True
 
+    def position(self) -> int:
+        """Where the record ends now. A read remembers it to learn what happened since."""
+        return len(self._entries)
+
+    def loaded(self, chart: Receipt) -> int:
+        """Record a chart read; return its position."""
+        self._entries.append(ChartLoaded(chart))
+        return len(self._entries) - 1
+
     def sent(self, key: WriteKey) -> None:
         self._entries.append(WriteSent(key))
 
     def settled(self, settled: WriteSettled) -> None:
         self._entries.append(settled)
 
-    def settlements(self, patient_id: str | None) -> list[WriteSettled]:
-        """The settled writes that may still replay on this chart, oldest first."""
-        return [s for s in self._kept().values() if s.key.patient_id == patient_id]
+    def revoke(self, patient_id: str) -> None:
+        """The chart's loaded tokens stop counting until a newer load, as a refused move would."""
+        self._entries.append(
+            WriteSettled(WriteKey(patient_id, "reschedule"), "expired", {})
+        )
+
+    def discards(self, position: int, patient_id: str) -> bool:
+        """Whether a read of this chart that started at position predates a settled write or a revocation."""
+        return any(
+            isinstance(entry, WriteSettled)
+            and entry.key.patient_id == patient_id
+            and entry.outdates_reads
+            for entry in self._entries[position:]
+        )
+
+    def chart(self, patient_id: str) -> Receipt | None:
+        """The chart's last load plus every effect this call's writes confirmed on it.
+
+        A load wins for the appointments and coverage it read. An appointment this call
+        cancelled stays cancelled and one it booked stays listed, whatever a load says.
+        A rejected write revokes the loaded appointments until a newer load.
+        """
+        load: Receipt | None = None
+        coverage: tuple[str, str | None] | None = None
+        revoked = False
+        booked: dict[int, Appointment] = {}
+        cancelled: set[int] = set()
+        for entry in self._entries:
+            if isinstance(entry, ChartLoaded) and entry.chart.patientId == patient_id:
+                load, coverage, revoked = entry.chart, None, False
+            elif isinstance(entry, WriteSettled) and entry.key.patient_id == patient_id:
+                if entry.booked:
+                    booked.setdefault(entry.booked.id, entry.booked)
+                if entry.cancelled_id is not None:
+                    cancelled.add(entry.cancelled_id)
+                coverage = entry.coverage or coverage
+                revoked = revoked or entry.revokes
+        if load is None:
+            return None
+        appointments = [a for a in load.appointments if a.id not in cancelled]
+        listed = {a.id for a in appointments}
+        appointments += [
+            a for i, a in booked.items() if i not in cancelled and i not in listed
+        ]
+        status = load.appointmentsStatus
+        if appointments != load.appointments and status != "error":
+            status = "found" if appointments else "none"
+        changes: dict[str, object] = {}
+        if appointments != load.appointments or revoked:
+            changes.update(
+                appointments=appointments,
+                appointmentsStatus="error" if revoked else status,
+            )
+        if coverage:
+            changes.update(
+                insuranceCarrier=coverage[0],
+                insuranceCarrierId=coverage[1],
+                insuranceNote=None,
+            )
+        return load.model_copy(update=changes) if changes else load
 
     def _settled(self) -> Iterator[WriteSettled]:
         return (e for e in self._entries if isinstance(e, WriteSettled))

@@ -8,7 +8,6 @@ from typing import Literal, NamedTuple
 
 from abita_s2s.call_record import (
     APPOINTMENT_WRITES,
-    REPLAYS,
     Send,
     WriteKey,
     WritePath,
@@ -47,7 +46,6 @@ from abita_s2s.scheduling.availability import (
     OfferedSlot,
     Offers,
     PlanSearch,
-    scheduling_context,
 )
 from abita_s2s.state import CallState
 
@@ -213,9 +211,7 @@ class Scheduling:
 
     def _warned(self, settled: WriteSettled) -> dict:
         """A result for a patient the call has since left says so."""
-        active = self.state.patient.active
-        if active and active.patientId == settled.key.patient_id:
-            self._reconcile_receipts()
+        if self.state.patient.patient_id == settled.key.patient_id:
             return settled.answer
         return {
             **settled.answer,
@@ -232,8 +228,7 @@ class Scheduling:
         return self._references[key]
 
     def appointments(self):
-        self._reconcile_receipts()
-        p = self.state.patient.active
+        p = self.state.chart()
         if not p or p.appointmentsStatus != "found":
             return []
         return [
@@ -250,7 +245,7 @@ class Scheduling:
 
     def appointments_text(self) -> str:
         appointments = self.appointments()
-        patient = self.state.patient.active
+        patient = self.state.chart()
         if not appointments:
             if patient and patient.appointmentsStatus == "none":
                 return "\nNo upcoming appointments."
@@ -271,10 +266,9 @@ class Scheduling:
     ) -> PlanSearch | MoveSearch | dict:
         """Parse the search arguments into a mode, or the reply refusing them.
 
-        Receipts apply first, so a reload that lags a write this call keeps its effects.
+        The chart carries this call's writes, so a reload that lags one keeps its effects.
         """
-        self._reconcile_receipts()
-        p = self.state.patient.active
+        p = self.state.chart()
         if not (p and old_ref):
             if plan_id is None:
                 return reply(
@@ -314,12 +308,11 @@ class Scheduling:
 
     def _revoke_authority(self) -> None:
         """Loaded tokens stop counting until a newer load, and a read under way predates this."""
-        if self.state.patient.active:
-            self.state.patient.mark_appointments_stale()
-        self._resolver.fence_reads()
+        if chart := self.state.chart():
+            self.state.record.revoke(chart.patientId)
 
     def _move_needs_reload(self, old_ref: str) -> bool:
-        p = self.state.patient.active
+        p = self.state.chart()
         if p is None:
             return False
         moved = self._target(p, "reschedule", old_ref)[0]
@@ -352,7 +345,7 @@ class Scheduling:
         """Plan a write on the active chart, send it once, and answer with the chart as it now stands."""
 
         def on_active_chart() -> WritePlan | dict:
-            patient = self.state.patient.active
+            patient = self.state.chart()
             if not patient:
                 return reply(
                     "needs_input",
@@ -369,10 +362,10 @@ class Scheduling:
         self, request: Callable[[], Awaitable[WriteSettled]], unknown: dict
     ) -> Send:
         """A write that goes only if the call, patient, and insurance are as they are now."""
-        admitted = scheduling_context(self.state)
+        admitted = self._offers.context()
 
         def stale() -> dict | None:
-            if self.state.record.closed or scheduling_context(self.state) != admitted:
+            if self.state.record.closed or self._offers.context() != admitted:
                 return reply("stale", STALE_BEFORE_WRITE)
             return None
 
@@ -440,14 +433,12 @@ class Scheduling:
             cancellation_outcome=answer["outcome"],
             old=old,
         )
-        settled = WriteSettled(
+        return WriteSettled(
             key,
             outcome,
             answer,
             cancelled_id=old.id if outcome == "written" else None,
         )
-        self._settle_chart(settled)
-        return settled
 
     async def book(
         self,
@@ -551,10 +542,7 @@ class Scheduling:
                 "needs_input",
                 "needs_input: That slot reference was not returned. Choose a slot exactly as listed in the latest results.",
             )
-        if (
-            offered.context != scheduling_context(self.state)
-            or offered.expires <= self.now()
-        ):
+        if offered.context != self._offers.context() or offered.expires <= self.now():
             self._offers.invalidate()
             return reply(
                 "needs_input",
@@ -641,9 +629,7 @@ class Scheduling:
             booking_outcome=answer["outcome"],
             slot=slot,
         )
-        settled = WriteSettled(key, outcome, answer, booked=new)
-        self._settle_chart(settled)
-        return settled
+        return WriteSettled(key, outcome, answer, booked=new)
 
     async def _send_move(
         self,
@@ -680,9 +666,7 @@ class Scheduling:
                 old=old,
                 slot=slot,
             )
-            settled = WriteSettled(key, outcome, answer)
-            self._settle_chart(settled)
-            return settled
+            return WriteSettled(key, outcome, answer)
         cancelled = outcome == "written"
         self._report(
             p,
@@ -702,24 +686,10 @@ class Scheduling:
             cancelled_id=old.id if cancelled else None,
             selection=offered.selection,
         )
-        self._settle_chart(settled)
         self.state.record.settled(
             replace(settled, key=WriteKey(p.patientId, "book", offered.selection))
         )
         return settled
-
-    def _settle_chart(self, settled: WriteSettled) -> None:
-        """Spend the target's authority when a write was rejected, and outdate a read under way.
-
-        A write that took effect outdates a read under way for its patient. Another
-        patient's lookup is untouched, because this write changed nothing it reads.
-        """
-        active = self.state.patient.active
-        if active and active.patientId == settled.key.patient_id:
-            if settled.revokes:
-                self._revoke_authority()
-            if settled.outcome in REPLAYS:
-                self._resolver.fence_reads()
 
     def _target(
         self, patient: Receipt, action: Literal["cancel", "reschedule"], ref: str
@@ -806,21 +776,3 @@ class Scheduling:
             else ("BOOKED" if booking is not None else "CANCELLED")
         )
         reporter.appointment(evidence, outcome, call_id=call_id)
-
-    def _reconcile_receipts(self):
-        """Apply confirmed receipt effects after writes and patient reloads."""
-        patient = self.state.patient.active
-        if patient is None:
-            return
-        receipts = self.state.record.settlements(patient.patientId)
-        cancelled = {
-            receipt.cancelled_id
-            for receipt in receipts
-            if receipt.cancelled_id is not None
-        }
-        appointments = {a.id: a for a in patient.appointments if a.id not in cancelled}
-        for receipt in receipts:
-            booked = receipt.booked
-            if booked and booked.id not in cancelled and booked.id not in appointments:
-                appointments[booked.id] = booked
-        self.state.patient.update_appointments(list(appointments.values()))

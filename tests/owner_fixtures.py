@@ -9,6 +9,7 @@ from abita_s2s.call_record import (
     WriteSettled,
 )
 from abita_s2s.offices import SPRING_HILL
+from abita_s2s.records import Receipt
 from abita_s2s.tools.registry import Owners
 
 
@@ -27,7 +28,7 @@ def call_owners(office=SPRING_HILL, **given) -> Owners:
 
 def insurance_ready(state) -> bool:
     """Whether the active chart may schedule as far as insurance is concerned."""
-    active = state.patient.active
+    active = state.chart()
     return active is not None and state.record.insurance_ready(active.patientId)
 
 
@@ -63,3 +64,29 @@ def insurance_write_open(state, patient_id="chart-jane") -> None:
 def insurance_write_uncertain(state, patient_id="chart-jane") -> None:
     """An insurance write whose outcome could not be confirmed."""
     state.record.settled(WriteSettled(insurance_key(patient_id), "uncertain", {}))
+
+
+def select(state, chart) -> Receipt:
+    """Put the call on this chart as a verified load would."""
+    receipt = chart if isinstance(chart, Receipt) else Receipt.model_validate(chart)
+    position = state.record.loaded(receipt)
+    state.patient.select(receipt.patientId, position)
+    return receipt
+
+
+def leave(state) -> None:
+    """Take the call off its chart, as a new patient's details would."""
+    state.patient.deselect()
+
+
+def revoke(state) -> None:
+    """Revoke the loaded appointments, as a rejected write would."""
+    state.record.revoke(state.chart().patientId)
+
+
+def coverage_written(state, carrier, carrier_id) -> None:
+    """Record a confirmed insurance update on the current chart."""
+    key = insurance_key(state.chart().patientId)
+    state.record.settled(
+        WriteSettled(key, "written", {}, coverage=(carrier, carrier_id))
+    )

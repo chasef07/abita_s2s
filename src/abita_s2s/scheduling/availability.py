@@ -67,20 +67,27 @@ def soonest(offered: list[tuple[str, Slot]]) -> list[str]:
 
 @dataclass(frozen=True, repr=False)
 class SchedulingContext:
-    patient_revision: int
+    """The patient and insurance facts an offer was made under.
+
+    since is where the call came to this patient, so leaving and coming back voids an
+    offer; coverage_writes counts confirmed insurance updates on the chart.
+    """
+
     patient_id: str | None
+    since: int | None
     dob: str | None
+    coverage_writes: int
     insurance_ready: bool
 
 
 def scheduling_context(state: CallState) -> SchedulingContext:
-    """The patient and insurance facts an offer was made under."""
-    p = state.patient.active
-    patient_id = p.patientId if p else None
+    chart = state.chart()
+    patient_id = chart.patientId if chart else None
     return SchedulingContext(
-        patient_revision=state.patient.revision,
         patient_id=patient_id,
-        dob=p.dob if p else None,
+        since=state.patient.since,
+        dob=chart.dob if chart else None,
+        coverage_writes=state.record.coverage_writes(patient_id) if patient_id else 0,
         insurance_ready=state.record.insurance_ready(patient_id),
     )
 
@@ -150,6 +157,9 @@ class Offers:
         self._cache: tuple[datetime, dict] | None = None
         self._failures: dict[AvailabilitySearch, tuple[int, bool]] = {}
         self._announced_promoted_office = False
+
+    def context(self) -> SchedulingContext:
+        return scheduling_context(self.state)
 
     def get(self, ref: str) -> OfferedSlot | None:
         return self._slots.get(ref)
@@ -222,7 +232,7 @@ class Offers:
         writing: bool,
     ) -> dict:
         """Search for a new visit or a plan-gated move with a listed plan ID, or a move without one."""
-        context = scheduling_context(self.state)
+        context = self.context()
         today = self._now().astimezone(EASTERN).date()
         try:
             first = date.fromisoformat(start) if start else today + timedelta(days=1)
@@ -244,7 +254,7 @@ class Offers:
             self.invalidate()
             return choice[1]
         selected = choice[0]
-        p = self.state.patient.active
+        p = self.state.chart()
         if p is None or not context.insurance_ready:
             self.invalidate()
             return reply(
@@ -316,9 +326,7 @@ class Offers:
         self, search: SlotSearch, key: AvailabilitySearch, generation: int
     ) -> dict:
         result = await self.http.availability(search)
-        if generation != self._generation or key.context != scheduling_context(
-            self.state
-        ):
+        if generation != self._generation or key.context != self.context():
             return reply(
                 "stale",
                 "blocked: The patient or appointment details changed. Check again with current details.",

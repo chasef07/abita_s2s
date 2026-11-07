@@ -273,6 +273,6 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.wait_for(interrupted, 5)
                 await asyncio.wait_for(run, 5)
                 await owner.aclose()
-                self.assertEqual(state.patient.active.patientId, "new-chart")
+                self.assertEqual(state.chart().patientId, "new-chart")
                 self.assertFalse(write_uncertain(state))
                 self.assertEqual(writes, ["/api/add-patient"])

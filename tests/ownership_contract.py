@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import httpx
 from insurance_fixtures import listed
-from owner_fixtures import insurance_ready, write_uncertain
+from owner_fixtures import insurance_ready, select, write_uncertain
 from test_patient_resolution import call_state
 from test_scheduling import PLAN
 
@@ -55,9 +55,9 @@ async def main(url):
         try:
             resolved = await resolver.resolve("Jane", "01/15/1980")
             assert resolved["outcome"] == "verified", resolved
-            assert state.patient.active.patientId == "12345"
-            assert "insPlanId" not in state.patient.active.model_dump()
-            assert "respPartyId" not in state.patient.active.model_dump()
+            assert state.chart().patientId == "12345"
+            assert "insPlanId" not in state.chart().model_dump()
+            assert "respPartyId" not in state.chart().model_dump()
             if scenario == "availability_invalid_input":
                 result = await scheduler.http.availability(
                     SlotSearch(
@@ -84,7 +84,7 @@ async def main(url):
                 state.plans = OfficePlans.model_validate(
                     {"medical": [listed("Meritain Health")], "routine_vision": []}
                 )
-                original = state.patient.active
+                original = state.chart()
                 result = await insurance.update("meritain-health", "medical", "H123")
                 expected = {
                     "insurance_completed": "updated",
@@ -97,14 +97,14 @@ async def main(url):
                 assert result["outcome"] == expected, result
                 assert requests.count("/api/patient/resolve") == 1, requests
                 if expected == "updated":
-                    assert state.patient.active.insuranceCarrier == "Meritain Health"
+                    assert state.chart().insuranceCarrier == "Meritain Health"
                     assert insurance_ready(state)
                     assert (
                         await insurance.update("meritain-health", "medical", "H123")
                         == result
                     )
                 elif expected == "failed":
-                    assert state.patient.active is original
+                    assert state.chart() is original
                     assert not write_uncertain(state)
                     assert "Do not repeat" not in result["answer"]
                 else:
@@ -119,16 +119,19 @@ async def main(url):
                 assert requests.count("/api/patient/update-insurance") == 1
             else:
                 if scenario == "cancellation_invalid_token":
-                    active = state.patient.active
-                    state.patient.active = active.model_copy(
-                        update={
-                            "appointments": [
-                                appt.model_copy(
-                                    update={"cancellationToken": "tampered"}
-                                )
-                                for appt in active.appointments
-                            ]
-                        }
+                    active = state.chart()
+                    select(
+                        state,
+                        active.model_copy(
+                            update={
+                                "appointments": [
+                                    appt.model_copy(
+                                        update={"cancellationToken": "tampered"}
+                                    )
+                                    for appt in active.appointments
+                                ]
+                            }
+                        ),
                     )
                 ref = scheduler.appointments()[0]["appointmentRef"]
                 result = await SchedulingTools(scheduler).cancel_appointment(
@@ -136,7 +139,7 @@ async def main(url):
                 )
                 if scenario == "cancellation_completed":
                     assert result.startswith("success:"), result
-                    assert state.patient.active.appointments == []
+                    assert state.chart().appointments == []
                     assert (
                         await SchedulingTools(scheduler).cancel_appointment(
                             context, appointmentRef=ref, readBack=True
@@ -145,7 +148,7 @@ async def main(url):
                     )
                 else:
                     assert not result.startswith("success:"), result
-                    assert [a.id for a in state.patient.active.appointments] == [54321]
+                    assert [a.id for a in state.chart().appointments] == [54321]
                     if scenario == "cancellation_uncertain":
                         assert "outcome could not be confirmed" in result, result
                         assert (
@@ -156,7 +159,7 @@ async def main(url):
                         )
                     else:
                         assert "outcome could not be confirmed" not in result, result
-                        assert state.patient.active.appointmentsStatus == "error"
+                        assert state.chart().appointmentsStatus == "error"
                         repeated = await SchedulingTools(scheduler).cancel_appointment(
                             context, appointmentRef=ref, readBack=True
                         )

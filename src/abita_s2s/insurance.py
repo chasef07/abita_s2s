@@ -158,7 +158,7 @@ class InsuranceRegistration:
     ) -> Send | dict:
         if (
             not self._resolver.begin_registration(r.firstName, r.dob)
-            and self.state.patient.active
+            and self.state.chart()
         ):
             return reply(
                 "already_active",
@@ -263,7 +263,7 @@ class InsuranceRegistration:
             evidence: dict[str, object] = {"outcome": answer["outcome"]}
             if registered:
                 evidence["externalPatientId"] = str(registered.patient_id)
-                active = self.state.patient.active
+                active = self.state.chart()
                 evidence["superseded"] = (
                     active is None or active.patientId != registered.patient_id
                 )
@@ -309,7 +309,7 @@ class InsuranceRegistration:
         call_id: str | None = None,
     ) -> dict:
         def write() -> WritePlan | dict:
-            active = self.state.patient.active
+            active = self.state.chart()
             if active is None:
                 return reply(
                     "needs_resolution",
@@ -329,7 +329,7 @@ class InsuranceRegistration:
                 "update_insurance",
                 (plan.planId, coverage_type, member),
             )
-            revision = self.state.patient.revision
+            since = self.state.patient.since
 
             def replay(saved: WriteSettled) -> dict | None:
                 latest = self.state.record.latest(active.patientId, INSURANCE_WRITES)
@@ -338,11 +338,11 @@ class InsuranceRegistration:
             def prepare() -> Send:
                 return Send(
                     lambda: self._send_update(
-                        key, active, plan, coverage_type, member, revision, call_id
+                        key, active, plan, coverage_type, member, since, call_id
                     ),
                     staff("uncertain"),
                     lambda: unless(
-                        self._resolver.unchanged_since(active.patientId, revision)
+                        self._resolver.unchanged_since(active.patientId, since)
                     ),
                 )
 
@@ -357,7 +357,7 @@ class InsuranceRegistration:
         plan: PlanSummary,
         coverage_type: CoverageType,
         member: str,
-        revision: int,
+        since: int | None,
         call_id: str | None,
     ) -> WriteSettled:
         result = await self._middleware.update(
@@ -393,8 +393,8 @@ class InsuranceRegistration:
             decision = result.insuranceDecision
             carrier_id = decision.carrierId if decision else None
             coverage = (result.newInsurance, carrier_id)
-            if self._resolver.refresh_insurance(
-                active.patientId, result.newInsurance, carrier_id, revision
+            if not self.state.record.closed and self._resolver.unchanged_since(
+                active.patientId, since
             ):
                 answer = reply(
                     "updated", f"success: Updated insurance to {plan.label}."

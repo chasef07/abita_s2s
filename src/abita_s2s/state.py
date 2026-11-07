@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from abita_s2s.call_record import CallRecord
 from abita_s2s.offices import OfficeProfile, get_product_office_key
-from abita_s2s.records import Appointment, Candidate, Receipt
+from abita_s2s.records import Candidate, Receipt
 
 if TYPE_CHECKING:
     from abita_s2s.insurance_list import OfficePlans
@@ -36,64 +36,30 @@ class CallContext:
 
 @dataclass(repr=False)
 class PatientState:
-    """The caller's patient. Only these methods change it.
+    """Which chart the call is on. The chart itself is computed from the record.
 
-    activate with a different patient, deactivate, and update_insurance start a new
-    revision. A same-patient reload and appointment changes keep it.
-    tests/test_state_ownership.py names the modules that may call each method.
+    since is the record position where the call came to this patient: offers made
+    before it belong to someone else. tests/test_state_ownership.py names the modules
+    that may call each method.
     """
 
     candidates: tuple[Candidate, ...] = ()
-    active: Receipt | None = None
-    revision: int = 0
+    patient_id: str | None = None
+    since: int | None = None
 
-    def activate(self, receipt: Receipt) -> None:
-        """Make a verified chart active. A different patient starts a new revision."""
-        if self.active is None or self.active.patientId != receipt.patientId:
-            self.revision += 1
-        self.active = receipt
+    def select(self, patient_id: str, position: int) -> None:
+        """Put the call on this chart. Staying on the same patient keeps since."""
+        if self.patient_id != patient_id:
+            self.since = position
+        self.patient_id = patient_id
 
-    def deactivate(self) -> None:
-        self.active = None
-        self.revision += 1
-
-    def update_insurance(self, carrier: str, carrier_id: str | None) -> None:
-        """Record a completed insurance write; the old carrier's staff note no longer applies."""
-        self.active = self._chart().model_copy(
-            update={
-                "insuranceCarrier": carrier,
-                "insuranceCarrierId": carrier_id,
-                "insuranceNote": None,
-            }
-        )
-        self.revision += 1
-
-    def update_appointments(self, appointments: list[Appointment]) -> None:
-        """Apply confirmed appointment writes. Stale appointments stay stale until a reload."""
-        active = self._chart()
-        if appointments == active.appointments:
-            return
-        status = (
-            active.appointmentsStatus
-            if active.appointmentsStatus == "error"
-            else ("found" if appointments else "none")
-        )
-        self.active = active.model_copy(
-            update={"appointments": appointments, "appointmentsStatus": status}
-        )
-
-    def mark_appointments_stale(self) -> None:
-        """Revoke the loaded appointments' authority until identity reloads the chart."""
-        self.active = self._chart().model_copy(update={"appointmentsStatus": "error"})
+    def deselect(self) -> None:
+        self.patient_id = None
+        self.since = None
 
     def record_candidates(self, candidates: tuple[Candidate, ...]) -> None:
         """Keep the caller-phone lookup's well-formed candidates, or none."""
         self.candidates = candidates
-
-    def _chart(self) -> Receipt:
-        if self.active is None:
-            raise RuntimeError("No active chart to change")
-        return self.active
 
 
 @dataclass(repr=False)
@@ -103,3 +69,8 @@ class CallState:
     patient: PatientState = field(default_factory=PatientState)
     record: CallRecord = field(default_factory=CallRecord)
     reporter: "CallReporter | None" = None
+
+    def chart(self) -> Receipt | None:
+        """The chart the call is on, computed from the record."""
+        patient_id = self.patient.patient_id
+        return self.record.chart(patient_id) if patient_id else None

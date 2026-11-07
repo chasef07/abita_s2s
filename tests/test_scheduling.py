@@ -19,9 +19,13 @@ from livekit.agents.llm.utils import (
 )
 from owner_fixtures import (
     call_owners,
+    coverage_written,
     insurance_write_open,
     insurance_write_uncertain,
+    leave,
     registered,
+    revoke,
+    select,
 )
 from test_patient_resolution import CONFIG, call_state, candidate, receipt
 
@@ -162,7 +166,7 @@ def rescheduled(status="cancelled", appointment_id=888, old_id=77):
 
 
 def verified(state, patient_id="chart-jane", **extra):
-    state.patient.active = Receipt.model_validate(receipt(patient_id, **extra))
+    select(state, receipt(patient_id, **extra))
 
 
 def speech_context(state):
@@ -215,7 +219,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
     def owner(self, responses, *, state=None):
         state = state or call_state(None)
         state.reporter = Mock()
-        if state.patient.active is None:
+        if state.chart() is None:
             verified(state)
         requests = []
 
@@ -378,7 +382,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 result = await self.book(owner, ref)
                 self.assertIn("could not be confirmed", result)
                 self.assertEqual(await self.book(owner, ref), result)
-                self.assertEqual(owner.state.patient.active.appointments, [])
+                self.assertEqual(owner.state.chart().appointments, [])
                 self.assertEqual(len(requests), 2)
 
     async def test_search_sends_the_listed_plan_id_with_the_visit_type(self):
@@ -848,7 +852,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         owner, requests = self.owner([{"status": "cancelled", "appointmentId": 77}])
         verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
         ref = owner.appointments()[0]["appointmentRef"]
-        owner.state.patient.update_insurance("Aetna", "car1")
+        coverage_written(owner.state, "Aetna", "car1")
         self.assertEqual(owner.appointments()[0]["appointmentRef"], ref)
         cancelled = await self.tool(
             owner, "cancel_appointment", appointmentRef=ref, readBack=True
@@ -866,7 +870,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             elif change == "pending":
                 insurance_write_open(owner.state)
             else:
-                owner.state.patient.active = None
+                leave(owner.state)
             self.assertEqual(
                 (await owner.availability("medical", PLAN))["outcome"], "needs_input"
             )
@@ -1069,7 +1073,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         first.cancel()
         with self.assertRaises(asyncio.CancelledError):
             await first
-        owner.state.patient.revision += 1
         verified(owner.state, "chart-john")
         release.set()
         self.assertEqual((await second)["outcome"], "stale")
@@ -1226,7 +1229,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             requests[-1][1],
             {"patientId": "chart-jane", "cancellationToken": "new-cancel"},
         )
-        self.assertEqual(owner.state.patient.active.appointments, [])
+        self.assertEqual(owner.state.chart().appointments, [])
         self.assertEqual(len(requests), 3)
 
     async def test_cancelled_booking_cannot_satisfy_a_new_booking(self):
@@ -1254,7 +1257,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first, second)
         result = await self.book(owner, second)
         self.assertTrue(result.startswith("success:"), result)
-        self.assertEqual([a.id for a in owner.state.patient.active.appointments], [999])
+        self.assertEqual([a.id for a in owner.state.chart().appointments], [999])
         self.assertEqual(
             [path for path, _, _ in requests],
             [
@@ -1288,9 +1291,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         second = await self.slots(owner, startDate="2026-09-16")
         result = await self.book(owner, second)
         self.assertIn("Booked 2026-09-16", result)
-        self.assertEqual(
-            [a.id for a in owner.state.patient.active.appointments], [888, 999]
-        )
+        self.assertEqual([a.id for a in owner.state.chart().appointments], [888, 999])
         self.assertEqual(
             [
                 body["bookingToken"]
@@ -1376,7 +1377,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             result = await self.tool(owner, "reschedule_appointment", **args)
             self.assertTrue(result.startswith("success:"), result)
             self.assertEqual(
-                [a.id for a in owner.state.patient.active.appointments], [expected_id]
+                [a.id for a in owner.state.chart().appointments], [expected_id]
             )
             self.assertEqual(
                 await self.tool(owner, "reschedule_appointment", **args), result
@@ -1399,9 +1400,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             owner.state, appointmentsStatus="found", appointments=[appointment(id=888)]
         )
         owner.appointments()
-        self.assertEqual(
-            [a.id for a in owner.state.patient.active.appointments], [1001]
-        )
+        self.assertEqual([a.id for a in owner.state.chart().appointments], [1001])
         self.assertEqual(len(requests), 9)
 
     async def test_write_continues_after_caller_cancel_and_records_old_patient(self):
@@ -1420,12 +1419,10 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         task.cancel()
         with self.assertRaises(asyncio.CancelledError):
             await task
-        owner.state.patient.revision += 1
         verified(owner.state, "chart-john")
         release.set()
         await asyncio.shield(owner._writes._last_sent)
-        self.assertFalse(owner.state.patient.active.appointments)
-        owner.state.patient.revision += 1
+        self.assertFalse(owner.state.chart().appointments)
         verified(owner.state)
         self.assertEqual((await self.book(owner, ref)).split(":", 1)[0], "success")
         self.assertEqual(len(requests), 2)
@@ -1472,7 +1469,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     await task
                 release.set()
                 await owner.aclose()
-                patient = owner.state.patient.active
+                patient = owner.state.chart()
                 self.assertEqual(
                     [a.id for a in patient.appointments],
                     [888] if action == "book" else [],
@@ -1515,7 +1512,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     [888] if cancellation_status == "cancelled" else [77, 888]
                 )
                 self.assertEqual(
-                    [a.id for a in owner.state.patient.active.appointments],
+                    [a.id for a in owner.state.chart().appointments],
                     expected_ids,
                 )
                 checkpoints = [
@@ -1540,7 +1537,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 for _ in range(2):
                     owner.appointments()
                     self.assertEqual(
-                        [a.id for a in owner.state.patient.active.appointments],
+                        [a.id for a in owner.state.chart().appointments],
                         expected_ids,
                     )
                 replay = await self.tool(owner, "reschedule_appointment", **args)
@@ -1635,10 +1632,8 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     owner, "cancel_appointment", appointmentRef=ref, readBack=True
                 )
                 self.assertNotIn("outcome could not be confirmed", result)
-                self.assertEqual(
-                    [a.id for a in owner.state.patient.active.appointments], [77]
-                )
-                self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
+                self.assertEqual([a.id for a in owner.state.chart().appointments], [77])
+                self.assertEqual(owner.state.chart().appointmentsStatus, "error")
                 owner.state.patient.record_candidates(
                     (Candidate.model_validate(candidate()),)
                 )
@@ -1735,9 +1730,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     owner, "cancel_appointment", appointmentRef=ref, readBack=True
                 )
                 owner.http.cancel.assert_awaited_once()
-                self.assertEqual(
-                    owner.state.patient.active.appointmentsStatus, expected
-                )
+                self.assertEqual(owner.state.chart().appointmentsStatus, expected)
 
     async def test_cancellation_cancellation_receipt_must_identify_selected_appointment(
         self,
@@ -1763,9 +1756,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     owner, "cancel_appointment", appointmentRef=ref, readBack=True
                 )
                 self.assertIn("outcome could not be confirmed", result)
-                self.assertEqual(
-                    [a.id for a in owner.state.patient.active.appointments], [77]
-                )
+                self.assertEqual([a.id for a in owner.state.chart().appointments], [77])
                 self.assertNotIn("No upcoming appointments", owner.appointments_text())
                 repeated = await self.tool(
                     owner, "cancel_appointment", appointmentRef=ref, readBack=True
@@ -1786,15 +1777,13 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertTrue(result.startswith("needs_input: Confirm cancellation"))
             self.assertEqual(requests, [])
-            self.assertEqual(
-                [a.id for a in owner.state.patient.active.appointments], [77]
-            )
+            self.assertEqual([a.id for a in owner.state.chart().appointments], [77])
         result = await self.tool(
             owner, "cancel_appointment", appointmentRef=ref, readBack=True
         )
         self.assertIn("success: The selected appointment was cancelled.", result)
         self.assertEqual(len(requests), 1)
-        self.assertEqual(owner.state.patient.active.appointments, [])
+        self.assertEqual(owner.state.chart().appointments, [])
 
     async def test_loaded_appointment_says_the_short_name_and_reports_the_charts(self):
         owner, _ = self.owner([{"status": "cancelled", "appointmentId": 77}])
@@ -1858,7 +1847,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(reason, result)
         self.assertIn("staff request", result)
         self.assertNotIn("routing", result)
-        self.assertEqual(owner.state.patient.active.appointments, [])
+        self.assertEqual(owner.state.chart().appointments, [])
         retried = await self.book(owner, await self.slots(owner))
         self.assertTrue(retried.startswith("success:"), retried)
         self.assertEqual(len(requests), 4)
@@ -1954,9 +1943,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     )
                 self.assertIn(reason, result)
                 self.assertNotIn("could not be confirmed", result)
-                self.assertEqual(
-                    [a.id for a in owner.state.patient.active.appointments], [77]
-                )
+                self.assertEqual([a.id for a in owner.state.chart().appointments], [77])
                 verified(
                     owner.state,
                     appointmentsStatus="found",
@@ -2078,7 +2065,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("2026-09-20 at 10:00 AM was not changed", lost)
         self.assertIn("Search again", lost)
         self.assertNotIn("staff", lost)
-        self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
+        self.assertEqual(owner.state.chart().appointmentsStatus, "error")
 
         retried = await self.tool(
             owner,
@@ -2134,7 +2121,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("was not changed", result)
                 self.assertNotIn("Search again", result)
                 self.assertIn("Resolve the patient again", result)
-                self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
+                self.assertEqual(owner.state.chart().appointmentsStatus, "error")
 
     async def test_a_failed_move_keeps_gos_word_that_the_original_was_not_cancelled(
         self,
@@ -2185,7 +2172,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         owner, _ = self.owner([inventory(), booking()])
         verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
         ref = await self.slots(owner)
-        owner.state.patient.mark_appointments_stale()
+        revoke(owner.state)
 
         booked = await self.book(owner, ref)
 
@@ -2202,7 +2189,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         owner, requests = self.owner([inventory(), booking(), lagging, inventory()])
         await self.book(owner, await self.slots(owner))
         booked_ref = owner.appointments()[0]["appointmentRef"]
-        owner.state.patient.mark_appointments_stale()
+        revoke(owner.state)
 
         found = await self.tool(
             owner,
@@ -2226,7 +2213,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         await self.tool(
             owner, "cancel_appointment", appointmentRef=cancelled_ref, readBack=True
         )
-        owner.state.patient.mark_appointments_stale()
+        revoke(owner.state)
 
         refused = await self.tool(
             owner,
@@ -2243,18 +2230,17 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_insurance_moving_during_a_write_is_not_called_a_patient_change(self):
         async def insurance_moved(request):
-            owner.state.patient.update_insurance("Aetna", "car1")
+            coverage_written(owner.state, "Aetna", "car1")
             return httpx.Response(200, json=booking())
 
         owner, _ = self.owner([inventory(), insurance_moved])
         result = await self.book(owner, await self.slots(owner))
         self.assertTrue(result.startswith("success: Booked"), result)
         self.assertNotIn("patient", result.replace("for Doe, Jane", "").lower())
-        self.assertEqual([a.id for a in owner.state.patient.active.appointments], [888])
+        self.assertEqual([a.id for a in owner.state.chart().appointments], [888])
 
     async def test_a_real_patient_change_during_a_write_is_still_reported(self):
         async def switched(request):
-            owner.state.patient.revision += 1
             verified(owner.state, "chart-john")
             return httpx.Response(200, json=booking())
 
@@ -2289,7 +2275,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             requests[0][1],
             {"patientId": "chart-jane", "cancellationToken": "private-cancel"},
         )
-        self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
+        self.assertEqual(owner.state.chart().appointmentsStatus, "error")
 
     async def test_reschedule_without_a_reason_keeps_the_existing_visit_type(self):
         cases = (
@@ -2683,7 +2669,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         owner, requests = self.owner([refusal, fresh, inventory(), rescheduled()])
         verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
         old_ref = owner.appointments()[0]["appointmentRef"]
-        revision = owner.state.patient.revision
+        since = owner.state.patient.since
 
         result = await self.tool(
             owner,
@@ -2699,7 +2685,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             ["/api/scheduler/slots", "/api/patient/resolve", "/api/scheduler/slots"],
         )
         self.assertEqual(requests[2][1]["rescheduleToken"], "fresh-reschedule")
-        self.assertEqual(owner.state.patient.revision, revision)
+        self.assertEqual(owner.state.patient.since, since)
         self.assertEqual(owner.appointments()[0]["appointmentRef"], old_ref)
         moved = await self.tool(
             owner,
@@ -2815,7 +2801,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             expired.startswith("needs_input: The appointment details expired."), expired
         )
-        self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
+        self.assertEqual(owner.state.chart().appointmentsStatus, "error")
         await owner._resolver.resolve("Jane", None)
         cancelled = await self.tool(
             owner, "cancel_appointment", appointmentRef=ref, readBack=True
@@ -2846,7 +2832,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
         old_ref = owner.appointments()[0]["appointmentRef"]
         new_visit = await self.slots(owner)
-        owner.state.patient.mark_appointments_stale()
+        revoke(owner.state)
 
         searching = asyncio.create_task(
             owner.availability("medical", None, old_ref=old_ref)
@@ -2858,8 +2844,8 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         result = await searching
 
         self.assertEqual(result["outcome"], "needs_staff_review")
-        self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
-        self.assertIn(888, [a.id for a in owner.state.patient.active.appointments])
+        self.assertEqual(owner.state.chart().appointmentsStatus, "error")
+        self.assertIn(888, [a.id for a in owner.state.chart().appointments])
         self.assertEqual(len(requests), 3)
 
     async def lookup_during_a_settling_write(self, settled):
@@ -2897,7 +2883,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(settled=settled["status"]):
                 owner, result = await self.lookup_during_a_settling_write(settled)
                 self.assertEqual(result["outcome"], "switched")
-                self.assertEqual(owner.state.patient.active.patientId, "chart-john")
+                self.assertEqual(owner.state.chart().patientId, "chart-john")
 
     async def test_a_revocation_during_a_reload_discards_the_reload(self):
         started, release = asyncio.Event(), asyncio.Event()
@@ -2926,7 +2912,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         release.set()
 
         self.assertFalse(await reloading)
-        self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
+        self.assertEqual(owner.state.chart().appointmentsStatus, "error")
 
     async def test_move_goes_to_staff_when_go_cannot_scope_it(self):
         said = "This appointment's doctor or visit type could not be confirmed."
@@ -2958,7 +2944,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         )
         verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
         ref = await self.move_slot(owner)
-        owner.state.patient.mark_appointments_stale()
+        revoke(owner.state)
         await owner._resolver.resolve("Jane", None)
         args = dict(
             oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
@@ -3005,7 +2991,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         )
         again = await self.book(owner, await self.slots(owner))
         self.assertTrue(again.startswith("success: Booked"), again)
-        self.assertEqual([a.id for a in owner.state.patient.active.appointments], [889])
+        self.assertEqual([a.id for a in owner.state.chart().appointments], [889])
 
     def two_visits(self, responses):
         owner, requests = self.owner(responses)
@@ -3050,9 +3036,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     self.assertTrue(refused.startswith("needs_input:"), refused)
                     self.assertIn(answer, refused)
         self.assertEqual(len(requests), 2)
-        self.assertEqual(
-            [a.id for a in owner.state.patient.active.appointments], [77, 78]
-        )
+        self.assertEqual([a.id for a in owner.state.chart().appointments], [77, 78])
 
         args = dict(oldAppointmentRef=second, appointmentSlotRef=ref)
         read_back = await self.tool(
@@ -3068,9 +3052,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         moved = await self.tool(owner, "reschedule_appointment", readBack=True, **args)
         self.assertTrue(moved.startswith("success:"), moved)
         self.assertEqual(requests[-1][1]["rescheduleToken"], "private-reschedule-78")
-        self.assertEqual(
-            [a.id for a in owner.state.patient.active.appointments], [77, 888]
-        )
+        self.assertEqual([a.id for a in owner.state.chart().appointments], [77, 888])
         self.assertEqual(
             await self.tool(owner, "reschedule_appointment", readBack=True, **args),
             moved,
@@ -3148,9 +3130,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertTrue(unconfirmed.startswith("needs_input: Confirm"))
             self.assertEqual(len(requests), 1)
-            self.assertEqual(
-                [a.id for a in owner.state.patient.active.appointments], [77]
-            )
+            self.assertEqual([a.id for a in owner.state.chart().appointments], [77])
             result = await self.tool(owner, "reschedule_appointment", **args)
             if status == "cancelled":
                 self.assertIn("Your new appointment is booked for", result)
@@ -3197,7 +3177,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 ],
             )
             self.assertEqual(
-                [a.id for a in owner.state.patient.active.appointments],
+                [a.id for a in owner.state.chart().appointments],
                 [888] if status == "cancelled" else [77, 888],
             )
 
@@ -3278,17 +3258,15 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     readBack=True,
                 )
                 self.assertIn("Reload appointments", result)
-                self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
+                self.assertEqual(owner.state.chart().appointmentsStatus, "error")
                 self.assertFalse(
                     any(path.startswith("/api/appointment/") for path, _, _ in requests)
                 )
 
                 booked = await self.book(owner, await self.slots(owner))
                 self.assertTrue(booked.startswith("success:"), booked)
-                self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
-                self.assertIn(
-                    88, [a.id for a in owner.state.patient.active.appointments]
-                )
+                self.assertEqual(owner.state.chart().appointmentsStatus, "error")
+                self.assertIn(88, [a.id for a in owner.state.chart().appointments])
                 middleware = AsyncMock()
                 middleware.resolve.return_value = Receipt.model_validate(
                     receipt(
@@ -3301,13 +3279,11 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 resolved = await resolver.resolve("Jane", None)
                 self.assertEqual(resolved["outcome"], "verified")
                 middleware.resolve.assert_awaited_once()
-                self.assertTrue(
-                    getattr(owner.state.patient.active.appointments[0], field)
-                )
-                self.assertEqual(owner.state.patient.active.appointmentsStatus, "found")
+                self.assertTrue(getattr(owner.state.chart().appointments[0], field))
+                self.assertEqual(owner.state.chart().appointmentsStatus, "found")
                 owner.appointments()
                 self.assertEqual(
-                    {a.id for a in owner.state.patient.active.appointments}, {77, 88}
+                    {a.id for a in owner.state.chart().appointments}, {77, 88}
                 )
 
     async def test_invalid_reschedule_receipt_is_uncertain_and_never_retried(self):
@@ -3336,7 +3312,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             )
             result = await self.tool(owner, "reschedule_appointment", **args)
             self.assertIn("could not be confirmed", result)
-            self.assertEqual(owner.state.patient.active.appointmentsStatus, "found")
+            self.assertEqual(owner.state.chart().appointmentsStatus, "found")
             self.assertEqual(
                 await self.tool(
                     owner, "cancel_appointment", appointmentRef=old_ref, readBack=True
@@ -3346,9 +3322,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 await self.tool(owner, "reschedule_appointment", **args), result
             )
-            self.assertEqual(
-                [a.id for a in owner.state.patient.active.appointments], [77]
-            )
+            self.assertEqual([a.id for a in owner.state.chart().appointments], [77])
             self.assertEqual(len(requests), 2)
 
     async def test_unknown_appointment_type_does_not_guess_reschedule_visit(self):
@@ -3425,11 +3399,11 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     readBack=True,
                 )
                 self.assertEqual("was not changed" in result, unchanged, result)
-                self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
+                self.assertEqual(owner.state.chart().appointmentsStatus, "error")
                 await resolve_patient(speech_context(owner.state), "Jane", None)
                 self.assertEqual(len(requests), 3)
                 self.assertEqual(requests[-1][1]["patientId"], "chart-jane")
-                patient = owner.state.patient.active
+                patient = owner.state.chart()
                 self.assertEqual(patient.appointmentsStatus, "found")
                 self.assertEqual(
                     patient.appointments[0].rescheduleToken, "refreshed-reschedule"
@@ -3451,7 +3425,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_refused_write_revokes_the_chart_when_only_insurance_moved(self):
         async def insurance_moved(request):
-            owner.state.patient.update_insurance("Aetna", "car1")
+            coverage_written(owner.state, "Aetna", "car1")
             return httpx.Response(
                 200,
                 json={
@@ -3467,7 +3441,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
         await self.tool(owner, "cancel_appointment", appointmentRef=ref, readBack=True)
 
-        self.assertEqual(owner.state.patient.active.appointmentsStatus, "error")
+        self.assertEqual(owner.state.chart().appointmentsStatus, "error")
         repeat = await self.tool(
             owner, "cancel_appointment", appointmentRef=ref, readBack=True
         )
@@ -3476,7 +3450,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_rejected_reschedule_does_not_stale_a_new_patient_context(self):
         async def switched(request):
-            owner.state.patient.revision += 1
             verified(
                 owner.state,
                 "chart-john",
@@ -3497,9 +3470,9 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             appointmentReason="Follow up",
             readBack=True,
         )
-        self.assertEqual(owner.state.patient.active.patientId, "chart-john")
-        self.assertEqual(owner.state.patient.active.appointmentsStatus, "found")
-        self.assertEqual([a.id for a in owner.state.patient.active.appointments], [99])
+        self.assertEqual(owner.state.chart().patientId, "chart-john")
+        self.assertEqual(owner.state.chart().appointmentsStatus, "found")
+        self.assertEqual([a.id for a in owner.state.chart().appointments], [99])
 
     async def test_reschedule_retries_only_after_definite_failure_and_fresh_confirmation(
         self,
@@ -3548,7 +3521,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 "success:"
             )
         )
-        self.assertEqual([a.id for a in owner.state.patient.active.appointments], [888])
+        self.assertEqual([a.id for a in owner.state.chart().appointments], [888])
         self.assertEqual(len(requests), 4)
 
     async def test_reschedule_transport_failure_fences_further_writes(self):
@@ -3580,7 +3553,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             result,
         )
         self.assertEqual(len(requests), 3)
-        self.assertEqual([a.id for a in owner.state.patient.active.appointments], [77])
+        self.assertEqual([a.id for a in owner.state.chart().appointments], [77])
 
     async def test_lost_reschedule_response_reports_cancellation_uncertain(self):
         async def unavailable(request):
@@ -3658,7 +3631,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self,
     ):
         async def switched(request):
-            owner.state.patient.revision += 1
             verified(owner.state, "chart-john")
             return httpx.Response(200, json=rescheduled())
 
@@ -3674,7 +3646,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             readBack=True,
         )
         self.assertEqual(result.split(":", 1)[0], "success")
-        self.assertEqual(owner.state.patient.active.appointments, [])
+        self.assertEqual(owner.state.chart().appointments, [])
         evidence = owner.state.reporter.appointment.call_args.args[0]
         self.assertEqual(evidence["externalPatientId"], "chart-jane")
         self.assertEqual(evidence["cancellationResult"]["status"], "cancelled")
@@ -3683,10 +3655,9 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             "native-call-id",
         )
         self.assertEqual(len(requests), 2)
-        owner.state.patient.revision += 1
         verified(owner.state)
         owner.appointments()
-        self.assertEqual([a.id for a in owner.state.patient.active.appointments], [888])
+        self.assertEqual([a.id for a in owner.state.chart().appointments], [888])
         self.assertIn("Your new appointment is booked", await self.book(owner, ref))
         self.assertEqual(len(requests), 2)
 
@@ -3855,7 +3826,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         blocks = not later.startswith(
             "needs_input: That slot reference was not returned"
         )
-        stale = owner.state.patient.active.appointmentsStatus == "error"
+        stale = owner.state.chart().appointmentsStatus == "error"
         return first, (replays, blocks, stale)
 
     async def test_every_booking_outcome_has_one_answer_and_effect(self):
@@ -4366,7 +4337,6 @@ class SchedulingSessionTests(unittest.IsolatedAsyncioTestCase):
             with patch.object(AbitaAgent, "on_enter", new=AsyncMock()):
                 await session.start(agent=agent)
             await asyncio.wait_for(session.run(user_input="search"), 5)
-            owner.state.patient.revision += 1
             verified(owner.state, "chart-john")
             await asyncio.wait_for(session.run(user_input="book"), 5)
             outputs = [
@@ -4421,4 +4391,4 @@ class SchedulingSessionTests(unittest.IsolatedAsyncioTestCase):
                     ):
                         self.assertNotIn(secret, output.output)
         self.assertEqual(len(requests), 5)
-        self.assertEqual([a.id for a in owner.state.patient.active.appointments], [999])
+        self.assertEqual([a.id for a in owner.state.chart().appointments], [999])

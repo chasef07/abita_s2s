@@ -6,6 +6,7 @@ import inspect
 import unittest
 from pathlib import Path
 
+from abita_s2s.call_record import CallRecord
 from abita_s2s.state import CallState, PatientState
 
 PACKAGE = Path(__file__).parents[1] / "src" / "abita_s2s"
@@ -20,18 +21,20 @@ OWNERS = {
     "patient": "state",
     "record": "state",
     "candidates": "state",
-    "active": "state",
-    "revision": "state",
+    "patient_id": "state",
+    "since": "state",
     "plans": "runtime",
 }
 CALLERS = {
-    "activate": ("identity",),
-    "deactivate": ("identity",),
-    "update_insurance": ("identity",),
+    "select": ("identity",),
+    "deselect": ("identity",),
     "record_candidates": ("identity",),
-    "update_appointments": ("scheduling",),
-    "mark_appointments_stale": ("scheduling",),
+    "loaded": ("identity",),
+    "revoke": ("scheduling",),
+    "sent": ("call_record",),
+    "settled": ("call_record", "scheduling"),
 }
+RECORD_WRITERS = ("loaded", "revoke", "sent", "settled")
 SETTERS = ("setattr", "delattr", "object.__setattr__")
 MUTATORS = {
     "add",
@@ -54,7 +57,11 @@ RESOLVER = "ask PatientResolver in identity.py to change the patient"
 
 def fix(field: str, module: str) -> str:
     if FIELD_CLASS[field] == "PatientState":
-        methods = [m for m, callers in CALLERS.items() if module in callers]
+        methods = [
+            m
+            for m, callers in CALLERS.items()
+            if module in callers and m not in RECORD_WRITERS
+        ]
         return f"call PatientState.{' or '.join(methods)}" if methods else RESOLVER
     return f"only {OWNERS[field]} writes it; move the change there"
 
@@ -100,10 +107,11 @@ def violations(module: str, tree: ast.AST) -> list[tuple[int, str]]:
                 continue
             elif func.attr in CALLERS and module not in CALLERS[func.attr]:
                 callers = " and ".join(CALLERS[func.attr])
+                owner = "CallRecord" if func.attr in RECORD_WRITERS else "PatientState"
                 found.append(
                     (
                         node.lineno,
-                        f"calls PatientState.{func.attr}, which only {callers}"
+                        f"calls {owner}.{func.attr}, which only {callers}"
                         f" may call; {RESOLVER}",
                     )
                 )
@@ -149,13 +157,14 @@ class StateOwnershipTests(unittest.TestCase):
             names - read_fields(), set(), "delete call state that only tests read"
         )
 
-    def test_every_patient_method_names_its_callers(self):
+    def test_every_patient_and_record_writer_names_its_callers(self):
         methods = {
             name
             for name, member in vars(PatientState).items()
             if inspect.isfunction(member) and not name.startswith("_")
         }
-        self.assertEqual(set(CALLERS), methods)
+        self.assertEqual(set(CALLERS), methods | set(RECORD_WRITERS))
+        self.assertLessEqual(set(RECORD_WRITERS), set(vars(CallRecord)))
 
     def test_call_state_changes_only_in_its_owner(self):
         self.assertEqual(ownership_violations(), [])
@@ -163,14 +172,15 @@ class StateOwnershipTests(unittest.TestCase):
     def test_scan_flags_each_way_to_change_owned_state(self):
         source = """
 def change(self, patient, context):
-    self.state.patient.active = None
-    patient.revision += 1
+    self.state.patient.patient_id = None
+    patient.since += 1
     del self.state.plans
     setattr(self.state, "reporter", None)
-    self.state.patient.active.model_copy(update={})
+    self.state.patient.candidates.clear()
     context.userdata.patient = None
-    self.state.patient.activate(None)
-    self.state.patient.mark_appointments_stale()
+    self.state.patient.select("1", 0)
+    self.state.record.loaded(None, None)
+    self.state.record.revoke("1")
     held, ins = self.state.patient, self.state.record
 """
         self.assertEqual(
@@ -179,16 +189,14 @@ def change(self, patient, context):
                 for line, text in violations("scheduling", ast.parse(source))
             ],
             [
-                "3 assigns PatientState.active;"
-                " call PatientState.update_appointments or mark_appointments_stale",
-                "4 increments PatientState.revision;"
-                " call PatientState.update_appointments or mark_appointments_stale",
+                f"3 assigns PatientState.patient_id; {RESOLVER}",
+                f"4 increments PatientState.since; {RESOLVER}",
                 "5 deletes CallState.plans; only runtime writes it; move the change there",
                 "6 setattr CallState.reporter; only runtime writes it; move the change there",
-                "7 copies PatientState.active;"
-                " call PatientState.update_appointments or mark_appointments_stale",
+                f"7 calls clear on PatientState.candidates; {RESOLVER}",
                 "8 assigns CallState.patient; only state writes it; move the change there",
-                "9 calls PatientState.activate, which only identity may call;"
+                "9 calls PatientState.select, which only identity may call;"
                 f" {RESOLVER}",
+                f"10 calls CallRecord.loaded, which only identity may call; {RESOLVER}",
             ],
         )
