@@ -2,39 +2,28 @@
 
 import ast
 import dataclasses
-import inspect
 import unittest
 from pathlib import Path
 
 from abita_s2s.call_record import CallRecord
-from abita_s2s.state import CallState, PatientState
+from abita_s2s.state import CallState
 
 PACKAGE = Path(__file__).parents[1] / "src" / "abita_s2s"
-STATE_CLASSES = (CallState, PatientState)
-FIELD_CLASS = {
-    f.name: cls.__name__ for cls in STATE_CLASSES for f in dataclasses.fields(cls)
-}
+FIELDS = {f.name for f in dataclasses.fields(CallState)}
 
 OWNERS = {
     "call": "runtime",
     "reporter": "runtime",
-    "patient": "state",
-    "record": "state",
-    "candidates": "state",
-    "patient_id": "state",
-    "since": "state",
     "plans": "runtime",
+    "identity": "identity",
+    "record": "state",
 }
 CALLERS = {
-    "select": ("identity",),
-    "deselect": ("identity",),
-    "record_candidates": ("identity",),
     "loaded": ("identity",),
     "revoke": ("scheduling",),
     "sent": ("call_record",),
     "settled": ("call_record", "scheduling"),
 }
-RECORD_WRITERS = ("loaded", "revoke", "sent", "settled")
 SETTERS = ("setattr", "delattr", "object.__setattr__")
 MUTATORS = {
     "add",
@@ -55,14 +44,9 @@ MUTATORS = {
 RESOLVER = "ask PatientResolver in identity.py to change the patient"
 
 
-def fix(field: str, module: str) -> str:
-    if FIELD_CLASS[field] == "PatientState":
-        methods = [
-            m
-            for m, callers in CALLERS.items()
-            if module in callers and m not in RECORD_WRITERS
-        ]
-        return f"call PatientState.{' or '.join(methods)}" if methods else RESOLVER
+def fix(field: str) -> str:
+    if field == "identity":
+        return RESOLVER
     return f"only {OWNERS[field]} writes it; move the change there"
 
 
@@ -81,9 +65,7 @@ def violations(module: str, tree: ast.AST) -> list[tuple[int, str]]:
 
     def changes(line: int, verb: str, field: str):
         if OWNERS.get(field, module) != module:
-            found.append(
-                (line, f"{verb} {FIELD_CLASS[field]}.{field}; {fix(field, module)}")
-            )
+            found.append((line, f"{verb} CallState.{field}; {fix(field)}"))
 
     for node in ast.walk(tree):
         if isinstance(node, (ast.Assign, ast.Delete)):
@@ -107,12 +89,10 @@ def violations(module: str, tree: ast.AST) -> list[tuple[int, str]]:
                 continue
             elif func.attr in CALLERS and module not in CALLERS[func.attr]:
                 callers = " and ".join(CALLERS[func.attr])
-                owner = "CallRecord" if func.attr in RECORD_WRITERS else "PatientState"
                 found.append(
                     (
                         node.lineno,
-                        f"calls {owner}.{func.attr}, which only {callers}"
-                        f" may call; {RESOLVER}",
+                        f"calls CallRecord.{func.attr}, which only {callers} may call",
                     )
                 )
             elif func.attr in MUTATORS and isinstance(func.value, ast.Attribute):
@@ -147,24 +127,15 @@ class StateOwnershipTests(unittest.TestCase):
     maxDiff = None
 
     def test_every_field_has_one_owner(self):
-        names = [f.name for cls in STATE_CLASSES for f in dataclasses.fields(cls)]
-        self.assertEqual(len(names), len(set(names)), "field names must be unique")
-        self.assertEqual(set(OWNERS), set(names))
+        self.assertEqual(set(OWNERS), FIELDS)
 
     def test_every_field_is_read_by_the_app(self):
-        names = {f.name for cls in STATE_CLASSES for f in dataclasses.fields(cls)}
         self.assertEqual(
-            names - read_fields(), set(), "delete call state that only tests read"
+            FIELDS - read_fields(), set(), "delete call state that only tests read"
         )
 
-    def test_every_patient_and_record_writer_names_its_callers(self):
-        methods = {
-            name
-            for name, member in vars(PatientState).items()
-            if inspect.isfunction(member) and not name.startswith("_")
-        }
-        self.assertEqual(set(CALLERS), methods | set(RECORD_WRITERS))
-        self.assertLessEqual(set(RECORD_WRITERS), set(vars(CallRecord)))
+    def test_every_record_writer_names_its_callers(self):
+        self.assertLessEqual(set(CALLERS), set(vars(CallRecord)))
 
     def test_call_state_changes_only_in_its_owner(self):
         self.assertEqual(ownership_violations(), [])
@@ -172,16 +143,15 @@ class StateOwnershipTests(unittest.TestCase):
     def test_scan_flags_each_way_to_change_owned_state(self):
         source = """
 def change(self, patient, context):
-    self.state.patient.patient_id = None
-    patient.since += 1
+    self.state.identity = None
+    patient.identity += 1
     del self.state.plans
     setattr(self.state, "reporter", None)
-    self.state.patient.candidates.clear()
-    context.userdata.patient = None
-    self.state.patient.select("1", 0)
+    self.state.record.model_copy(update={})
+    context.userdata.record = None
     self.state.record.loaded(None, None)
     self.state.record.revoke("1")
-    held, ins = self.state.patient, self.state.record
+    held, record = self.state.identity, self.state.record
 """
         self.assertEqual(
             [
@@ -189,14 +159,12 @@ def change(self, patient, context):
                 for line, text in violations("scheduling", ast.parse(source))
             ],
             [
-                f"3 assigns PatientState.patient_id; {RESOLVER}",
-                f"4 increments PatientState.since; {RESOLVER}",
+                f"3 assigns CallState.identity; {RESOLVER}",
+                f"4 increments CallState.identity; {RESOLVER}",
                 "5 deletes CallState.plans; only runtime writes it; move the change there",
                 "6 setattr CallState.reporter; only runtime writes it; move the change there",
-                f"7 calls clear on PatientState.candidates; {RESOLVER}",
-                "8 assigns CallState.patient; only state writes it; move the change there",
-                "9 calls PatientState.select, which only identity may call;"
-                f" {RESOLVER}",
-                f"10 calls CallRecord.loaded, which only identity may call; {RESOLVER}",
+                "7 copies CallState.record; only state writes it; move the change there",
+                "8 assigns CallState.record; only state writes it; move the change there",
+                "9 calls CallRecord.loaded, which only identity may call",
             ],
         )

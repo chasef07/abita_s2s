@@ -1634,12 +1634,10 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("outcome could not be confirmed", result)
                 self.assertEqual([a.id for a in owner.state.chart().appointments], [77])
                 self.assertEqual(owner.state.chart().appointmentsStatus, "error")
-                owner.state.patient.record_candidates(
-                    (Candidate.model_validate(candidate()),)
-                )
                 resolver = PatientResolver(
                     owner.state, PatientMiddleware(owner.http._client, CONFIG)
                 )
+                resolver._candidates = (Candidate.model_validate(candidate()),)
                 self.addAsyncCleanup(resolver.aclose)
                 result = await resolver.resolve("Jane", "01/02/1980")
                 self.assertEqual(result["outcome"], "verified")
@@ -2669,7 +2667,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         owner, requests = self.owner([refusal, fresh, inventory(), rescheduled()])
         verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
         old_ref = owner.appointments()[0]["appointmentRef"]
-        since = owner.state.patient.since
+        since = owner.state.identity.since
 
         result = await self.tool(
             owner,
@@ -2685,7 +2683,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             ["/api/scheduler/slots", "/api/patient/resolve", "/api/scheduler/slots"],
         )
         self.assertEqual(requests[2][1]["rescheduleToken"], "fresh-reschedule")
-        self.assertEqual(owner.state.patient.since, since)
+        self.assertEqual(owner.state.identity.since, since)
         self.assertEqual(owner.appointments()[0]["appointmentRef"], old_ref)
         moved = await self.tool(
             owner,

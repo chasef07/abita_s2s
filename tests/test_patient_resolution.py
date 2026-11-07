@@ -298,7 +298,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         )
         await self.preload(r)
         self.assertEqual(
-            r.state.patient.candidates,
+            r._candidates,
             (Candidate.model_validate(candidate()),),
         )
         self.assertEqual((await r.resolve("Jane", None))["outcome"], "verified")
@@ -593,13 +593,13 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         r, calls = self.resolver([receipt("chart-john", "John")])
         await self.preload(r)
         self.assertEqual((await r.resolve("Jon", None))["outcome"], "verified")
-        active, since = r.state.chart(), r.state.patient.since
+        active, since = r.state.chart(), r.state.identity.since
 
         result = await r.resolve("Jon", None)
 
         self.assertEqual(result["outcome"], "verified")
         self.assertIs(r.state.chart(), active)
-        self.assertEqual(r.state.patient.since, since)
+        self.assertEqual(r.state.identity.since, since)
         self.assertEqual(len(calls), 1)
 
     async def test_same_patient_table_holds_each_site_rule(self):
@@ -719,7 +719,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         ]:
             r, _ = self.resolver([body, body])
             await self.preload(r)
-            self.assertEqual(r.state.patient.candidates, ())
+            self.assertEqual(r._candidates, ())
             self.assertEqual(
                 (await r.resolve("Jane", None))["answer"],
                 "needs_input: What is the patient's date of birth?",
@@ -776,7 +776,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         await closing
         self.assertEqual((await resolving)["outcome"], "superseded")
         self.assertIsNone(r.state.chart())
-        self.assertEqual(r.state.patient.candidates, ())
+        self.assertEqual(r._candidates, ())
 
     async def test_tool_schema_and_cross_call_guard(self):
         r, calls = self.resolver([])

@@ -77,7 +77,7 @@ class CallStateTests(unittest.IsolatedAsyncioTestCase):
             ],
             "verified",
         )
-        since = resolver.state.patient.since
+        since = resolver.state.identity.since
         for token in (current, None):
             self.assertEqual(
                 (
@@ -87,7 +87,7 @@ class CallStateTests(unittest.IsolatedAsyncioTestCase):
                 )["outcome"],
                 "superseded",
             )
-        self.assertEqual(resolver.state.patient.since, since)
+        self.assertEqual(resolver.state.identity.since, since)
         resolver._middleware.resolve.assert_not_called()
 
     async def test_private_lookup_cannot_activate_or_be_replayed(self):
@@ -103,12 +103,12 @@ class CallStateTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         await other._lookup_phone(token)
-        self.assertEqual(other.state.patient.candidates, ())
+        self.assertEqual(other._candidates, ())
         await resolver._lookup_phone(token)
         self.assertIsNone(resolver.state.chart())
         await resolver._lookup_phone(token)
         self.assertEqual(
-            resolver.state.patient.candidates,
+            resolver._candidates,
             (Candidate.model_validate(candidate()),),
         )
         await resolver._load_patient(

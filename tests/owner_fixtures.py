@@ -10,6 +10,7 @@ from abita_s2s.call_record import (
 )
 from abita_s2s.offices import SPRING_HILL
 from abita_s2s.records import Receipt
+from abita_s2s.state import Selected
 from abita_s2s.tools.registry import Owners
 
 
@@ -70,13 +71,13 @@ def select(state, chart) -> Receipt:
     """Put the call on this chart as a verified load would."""
     receipt = chart if isinstance(chart, Receipt) else Receipt.model_validate(chart)
     position = state.record.loaded(receipt)
-    state.patient.select(receipt.patientId, position)
+    state.identity = Selected(receipt.patientId, position)
     return receipt
 
 
 def leave(state) -> None:
     """Take the call off its chart, as a new patient's details would."""
-    state.patient.deselect()
+    state.identity = None
 
 
 def revoke(state) -> None:

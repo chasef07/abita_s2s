@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from abita_s2s.call_record import CallRecord
 from abita_s2s.offices import OfficeProfile, get_product_office_key
-from abita_s2s.records import Candidate, Receipt
+from abita_s2s.records import Receipt
 
 if TYPE_CHECKING:
     from abita_s2s.insurance_list import OfficePlans
@@ -34,43 +34,50 @@ class CallContext:
         return get_product_office_key(self.office_phone)
 
 
-@dataclass(repr=False)
-class PatientState:
-    """Which chart the call is on. The chart itself is computed from the record.
+@dataclass(frozen=True, repr=False)
+class Claimed:
+    """What the caller said, matched to no chart yet. left is the chart the call came
+    from, which makes the next chart a switch."""
 
-    since is the record position where the call came to this patient: offers made
-    before it belong to someone else. tests/test_state_ownership.py names the modules
-    that may call each method.
+    first_name: str | None
+    dob: str | None
+    left: str | None = None
+
+    @property
+    def claim(self) -> "Claimed":
+        return self
+
+
+@dataclass(frozen=True, repr=False)
+class Selected:
+    """The chart the call is on.
+
+    since is where in the record the call came to this patient, so offers made before it
+    belong to someone else. said_name is the name that verified the chart. claim is what
+    the caller said since, not yet settled against it.
     """
 
-    candidates: tuple[Candidate, ...] = ()
-    patient_id: str | None = None
-    since: int | None = None
+    patient_id: str
+    since: int
+    said_name: str | None = None
+    claim: Claimed | None = None
 
-    def select(self, patient_id: str, position: int) -> None:
-        """Put the call on this chart. Staying on the same patient keeps since."""
-        if self.patient_id != patient_id:
-            self.since = position
-        self.patient_id = patient_id
-
-    def deselect(self) -> None:
-        self.patient_id = None
-        self.since = None
-
-    def record_candidates(self, candidates: tuple[Candidate, ...]) -> None:
-        """Keep the caller-phone lookup's well-formed candidates, or none."""
-        self.candidates = candidates
+    @property
+    def left(self) -> str:
+        """The chart a new claim would leave."""
+        return self.patient_id
 
 
 @dataclass(repr=False)
 class CallState:
     call: CallContext
     plans: "OfficePlans | None" = None
-    patient: PatientState = field(default_factory=PatientState)
+    identity: Claimed | Selected | None = None
     record: CallRecord = field(default_factory=CallRecord)
     reporter: "CallReporter | None" = None
 
     def chart(self) -> Receipt | None:
         """The chart the call is on, computed from the record."""
-        patient_id = self.patient.patient_id
-        return self.record.chart(patient_id) if patient_id else None
+        if isinstance(self.identity, Selected):
+            return self.record.chart(self.identity.patient_id)
+        return None

@@ -211,7 +211,8 @@ class Scheduling:
 
     def _warned(self, settled: WriteSettled) -> dict:
         """A result for a patient the call has since left says so."""
-        if self.state.patient.patient_id == settled.key.patient_id:
+        chart = self.state.chart()
+        if chart and chart.patientId == settled.key.patient_id:
             return settled.answer
         return {
             **settled.answer,

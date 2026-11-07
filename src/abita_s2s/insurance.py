@@ -30,7 +30,7 @@ from abita_s2s.name_matcher import dob_matches, exact_name, parse_dob
 from abita_s2s.offices import e164
 from abita_s2s.records import Receipt, Record
 from abita_s2s.results import reply
-from abita_s2s.state import CallState
+from abita_s2s.state import CallState, Selected
 
 
 def full_name(person) -> str:
@@ -309,8 +309,8 @@ class InsuranceRegistration:
         call_id: str | None = None,
     ) -> dict:
         def write() -> WritePlan | dict:
-            active = self.state.chart()
-            if active is None:
+            identity, active = self.state.identity, self.state.chart()
+            if not isinstance(identity, Selected) or active is None:
                 return reply(
                     "needs_resolution",
                     "needs_input: Verify the patient before changing insurance.",
@@ -329,7 +329,7 @@ class InsuranceRegistration:
                 "update_insurance",
                 (plan.planId, coverage_type, member),
             )
-            since = self.state.patient.since
+            since = identity.since
 
             def replay(saved: WriteSettled) -> dict | None:
                 latest = self.state.record.latest(active.patientId, INSURANCE_WRITES)
@@ -341,9 +341,7 @@ class InsuranceRegistration:
                         key, active, plan, coverage_type, member, since, call_id
                     ),
                     staff("uncertain"),
-                    lambda: unless(
-                        self._resolver.unchanged_since(active.patientId, since)
-                    ),
+                    lambda: unless(self._resolver.still_on(since)),
                 )
 
             return WritePlan(key, prepare, replay)
@@ -357,7 +355,7 @@ class InsuranceRegistration:
         plan: PlanSummary,
         coverage_type: CoverageType,
         member: str,
-        since: int | None,
+        since: int,
         call_id: str | None,
     ) -> WriteSettled:
         result = await self._middleware.update(
@@ -393,9 +391,7 @@ class InsuranceRegistration:
             decision = result.insuranceDecision
             carrier_id = decision.carrierId if decision else None
             coverage = (result.newInsurance, carrier_id)
-            if not self.state.record.closed and self._resolver.unchanged_since(
-                active.patientId, since
-            ):
+            if not self.state.record.closed and self._resolver.still_on(since):
                 answer = reply(
                     "updated", f"success: Updated insurance to {plan.label}."
                 )

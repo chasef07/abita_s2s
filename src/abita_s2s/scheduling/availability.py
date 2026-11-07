@@ -17,7 +17,7 @@ from abita_s2s.integrations.scheduling_http import (
 from abita_s2s.offices import EASTERN, office_key
 from abita_s2s.records import Appointment
 from abita_s2s.results import reply
-from abita_s2s.state import CallState
+from abita_s2s.state import CallState, Selected
 
 SHARED_OFFICE_CHOICE = "needs_input: Ask for Hollywood or Sweetwater on those office calls; omit office for other calls."
 
@@ -85,7 +85,7 @@ def scheduling_context(state: CallState) -> SchedulingContext:
     patient_id = chart.patientId if chart else None
     return SchedulingContext(
         patient_id=patient_id,
-        since=state.patient.since,
+        since=state.identity.since if isinstance(state.identity, Selected) else None,
         dob=chart.dob if chart else None,
         coverage_writes=state.record.coverage_writes(patient_id) if patient_id else 0,
         insurance_ready=state.record.insurance_ready(patient_id),

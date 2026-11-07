@@ -154,12 +154,10 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         first = await owner.add(registration())
-        since = state.patient.since
         second = registration(firstName="John", dob="02/03/1982", readBack=None)
 
         self.assertEqual((await owner.add(second))["outcome"], "needs_read_back")
         self.assertIsNone(state.chart())
-        self.assertNotEqual(state.patient.since, since)
         self.assertEqual(
             resolver.staff_task_patient(), {"name": "John", "dob": "02/03/1982"}
         )
@@ -239,7 +237,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(blocked=blocked):
                 state, _, owner = self.owner([created()])
                 await owner.add(registration())
-                active, since = state.chart(), state.patient.since
+                active, since = state.chart(), state.identity.since
                 if blocked == "closed":
                     owner.close_admission()
                 elif blocked == "pending":
@@ -251,7 +249,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertTrue(result["answer"].startswith("blocked:"))
                 self.assertIs(state.chart(), active)
-                self.assertEqual(state.patient.since, since)
+                self.assertEqual(state.identity.since, since)
                 self.assertEqual(len(self.requests), 1)
 
     async def test_callback_and_readback(self):

@@ -1,7 +1,7 @@
 """One per-call owner for identity evidence, resolution, and patient changes."""
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from abita_s2s.insurance_list import chart_plans
 from abita_s2s.integrations.patient_middleware import (
@@ -21,7 +21,7 @@ from abita_s2s.name_matcher import (
 )
 from abita_s2s.records import Candidate, Receipt
 from abita_s2s.results import reply
-from abita_s2s.state import CallState
+from abita_s2s.state import CallState, Claimed, Selected
 
 
 def failed() -> dict:
@@ -57,24 +57,32 @@ class PatientResolver:
     def __init__(self, state: CallState, middleware: PatientMiddleware):
         self.state = state
         self._middleware = middleware
-        self._pending: tuple[str | None, str | None] = (None, None)
         self._task: asyncio.Task | None = None
         self._precall: asyncio.Task | None = None
-        self._previous_id: str | None = None
         self._token: Lookup | None = None
-        self._verified_as: tuple[str, str] | None = None
+        self._candidates: tuple[Candidate, ...] = ()
         self._phone_chart: Receipt | None = None
 
     @property
     def _closed(self) -> bool:
         return self.state.record.closed
 
-    def _select(self, receipt: Receipt) -> None:
-        self.state.patient.select(receipt.patientId, self.state.record.loaded(receipt))
+    def _claimed(self) -> tuple[str | None, str | None]:
+        """What the caller said that no chart has settled yet."""
+        claim = self.state.identity and self.state.identity.claim
+        return (claim.first_name, claim.dob) if claim else (None, None)
+
+    def _select(self, receipt: Receipt, said_name: str | None = None) -> None:
+        """Put the call on a chart just read. Staying on the same patient keeps since."""
+        since = self.state.record.loaded(receipt)
+        current = self.state.identity
+        if isinstance(current, Selected) and current.patient_id == receipt.patientId:
+            since = current.since
+        self.state.identity = Selected(receipt.patientId, since, said_name)
 
     def staff_task_patient(self) -> dict[str, str] | None:
         """Snapshot current caller-reported identity without promoting it to verified."""
-        name, dob = self._pending
+        name, dob = self._claimed()
         if name or dob:
             return {k: v for k, v in {"name": name, "dob": dob}.items() if v}
         active = self.state.chart()
@@ -82,11 +90,12 @@ class PatientResolver:
             return {"id": active.patientId, "name": active.name, "dob": active.dob}
         return None
 
-    def _same_as_active(
-        self, active: Receipt, name: str | None, dob: str | None
-    ) -> bool:
+    def _same_as_active(self, name: str | None, dob: str | None) -> bool:
         """Repeating the name that verified this chart, even fuzzily, keeps it active."""
-        if name and self._verified_as == (active.patientId, exact_name(name)):
+        identity, active = self.state.identity, self.state.chart()
+        if not isinstance(identity, Selected) or active is None:
+            return False
+        if name and identity.said_name == exact_name(name):
             return same_patient(None, dob, active.name, active.dob, names_match)
         return same_patient(name, dob, active.name, active.dob, names_match)
 
@@ -131,7 +140,7 @@ class PatientResolver:
         candidates = tuple(matches)
         if self._current(token):
             self._token = None
-            self.state.patient.record_candidates(candidates)
+            self._candidates = candidates
         return candidates
 
     def close_admission(self) -> None:
@@ -152,27 +161,28 @@ class PatientResolver:
             return reply("superseded", "blocked: This call has ended.")
         first_name = first_name.strip() if first_name is not None else None
         dob = dob.strip() if dob is not None else None
-        previous_name, previous_dob = self._pending
+        claimed = self._claimed()
+        previous_name, previous_dob = claimed
         if first_name is not None and exact_name(first_name) != exact_name(
             previous_name or ""
         ):
             previous_dob = None
         first_name = first_name if first_name is not None else previous_name
         dob = dob if dob is not None else previous_dob
-        key = (first_name, dob)
+        identity, active = self.state.identity, self.state.chart()
         if (
-            self._pending == key
+            claimed == (first_name, dob)
             and self._token is not None
-            and self._current(self._token, self.state.patient.patient_id)
+            and self._current(self._token, active.patientId if active else None)
             and self._task is not None
             and not self._task.done()
         ):
             return await asyncio.shield(self._task)
-        self._pending = (first_name, dob)
-        active = self.state.chart()
-        if active and not self._same_as_active(active, first_name, dob):
-            self._previous_id = active.patientId
-            self.state.patient.deselect()
+        claim = Claimed(first_name, dob, identity.left if identity else None)
+        if isinstance(identity, Selected) and self._same_as_active(first_name, dob):
+            self.state.identity = replace(identity, claim=claim)
+        else:
+            self.state.identity = claim
         token = self._begin_lookup()
         if self._task is not None:
             self._task.cancel()
@@ -183,7 +193,7 @@ class PatientResolver:
                     candidates = await asyncio.shield(self._precall)
                     if not self._current(token):
                         return superseded()
-                    self.state.patient.record_candidates(candidates)
+                    self._candidates = candidates
                 return await self._resolve(first_name, dob, token, call_id=call_id)
             except asyncio.CancelledError:
                 if self._token is token:
@@ -228,18 +238,15 @@ class PatientResolver:
             )
         selected = [
             c
-            for c in self.state.patient.candidates
+            for c in self._candidates
             if phone_name_matches(name, c.firstName)
             and (not dob or dob_matches(dob, c.dob))
         ]
         active = self.state.chart()
-        if (
-            active
-            and self._same_as_active(active, name, dob)
-            and (dob or len(selected) < 2)
-        ):
+        if active and self._same_as_active(name, dob) and (dob or len(selected) < 2):
             if active.appointmentsStatus != "error":
-                self._pending = (None, None)
+                if isinstance(identity := self.state.identity, Selected):
+                    self.state.identity = replace(identity, claim=None)
                 return self._facts(active, "verified", call_id=call_id)
             return await self._load_patient(
                 active, name, dob, token, phone=True, call_id=call_id
@@ -306,24 +313,21 @@ class PatientResolver:
             or not same_patient(name, dob, receipt.name, receipt.dob, matcher)
         ):
             return failed()
-        previous_id = self.state.patient.patient_id or self._previous_id
-        switched = previous_id not in (None, receipt.patientId)
+        left = self.state.identity.left if self.state.identity else None
+        switched = left not in (None, receipt.patientId)
         self._token = None
         self._phone_chart = None
-        self._select(receipt)
-        self._pending = (None, None)
-        self._previous_id = None
-        self._verified_as = (receipt.patientId, exact_name(name))
+        self._select(receipt, exact_name(name))
         return self._facts(
             self.state.chart() or receipt,
             "switched" if switched else "verified",
             call_id=call_id,
         )
 
-    def unchanged_since(self, patient_id: str, since: int | None) -> bool:
-        """Whether a write's patient is still the call's, without having left and come back."""
-        patient = self.state.patient
-        return patient.patient_id == patient_id and patient.since == since
+    def still_on(self, since: int) -> bool:
+        """Whether the call is still on the chart it came to at since, without having left."""
+        identity = self.state.identity
+        return isinstance(identity, Selected) and identity.since == since
 
     def _read_chart(self, patient_id: str):
         return self._middleware.resolve(
@@ -350,7 +354,7 @@ class PatientResolver:
                 or receipt.appointmentsStatus == "error"
             ):
                 return False
-            self._select(receipt)
+            self.state.record.loaded(receipt)
             return True
         finally:
             if self._token is token:
@@ -362,26 +366,24 @@ class PatientResolver:
         Runs before the intake is validated or read back. A rejected intake can lead to a
         staff request, which must name this patient and not the chart the call was on.
         """
-        active = self.state.chart()
         if (
             self._closed
             or not exact_name(first_name)
             or not parse_dob(dob)
-            or (active and self._same_as_active(active, first_name, dob))
+            or self._same_as_active(first_name, dob)
         ):
             return False
         self._token = None
-        self._pending = (first_name, dob)
-        self._previous_id = None
-        self.state.patient.deselect()
+        self.state.identity = Claimed(first_name, dob)
         return True
 
     def registering(self, first_name: str, dob: str) -> bool:
         """Whether new intake for this identity is still the call's patient."""
+        identity = self.state.identity
         return (
             not self._closed
-            and self.state.patient.patient_id is None
-            and self._pending == (first_name, dob)
+            and isinstance(identity, Claimed)
+            and (identity.first_name, identity.dob) == (first_name, dob)
         )
 
     def activate_created(self, first_name: str, dob: str, receipt: Receipt) -> bool:
@@ -391,8 +393,6 @@ class PatientResolver:
         self._token = None
         self._phone_chart = None
         self._select(receipt)
-        self._pending = (None, None)
-        self._previous_id = None
         return True
 
     def _facts(
