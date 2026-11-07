@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.3](https://github.com/chasef07/abita_s2s/compare/v0.28.2...v0.28.3) (2026-11-07)
+
+
+### Bug Fixes
+
+* **identity:** stop serving stale charts and leaked appointments ([#279](https://github.com/chasef07/abita_s2s/issues/279)) ([16bdea1](https://github.com/chasef07/abita_s2s/commit/16bdea1d3586cccc037c5bcd304f2ea58f4d5581))
+
 ## [0.28.2](https://github.com/chasef07/abita_s2s/compare/v0.28.1...v0.28.2) (2026-11-05)
 
 
