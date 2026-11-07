@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.0](https://github.com/chasef07/abita_s2s/compare/v0.28.3...v0.29.0) (2026-11-07)
+
+
+### Features
+
+* **scheduling:** search moves from the appointment ([#280](https://github.com/chasef07/abita_s2s/issues/280)) ([190de53](https://github.com/chasef07/abita_s2s/commit/190de53467ee5f41befca608ae91eb8f22c93ded))
+
 ## [0.28.3](https://github.com/chasef07/abita_s2s/compare/v0.28.2...v0.28.3) (2026-11-07)
 
 
