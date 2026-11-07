@@ -52,6 +52,21 @@ class CallStateTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(FrozenInstanceError):
             resolver.state.call.office = get_office_profile("hollywood")
 
+    async def test_only_a_load_of_another_chart_starts_a_new_since(self):
+        resolver = self.resolver()
+        jane = Receipt.model_validate(receipt())
+        for chart, name in ((jane, "Jane"), (jane, "Jane")):
+            await resolver._load_patient(
+                chart, name, None, resolver._begin_lookup(), phone=False
+            )
+        since = resolver.state.identity.since
+        self.assertEqual(since, 0)
+        john = Receipt.model_validate(receipt("chart-john", "John"))
+        await resolver._load_patient(
+            john, "John", None, resolver._begin_lookup(), phone=False
+        )
+        self.assertNotEqual(resolver.state.identity.since, since)
+
     async def test_stale_cross_call_and_replayed_receipts_are_rejected(self):
         resolver, other = self.resolver(), self.resolver()
         old = resolver._begin_lookup()
