@@ -3708,29 +3708,6 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(requests), 1)
         self.assertTrue((await self.book(owner, ref)).startswith("success:"))
 
-    async def test_foreign_session_blocks_changes(self):
-        owner, requests = self.owner([])
-        tools = SchedulingTools(owner)
-        change = dict(
-            appointmentSlotRef="ST_ABCDEF",
-            appointmentReason="Blurry vision",
-            readBack=True,
-        )
-        for name, args in (
-            ("book_appointment", {**change, "referringDoctor": None}),
-            ("reschedule_appointment", {**change, "oldAppointmentRef": "A1"}),
-            ("cancel_appointment", {"appointmentRef": "A1", "readBack": True}),
-        ):
-            with self.subTest(name=name):
-                context = speech_context(call_state(None))
-                self.assertEqual(
-                    await getattr(tools, name)(context, **args),
-                    "blocked: Scheduling is unavailable.",
-                )
-                context.wait_for_playout.assert_not_awaited()
-                context.session.generate_reply.assert_not_called()
-        self.assertEqual(requests, [])
-
     async def test_changing_plan_retires_offered_slots_before_booking(self):
         owner, requests = self.owner([inventory(), inventory()])
         ref = await self.slots(owner)

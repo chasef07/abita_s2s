@@ -778,7 +778,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(r.state.chart())
         self.assertEqual(r._candidates, ())
 
-    async def test_tool_schema_and_cross_call_guard(self):
+    async def test_tool_schema_takes_only_a_name_and_dob(self):
         r, calls = self.resolver([])
         agent = AbitaAgent(call_owners(SPRING_HILL, resolver=r))
         resolve_patient = ToolContext(agent.tools).function_tools["resolve_patient"]
@@ -787,12 +787,6 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(schema["parameters"]["additionalProperties"])
         for value in schema["parameters"]["properties"].values():
             self.assertEqual(value["type"], ["string", "null"])
-        result = await resolve_patient(
-            SimpleNamespace(userdata=call_state()), "Jane", None
-        )
-        self.assertEqual(
-            result, "blocked: Patient lookup is unavailable. Ask office staff for help."
-        )
         self.assertEqual(calls, [])
 
     def test_phone_fuzzy_thresholds_match_agent_examples(self):

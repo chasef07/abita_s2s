@@ -1,11 +1,6 @@
-"""Shared tool helpers: call binding, and a caller announcement that only an owner may sequence."""
+"""Shared tool helper: a caller announcement that only an owner may sequence."""
 
 from livekit.agents import RunContext
-
-
-def bound(owner, context: RunContext) -> bool:
-    """Whether this call's session owns the per-call owner a tool delegates to."""
-    return owner.state is context.userdata
 
 
 async def say_only(context: RunContext, news: str) -> bool:

@@ -2,10 +2,9 @@
 
 from livekit.agents import RunContext, function_tool
 
-from abita_s2s.insurance import InsuranceRegistration, staff
+from abita_s2s.insurance import InsuranceRegistration
 from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.state import CallState
-from abita_s2s.tools.context import bound
 
 
 class InsuranceTools:
@@ -30,8 +29,6 @@ class InsuranceTools:
             visitType: The visit type the new plan is for: medical or routine_vision.
             insuranceMemberId: Member ID on the new card; empty for a self-pay plan.
         """
-        if not bound(self._insurance, context):
-            return staff()["answer"]
         result = await self._insurance.update(
             insurancePlanId,
             visitType,

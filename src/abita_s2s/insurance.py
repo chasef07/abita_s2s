@@ -8,7 +8,7 @@ from pydantic import ConfigDict
 from abita_s2s.call_record import (
     INSURANCE_WRITES,
     Registered,
-    Send,
+    Request,
     WriteKey,
     WriteOutcome,
     WritePath,
@@ -64,16 +64,10 @@ def staff(outcome="needs_staff_review"):
     )
 
 
-def unless(still_current: bool) -> dict | None:
-    """The answer for a write whose patient changed as its task started."""
-    return (
-        None
-        if still_current
-        else reply(
-            "stale",
-            "blocked: The patient changed. No registration or insurance change was sent.",
-        )
-    )
+STALE = reply(
+    "stale",
+    "blocked: The patient changed. No registration or insurance change was sent.",
+)
 
 
 ANSWERS = {
@@ -122,7 +116,7 @@ class InsuranceRegistration:
                 "write_pending",
                 "blocked: A registration or insurance write is still in progress. Wait for its result.",
             ),
-            blocked=self._blocked,
+            blocks_call=staff("uncertain"),
         )
 
     def close_admission(self) -> None:
@@ -131,14 +125,6 @@ class InsuranceRegistration:
     async def aclose(self):
         self.close_admission()
         await self._writes.drain()
-
-    def _blocked(self, key: WriteKey) -> dict | None:
-        """An insurance write staff must finish blocks the call; its own chart hears why."""
-        blockers = self.state.record.blockers(INSURANCE_WRITES)
-        for blocker in blockers:
-            if key.patient_id and blocker.key.patient_id == key.patient_id:
-                return blocker.answer
-        return staff("uncertain") if blockers else None
 
     async def add(
         self, registration: Registration, *, call_id: str | None = None
@@ -150,12 +136,19 @@ class InsuranceRegistration:
             (self.state.call.office.key, exact_name(r.firstName), parse_dob(r.dob)),
         )
         return await self._writes.run(
-            lambda: WritePlan(key, lambda: self._prepare_create(key, r, call_id))
+            lambda: WritePlan(
+                key,
+                lambda: self._prepare_create(key, r, call_id),
+                staff("uncertain"),
+                lambda: (
+                    None if self._resolver.registering(r.firstName, r.dob) else STALE
+                ),
+            )
         )
 
     def _prepare_create(
         self, key: WriteKey, r: Registration, call_id: str | None
-    ) -> Send | dict:
+    ) -> Request | dict:
         if (
             not self._resolver.begin_registration(r.firstName, r.dob)
             and self.state.chart()
@@ -229,11 +222,7 @@ class InsuranceRegistration:
             coverageType=r.visitType,
             office=self.state.call.office.key,
         )
-        return Send(
-            lambda: self._send_create(key, request, r, plan, call_id),
-            staff("uncertain"),
-            lambda: unless(self._resolver.registering(r.firstName, r.dob)),
-        )
+        return lambda: self._send_create(key, request, r, plan, call_id)
 
     async def _send_create(
         self,
@@ -335,16 +324,17 @@ class InsuranceRegistration:
                 latest = self.state.record.latest(active.patientId, INSURANCE_WRITES)
                 return saved.answer if latest == key else None
 
-            def prepare() -> Send:
-                return Send(
+            return WritePlan(
+                key,
+                lambda: (
                     lambda: self._send_update(
                         key, active, plan, coverage_type, member, since, call_id
-                    ),
-                    staff("uncertain"),
-                    lambda: unless(self._resolver.still_on(since)),
-                )
-
-            return WritePlan(key, prepare, replay)
+                    )
+                ),
+                staff("uncertain"),
+                lambda: None if self._resolver.still_on(since) else STALE,
+                replay,
+            )
 
         return await self._writes.run(write)
 

@@ -204,33 +204,27 @@ class CallRecord:
                 sent.discard(entry.key)
         return bool(sent)
 
-    def blockers(self, actions: Collection[WriteAction]) -> list[WriteSettled]:
-        """Half-done or uncertain writes among these actions: staff must finish them first."""
+    def blockers(
+        self, actions: Collection[WriteAction], patient_id: str | None = None
+    ) -> list[WriteSettled]:
+        """Half-done or uncertain writes staff must finish first, on one chart if named."""
         return [
             s
             for s in self._kept().values()
-            if s.key.action in actions and s.outcome in BLOCKS
+            if s.key.action in actions
+            and s.outcome in BLOCKS
+            and patient_id in (None, s.key.patient_id)
         ]
-
-    def blocker(
-        self, patient_id: str | None, actions: Collection[WriteAction]
-    ) -> WriteSettled | None:
-        """The write that answers every later write on this chart, if any."""
-        return next(
-            (s for s in self.blockers(actions) if s.key.patient_id == patient_id),
-            None,
-        )
 
     def replayable(self, key: WriteKey) -> WriteSettled | None:
         """The settlement a repeat of this write answers from. A chart's blocker comes first."""
-        kept = self._kept().get(key)
-        if kept is None or key.patient_id is None:
-            return kept
         lane = (
             APPOINTMENT_WRITES if key.action in APPOINTMENT_WRITES else INSURANCE_WRITES
         )
-        blocker = self.blocker(key.patient_id, lane)
-        return kept if blocker is None or blocker.key == key else None
+        blockers = self.blockers(lane, key.patient_id) if key.patient_id else []
+        return (
+            self._kept().get(key) if all(b.key == key for b in blockers[:1]) else None
+        )
 
     def latest(
         self, patient_id: str, actions: Collection[WriteAction]
@@ -275,27 +269,23 @@ class CallRecord:
         )
 
 
-@dataclass(frozen=True, repr=False)
-class Send:
-    """A write ready to go: the request, the answer to keep if its result is lost, and
-    why it must not leave after all, for a change that landed as its task started."""
-
-    request: Callable[[], Awaitable[WriteSettled]]
-    unknown: dict
-    stale: Callable[[], dict | None]
-
-
-def replay_answer(settled: WriteSettled) -> dict | None:
-    return settled.answer
+Request = Callable[[], Awaitable[WriteSettled]]
 
 
 @dataclass(frozen=True, repr=False)
 class WritePlan:
-    """One write: its key, what checks it needs before sending, and when a repeat replays."""
+    """One write. prepare checks it and returns its request, or the answer refusing it.
+
+    unknown is the answer kept if the result is lost. stale says why the request must not
+    leave after all, for a change that landed as its task started. replay decides what a
+    repeat answers from the saved settlement; None sends again.
+    """
 
     key: WriteKey
-    prepare: Callable[[], Send | dict]
-    replay: Callable[[WriteSettled], dict | None] = replay_answer
+    prepare: Callable[[], Request | dict]
+    unknown: dict
+    stale: Callable[[], dict | None]
+    replay: Callable[[WriteSettled], dict | None] | None = None
 
 
 class WritePath:
@@ -303,7 +293,8 @@ class WritePath:
 
     closed, in-flight, replay, block, prepare, WriteSent, shielded send, settle.
 
-    Each owner has its own path, so a write in flight blocks only that owner's writes.
+    Each owner has its own path, so a write in flight or a blocker stops only that
+    owner's writes: its chart's, or with blocks_call, the whole call's.
     Admission finishes before the first await, so nothing else can run between the checks
     and WriteSent. An exception settles the write as uncertain and fails the drain.
     """
@@ -315,15 +306,13 @@ class WritePath:
         *,
         closed: dict,
         busy: dict,
-        blocked: Callable[[WriteKey], dict | None],
-        spoken: Callable[[WriteSettled], dict] = lambda settled: settled.answer,
+        blocks_call: dict | None = None,
     ):
         self._record = record
         self._actions = actions
         self._closed = closed
         self._busy = busy
-        self._blocked = blocked
-        self._spoken = spoken
+        self._blocks_call = blocks_call
         self._last_sent: asyncio.Task[dict] | None = None
 
     async def run(self, plan: Callable[[], WritePlan | dict]) -> dict:
@@ -334,29 +323,37 @@ class WritePath:
         write = plan()
         if isinstance(write, dict):
             return write
-        kept = self._record.replayable(write.key)
-        if kept is not None and (answer := write.replay(kept)) is not None:
-            return answer
+        if kept := self._record.replayable(write.key):
+            answer = write.replay(kept) if write.replay else kept.answer
+            if answer is not None:
+                return answer
         if (answer := self._blocked(write.key)) is not None:
             return answer
-        prepared = write.prepare()
-        if isinstance(prepared, dict):
-            return prepared
+        request = write.prepare()
+        if isinstance(request, dict):
+            return request
         self._record.sent(write.key)
-        self._last_sent = asyncio.create_task(self._send(write.key, prepared))
+        self._last_sent = asyncio.create_task(self._send(write, request))
         return await asyncio.shield(self._last_sent)
 
-    async def _send(self, key: WriteKey, prepared: Send) -> dict:
-        if (answer := prepared.stale()) is not None:
-            self._record.settled(WriteSettled(key, "unsent", answer))
+    def _blocked(self, key: WriteKey) -> dict | None:
+        """A half-done or uncertain write blocks its chart, and with blocks_call, the call."""
+        own = key.patient_id and self._record.blockers(self._actions, key.patient_id)
+        if own:
+            return own[0].answer
+        return self._blocks_call if self._record.blockers(self._actions) else None
+
+    async def _send(self, write: WritePlan, request: Request) -> dict:
+        if (answer := write.stale()) is not None:
+            self._record.settled(WriteSettled(write.key, "unsent", answer))
             return answer
         try:
-            settled = await prepared.request()
+            settled = await request()
         except BaseException:
-            self._record.settled(WriteSettled(key, "uncertain", prepared.unknown))
+            self._record.settled(WriteSettled(write.key, "uncertain", write.unknown))
             raise
         self._record.settled(settled)
-        return self._spoken(settled)
+        return settled.answer
 
     async def drain(self) -> None:
         """Wait for the last write sent. Its exception reaches shutdown, which reports the failed drain."""

@@ -1,6 +1,6 @@
 """One per-call scheduling owner: private appointment references and every appointment write."""
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from functools import partial
@@ -8,7 +8,7 @@ from typing import Literal, NamedTuple
 
 from abita_s2s.call_record import (
     APPOINTMENT_WRITES,
-    Send,
+    Request,
     WriteKey,
     WritePath,
     WritePlan,
@@ -25,7 +25,7 @@ from abita_s2s.integrations.scheduling_http import (
     Slot,
     WriteReceipt,
 )
-from abita_s2s.offices import get_office_profile
+from abita_s2s.offices import EASTERN, get_office_profile
 from abita_s2s.records import Appointment, Receipt
 from abita_s2s.results import reply
 from abita_s2s.scheduling import answers
@@ -192,8 +192,6 @@ class Scheduling:
             APPOINTMENT_WRITES,
             closed=CLOSED,
             busy=BUSY,
-            blocked=self._blocked,
-            spoken=self._warned,
         )
 
     def close_admission(self) -> None:
@@ -203,24 +201,6 @@ class Scheduling:
         self.close_admission()
         await self._offers.aclose()
         await self._writes.drain()
-
-    def _blocked(self, key: WriteKey) -> dict | None:
-        """An Unknown or half-done appointment write blocks that chart."""
-        blocker = self.state.record.blocker(key.patient_id, APPOINTMENT_WRITES)
-        return blocker.answer if blocker else None
-
-    def _warned(self, settled: WriteSettled) -> dict:
-        """A result for a patient the call has since left says so."""
-        chart = self.state.chart()
-        if chart and chart.patientId == settled.key.patient_id:
-            return settled.answer
-        return {
-            **settled.answer,
-            "answer": settled.answer["answer"] + PATIENT_CHANGED_DURING_WRITE,
-        }
-
-    def _writing(self) -> bool:
-        return self.state.record.in_flight(APPOINTMENT_WRITES)
 
     def _reference(self, patient_id: str, appointment: Appointment) -> str:
         key = (patient_id, appointment.id)
@@ -303,9 +283,7 @@ class Scheduling:
         if isinstance(mode, dict):
             self._offers.invalidate()
             return mode
-        return await self._offers.search(
-            visit, mode, start, office, writing=self._writing()
-        )
+        return await self._offers.search(visit, mode, start, office)
 
     def _revoke_authority(self) -> None:
         """Loaded tokens stop counting until a newer load, and a read under way predates this."""
@@ -327,7 +305,11 @@ class Scheduling:
         """Search slots. A move reloads a revoked chart first, and retries once if Go refuses its token."""
         if self.state.record.closed:
             return reply("unavailable", "blocked: Scheduling has closed for this call.")
-        if old_ref and not self._writing() and self._move_needs_reload(old_ref):
+        if (
+            old_ref
+            and not self.state.record.in_flight(APPOINTMENT_WRITES)
+            and self._move_needs_reload(old_ref)
+        ):
             if not await self._resolver.reload_chart():
                 self._offers.invalidate()
                 return reply("needs_staff_review", COULD_NOT_RELOAD)
@@ -342,26 +324,48 @@ class Scheduling:
         self._offers.invalidate()
         return reply("needs_staff_review", COULD_NOT_RELOAD)
 
+    async def availability_text(
+        self, visit, plan_id: str | None, start=None, office=None, old_ref=None
+    ) -> str:
+        result = await self.availability(visit, plan_id, start, office, old_ref)
+        chart = self.state.chart()
+        today = self.now().astimezone(EASTERN).date()
+        return answers.availability(result, chart.name if chart else None, today)
+
     async def _write(self, plan: Callable[[Receipt], WritePlan]) -> str:
-        """Plan a write on the active chart, send it once, and answer with the chart as it now stands."""
+        """Plan a write on the active chart, send it once, and answer with the chart as it
+        now stands. A result for a patient the call has since left says so."""
+        planned_for = None
 
         def on_active_chart() -> WritePlan | dict:
+            nonlocal planned_for
             patient = self.state.chart()
             if not patient:
                 return reply(
                     "needs_input",
                     "needs_input: Verify the patient before changing appointments.",
                 )
+            planned_for = patient.patientId
             return plan(patient)
 
         result = await self._writes.run(on_active_chart)
         if result in (CLOSED, BUSY):
             return result["answer"]
-        return result["answer"] + self.appointments_text()
+        chart = self.state.chart()
+        warning = (
+            PATIENT_CHANGED_DURING_WRITE
+            if planned_for and (chart is None or chart.patientId != planned_for)
+            else ""
+        )
+        return result["answer"] + warning + self.appointments_text()
 
-    def _sending(
-        self, request: Callable[[], Awaitable[WriteSettled]], unknown: dict
-    ) -> Send:
+    def _plan(
+        self,
+        key: WriteKey,
+        prepare: Callable[[], Request | dict],
+        noun: str,
+        replay: Callable[[WriteSettled], dict | None] | None = None,
+    ) -> WritePlan:
         """A write that goes only if the call, patient, and insurance are as they are now."""
         admitted = self._offers.context()
 
@@ -370,7 +374,7 @@ class Scheduling:
                 return reply("stale", STALE_BEFORE_WRITE)
             return None
 
-        return Send(request, unknown, stale)
+        return WritePlan(key, prepare, answers.uncertain(noun), stale, replay)
 
     def _unless_cancelled_since(self, saved: WriteSettled) -> dict:
         """The saved answer, unless this call has since cancelled what the write booked."""
@@ -385,8 +389,10 @@ class Scheduling:
     ) -> str:
         def plan(p: Receipt) -> WritePlan:
             old, key = self._target(p, "cancel", old_ref)
-            return WritePlan(
-                key, lambda: self._prepare_cancel(p, key, old, confirmed, call_id)
+            return self._plan(
+                key,
+                lambda: self._prepare_cancel(p, key, old, confirmed, call_id),
+                "cancellation",
             )
 
         return await self._write(plan)
@@ -398,7 +404,7 @@ class Scheduling:
         old: Appointment | None,
         confirmed: bool | None,
         call_id: str,
-    ) -> Send | dict:
+    ) -> Request | dict:
         if old is None:
             return reply("needs_input", CHOOSE_LOADED_APPOINTMENT)
         token = old.cancellationToken
@@ -413,10 +419,7 @@ class Scheduling:
                 "needs_confirmation",
                 f"needs_input: Confirm cancellation of {old.read_back} before cancelling.",
             )
-        return self._sending(
-            partial(self._send_cancel, p, key, old, token, call_id),
-            answers.uncertain("cancellation"),
-        )
+        return partial(self._send_cancel, p, key, old, token, call_id)
 
     async def _send_cancel(
         self, p: Receipt, key: WriteKey, old: Appointment, token: str, call_id: str
@@ -453,6 +456,7 @@ class Scheduling:
         call_id: str,
     ) -> str:
         ref = slot_ref.strip().upper()
+        referrers = (referrer, referrer_phone, referrer_address)
 
         def plan(p: Receipt) -> WritePlan:
             issued = self._offers.issued(ref)
@@ -464,19 +468,12 @@ class Scheduling:
                     None if answer is SUPERSEDED and self._offers.get(ref) else answer
                 )
 
-            return WritePlan(
+            return self._plan(
                 key,
                 lambda: self._prepare_booking(
-                    p,
-                    key,
-                    ref,
-                    reason,
-                    confirmed,
-                    call_id,
-                    referrer=referrer,
-                    referrer_phone=referrer_phone,
-                    referrer_address=referrer_address,
+                    p, key, ref, reason, confirmed, call_id, referrers=referrers
                 ),
+                "booking",
                 replay,
             )
 
@@ -509,7 +506,7 @@ class Scheduling:
                     )
                 return self._unless_cancelled_since(saved)
 
-            def prepare() -> Send | dict:
+            def prepare() -> Request | dict:
                 if p.appointmentsStatus == "error":
                     return reply("needs_input", RELOAD_BEFORE_MOVE)
                 if old is None:
@@ -518,7 +515,7 @@ class Scheduling:
                     p, key, ref, reason, confirmed, call_id, old=old
                 )
 
-            return WritePlan(key, prepare, replay)
+            return self._plan(key, prepare, "booking", replay)
 
         return await self._write(plan)
 
@@ -532,10 +529,8 @@ class Scheduling:
         call_id: str,
         *,
         old: Appointment | None = None,
-        referrer: str | None = None,
-        referrer_phone: str | None = None,
-        referrer_address: str | None = None,
-    ) -> Send | dict:
+        referrers: tuple[str | None, str | None, str | None] = (None, None, None),
+    ) -> Request | dict:
         """Check the offer behind a new visit or a move, then ready its one request."""
         offered = self._offers.get(ref)
         if not offered:
@@ -591,20 +586,17 @@ class Scheduling:
             visitCategory=offered.visit,
             appointmentReason=reason.strip(),
             visitReason=reason.strip(),
-            referringDoctor=(referrer or "").strip() or None,
-            referringDoctorPhone=(referrer_phone or "").strip() or None,
-            referringDoctorAddress=(referrer_address or "").strip() or None,
+            referringDoctor=(referrers[0] or "").strip() or None,
+            referringDoctorPhone=(referrers[1] or "").strip() or None,
+            referringDoctorAddress=(referrers[2] or "").strip() or None,
             rescheduleToken=old.rescheduleToken if old else None,
         )
-        return self._sending(
-            partial(
+        if old:
+            return partial(
                 self._send_move, p, key, booking, offered, old, description, call_id
             )
-            if old
-            else partial(
-                self._send_booking, p, key, booking, offered, description, call_id
-            ),
-            answers.uncertain("booking"),
+        return partial(
+            self._send_booking, p, key, booking, offered, description, call_id
         )
 
     async def _send_booking(
@@ -655,30 +647,22 @@ class Scheduling:
             reason=result.outcome if isinstance(result, RescheduleReceipt) else None,
             message=said_by_middleware(result),
         )
-        if new is None:
-            lost = isinstance(result, SchedulingFailure) and result.uncertain
-            self._report(
-                p,
-                answer["outcome"],
-                call_id=call_id,
-                booking=result,
-                booking_outcome=answer["outcome"],
-                cancellation_outcome="uncertain" if lost else "not_attempted",
-                old=old,
-                slot=slot,
-            )
-            return WriteSettled(key, outcome, answer)
+        lost = isinstance(result, SchedulingFailure) and result.uncertain
         cancelled = outcome == "written"
         self._report(
             p,
             answer["outcome"],
             call_id=call_id,
-            booking=booked,
-            booking_outcome="booked",
-            cancellation_outcome="cancelled" if cancelled else "uncertain",
+            booking=booked if new else result,
+            booking_outcome="booked" if new else answer["outcome"],
+            cancellation_outcome=("cancelled" if cancelled else "uncertain")
+            if new
+            else ("uncertain" if lost else "not_attempted"),
             old=old,
             slot=slot,
         )
+        if new is None:
+            return WriteSettled(key, outcome, answer)
         settled = WriteSettled(
             key,
             outcome,
@@ -695,32 +679,20 @@ class Scheduling:
     def _target(
         self, patient: Receipt, action: Literal["cancel", "reschedule"], ref: str
     ) -> tuple[Appointment | None, WriteKey]:
-        matches = [
-            a
-            for a in patient.appointments
-            if self._reference(patient.patientId, a) == ref.strip()
-        ]
-        old = (
-            matches[0]
-            if patient.appointmentsStatus == "found" and len(matches) == 1
-            else None
+        """The loaded appointment a reference names, and the write's key on it."""
+        loaded = {
+            self._reference(patient.patientId, a): a for a in patient.appointments
+        }
+        named = next(
+            (
+                i
+                for (p, i), r in self._references.items()
+                if (p, r) == (patient.patientId, ref.strip())
+            ),
+            None,
         )
-        appointment_id = (
-            old.id
-            if old
-            else next(
-                (
-                    appointment_id
-                    for (
-                        patient_id,
-                        appointment_id,
-                    ), known_ref in self._references.items()
-                    if patient_id == patient.patientId and known_ref == ref.strip()
-                ),
-                None,
-            )
-        )
-        return old, WriteKey(patient.patientId, action, appointment_id)
+        old = loaded.get(ref.strip()) if patient.appointmentsStatus == "found" else None
+        return old, WriteKey(patient.patientId, action, named)
 
     def _report(
         self,

@@ -11,7 +11,6 @@ from abita_s2s.call_record import (
     INSURANCE_WRITES,
     CallRecord,
     Registered,
-    Send,
     WriteKey,
     WritePath,
     WritePlan,
@@ -120,9 +119,9 @@ class WriteRuleTests(unittest.TestCase):
         cancel = settle(record, "cancel", "uncertain", target=77)
         self.assertIsNone(record.replayable(booking))
         self.assertEqual(record.replayable(cancel).outcome, "uncertain")
-        self.assertEqual(record.blocker(JANE, APPOINTMENT_WRITES).key, cancel)
-        self.assertIsNone(record.blocker("chart-john", APPOINTMENT_WRITES))
-        self.assertIsNone(record.blocker(JANE, INSURANCE_WRITES))
+        self.assertEqual(record.blockers(APPOINTMENT_WRITES, JANE)[0].key, cancel)
+        self.assertEqual(record.blockers(APPOINTMENT_WRITES, "chart-john"), [])
+        self.assertEqual(record.blockers(INSURANCE_WRITES, JANE), [])
 
     def test_insurance_replays_only_the_latest_and_a_registration_finishes_with_it(
         self,
@@ -146,34 +145,33 @@ class WriteRuleTests(unittest.TestCase):
         self.assertEqual(record.coverage_writes(JANE), 2)
 
 
-def plan(key, send=None, answer=None):
-    return lambda: WritePlan(key, lambda: answer or send)
+def plan(key, send=None, answer=None, stale=None):
+    return lambda: WritePlan(
+        key, lambda: answer or send, {"answer": "lost"}, lambda: stale
+    )
 
 
 class WritePathTests(unittest.IsolatedAsyncioTestCase):
-    def path(self, record, blocked=lambda key: None):
+    def path(self, record):
         return WritePath(
             record,
             APPOINTMENT_WRITES,
             closed={"answer": "closed"},
             busy={"answer": "busy"},
-            blocked=blocked,
         )
 
-    def send(self, key, gate=None, outcome="written", stale=None):
+    def send(self, key, gate=None, outcome="written"):
         async def request():
             if gate:
                 await gate.wait()
             return WriteSettled(key, outcome, {"answer": "sent"})
 
-        return Send(request, {"answer": "lost"}, lambda: stale)
+        return request
 
     async def test_each_step_answers_in_order(self):
         record = CallRecord()
         key = WriteKey(JANE, "book", "slot")
-        path = self.path(
-            record, lambda k: {"answer": "blocked"} if k.target == "b" else None
-        )
+        path = self.path(record)
         gate = asyncio.Event()
         first = asyncio.create_task(path.run(plan(key, self.send(key, gate))))
         await asyncio.sleep(0)
@@ -182,11 +180,16 @@ class WritePathTests(unittest.IsolatedAsyncioTestCase):
         gate.set()
         self.assertEqual(await first, {"answer": "sent"})
         self.assertEqual(await path.run(plan(key, self.send(key))), {"answer": "sent"})
+        settle(record, "cancel", "partial", target=77)
         blocked = WriteKey(JANE, "book", "b")
         self.assertEqual(
-            await path.run(plan(blocked, self.send(blocked))), {"answer": "blocked"}
+            await path.run(plan(blocked, self.send(blocked))),
+            {"answer": "cancel partial"},
         )
-        fresh = WriteKey(JANE, "book", "c")
+        self.assertEqual(
+            await path.run(plan(key, self.send(key))), {"answer": "cancel partial"}
+        )
+        fresh = WriteKey("chart-john", "book", "c")
         self.assertEqual(
             await path.run(plan(fresh, answer={"answer": "confirm first"})),
             {"answer": "confirm first"},
@@ -201,7 +204,7 @@ class WritePathTests(unittest.IsolatedAsyncioTestCase):
         record = CallRecord()
         key = WriteKey(JANE, "cancel", 77)
         path = self.path(record)
-        result = await path.run(plan(key, self.send(key, stale={"answer": "stale"})))
+        result = await path.run(plan(key, self.send(key), stale={"answer": "stale"}))
         self.assertEqual(result, {"answer": "stale"})
         self.assertFalse(record.in_flight(APPOINTMENT_WRITES))
         self.assertIsNone(record.replayable(key))
@@ -215,8 +218,8 @@ class WritePathTests(unittest.IsolatedAsyncioTestCase):
             raise RuntimeError("boom")
 
         with self.assertRaises(RuntimeError):
-            await path.run(plan(key, Send(request, {"answer": "lost"}, lambda: None)))
+            await path.run(plan(key, request))
         self.assertEqual(record.replayable(key).answer, {"answer": "lost"})
-        self.assertEqual(record.blocker(JANE, APPOINTMENT_WRITES).key, key)
+        self.assertEqual(record.blockers(APPOINTMENT_WRITES, JANE)[0].key, key)
         with self.assertRaises(RuntimeError):
             await path.drain()

@@ -5,6 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
+from abita_s2s.call_record import APPOINTMENT_WRITES
 from abita_s2s.insurance import decision_answer
 from abita_s2s.insurance_contract import CoverageType
 from abita_s2s.insurance_list import listed_plan
@@ -80,18 +81,6 @@ class SchedulingContext:
     insurance_ready: bool
 
 
-def scheduling_context(state: CallState) -> SchedulingContext:
-    chart = state.chart()
-    patient_id = chart.patientId if chart else None
-    return SchedulingContext(
-        patient_id=patient_id,
-        since=state.identity.since if isinstance(state.identity, Selected) else None,
-        dob=chart.dob if chart else None,
-        coverage_writes=state.record.coverage_writes(patient_id) if patient_id else 0,
-        insurance_ready=state.record.insurance_ready(patient_id),
-    )
-
-
 @dataclass(frozen=True, repr=False)
 class PlanSearch:
     """Doctors who take a confirmed plan, for a new visit or bound to one move."""
@@ -159,7 +148,19 @@ class Offers:
         self._announced_promoted_office = False
 
     def context(self) -> SchedulingContext:
-        return scheduling_context(self.state)
+        chart, identity, record = (
+            self.state.chart(),
+            self.state.identity,
+            self.state.record,
+        )
+        patient_id = chart.patientId if chart else None
+        return SchedulingContext(
+            patient_id=patient_id,
+            since=identity.since if isinstance(identity, Selected) else None,
+            dob=chart.dob if chart else None,
+            coverage_writes=record.coverage_writes(patient_id) if patient_id else 0,
+            insurance_ready=record.insurance_ready(patient_id),
+        )
 
     def get(self, ref: str) -> OfferedSlot | None:
         return self._slots.get(ref)
@@ -228,8 +229,6 @@ class Offers:
         mode: PlanSearch | MoveSearch,
         start=None,
         office=None,
-        *,
-        writing: bool,
     ) -> dict:
         """Search for a new visit or a plan-gated move with a listed plan ID, or a move without one."""
         context = self.context()
@@ -270,7 +269,7 @@ class Offers:
                 self.invalidate()
                 return listed
             plan_id = listed.planId
-        if writing:
+        if self.state.record.in_flight(APPOINTMENT_WRITES):
             return reply(
                 "in_progress",
                 "blocked: An appointment change is in progress. Wait for its result.",
