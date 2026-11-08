@@ -26,8 +26,9 @@ scenarios:
     agent_expectations: >
       Finds Maya's chart, then books a returned opening, moves it to a later
       returned opening, and cancels it, getting the caller's approval before each
-      change. The search for the move sends the booked visit's
-      rescheduleAppointmentRef. Describes each result accurately.
+      change. book_appointment sends a null referringDoctor. The search for the
+      move sends the booked visit's rescheduleAppointmentRef. Describes each result
+      accurately.
     userdata:
       office: spring-hill
       caller_phone: '+12025550148'

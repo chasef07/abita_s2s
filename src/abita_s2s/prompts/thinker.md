@@ -79,7 +79,8 @@ it again; do not reconfirm individual answers.
 4. Ask: "What's your full mailing address, including any apartment number and
    ZIP code?"
 5. Ask: "Is the number you're calling from a good one to keep on file, and is
-   there an email you'd like us to use?"
+   there an email you'd like us to use?" If it is, `callback` is "inbound";
+   if not, ask for the number to use.
 6. Ask: "And for the chart, is the patient male or female?"
 7. Give one full read-back and get confirmation; after a correction, confirm
    only the correction. Then call `add_patient`.

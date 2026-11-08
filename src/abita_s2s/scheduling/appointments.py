@@ -337,7 +337,7 @@ class Scheduling:
         *,
         slot_ref: str,
         reason: str,
-        referrer: str,
+        referrer: str | None,
         referrer_phone: str | None,
         referrer_address: str | None,
         confirmed: Literal[True] | None,
@@ -366,9 +366,6 @@ class Scheduling:
         *,
         slot_ref: str,
         reason: str | None,
-        referrer: str,
-        referrer_phone: str | None,
-        referrer_address: str | None,
         confirmed: Literal[True] | None,
         old_ref: str,
         call_id: str,
@@ -377,9 +374,6 @@ class Scheduling:
             self._reschedule,
             slot_ref=slot_ref,
             reason=reason,
-            referrer=referrer,
-            referrer_phone=referrer_phone,
-            referrer_address=referrer_address,
             confirmed=confirmed,
             old_ref=old_ref,
             call_id=call_id,
@@ -531,11 +525,11 @@ class Scheduling:
         *,
         slot_ref: str,
         reason: str | None,
-        referrer: str,
-        referrer_phone: str | None,
-        referrer_address: str | None,
         confirmed: bool | None,
         call_id: str,
+        referrer: str | None = None,
+        referrer_phone: str | None = None,
+        referrer_address: str | None = None,
         old: Appointment | None = None,
     ) -> dict:
         slot_ref = slot_ref.strip().upper()
@@ -588,11 +582,6 @@ class Scheduling:
                 "needs_input",
                 "needs_input: Use the known visit reason or ask for it. For a vague concern, ask one focused follow-up; if still vague, preserve the caller's words and record that they could not add detail.",
             )
-        if not referrer or not referrer.strip():
-            return reply(
-                "needs_input",
-                "needs_input: Ask whether a doctor referred the caller and get their name; use 'none' only if the caller says no.",
-            )
         slot = offered.slot
         description = (
             f"{slot.date} at {slot.time} Eastern with {slot.provider} for {p.name}"
@@ -612,7 +601,7 @@ class Scheduling:
             visitCategory=offered.visit,
             appointmentReason=reason.strip(),
             visitReason=reason.strip(),
-            referringDoctor=referrer.strip(),
+            referringDoctor=(referrer or "").strip() or None,
             referringDoctorPhone=(referrer_phone or "").strip() or None,
             referringDoctorAddress=(referrer_address or "").strip() or None,
             rescheduleToken=old.rescheduleToken if old else None,
@@ -714,9 +703,6 @@ class Scheduling:
         old_ref: str,
         slot_ref: str,
         reason: str | None,
-        referrer: str,
-        referrer_phone: str | None,
-        referrer_address: str | None,
         confirmed: bool | None,
         call_id: str,
     ) -> dict:
@@ -742,9 +728,6 @@ class Scheduling:
             captured,
             slot_ref=slot_ref,
             reason=reason,
-            referrer=referrer,
-            referrer_phone=referrer_phone,
-            referrer_address=referrer_address,
             confirmed=confirmed,
             call_id=call_id,
             old=old,

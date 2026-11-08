@@ -104,6 +104,29 @@ class PromptContractTests(unittest.TestCase):
     def test_every_registry_entry_builds_when_every_owner_is_present(self):
         self.assertEqual(len(offer(EVERY_OWNER)), len(TOOLS))
 
+    def test_add_patient_takes_one_callback_argument(self):
+        self.assertEqual(
+            set(schemas()["add_patient"]["parameters"]["properties"]),
+            {
+                "firstName",
+                "lastName",
+                "dob",
+                "callback",
+                "email",
+                "street",
+                "aptSuite",
+                "city",
+                "state",
+                "zip",
+                "sex",
+                "visitType",
+                "insurancePlanId",
+                "subscriberName",
+                "insuranceMemberId",
+                "readBack",
+            },
+        )
+
     def test_every_tool_a_judge_names_is_offered(self):
         self.assertLessEqual(
             {
