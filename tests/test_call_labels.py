@@ -239,6 +239,59 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result["classification"]["status"], "complete")
             self.assertEqual(result["classification"]["outcome"], "resolved")
 
+    async def test_completed_request_tool_resolves_outcome_over_the_jury(self):
+        for intent, outcome, status, expected in (
+            ("new_patient_booking", "booked", "success", "resolved"),
+            ("existing_patient_booking", "booked", "success", "resolved"),
+            ("reschedule_appointment", "rescheduled", "success", "resolved"),
+            ("cancel_appointment", "cancelled", "success", "resolved"),
+            ("new_patient_booking", "booked", "failed", "abandoned"),
+            ("new_patient_booking", "rescheduled", "success", "abandoned"),
+            ("office_information", "booked", "success", "abandoned"),
+        ):
+            with self.subTest(intent=intent, outcome=outcome, status=status):
+                answers = {
+                    "intent": choice(INTENT_CRITERIA, intent),
+                    "outcome": choice(OUTCOME_CRITERIA, "abandoned"),
+                }
+                _, result = await self.run_labels(
+                    answers,
+                    closeout={
+                        "transferStatus": "idle",
+                        "domainOutcomes": [{"status": status, "outcome": outcome}],
+                    },
+                )
+                labels = result["classification"]
+                self.assertEqual(labels["status"], "complete")
+                self.assertEqual(labels["outcome"], expected)
+                self.assertEqual(labels["answers"], dict.fromkeys(JURORS, answers))
+
+    async def test_incomplete_call_evidence_still_removes_a_booked_outcome(self):
+        _, result = await self.run_labels(
+            {
+                "intent": choice(INTENT_CRITERIA, "new_patient_booking"),
+                "outcome": choice(OUTCOME_CRITERIA, "abandoned"),
+            },
+            closeout={
+                "callStatus": "FAILED",
+                "domainOutcomes": [{"status": "success", "outcome": "booked"}],
+            },
+        )
+        labels = result["classification"]
+        self.assertEqual(labels["reason"], "call_evidence_incomplete")
+        self.assertNotIn("outcome", labels)
+
+    async def test_transfer_still_beats_a_completed_booking(self):
+        _, result = await self.run_labels(
+            {"intent": choice(INTENT_CRITERIA, "new_patient_booking")},
+            history=transfer_history(),
+            closeout={
+                "transferStatus": "accepted",
+                "domainOutcomes": [{"status": "success", "outcome": "booked"}],
+            },
+        )
+        self.assertEqual(result["classification"]["outcome"], "transferred")
+
     async def test_model_cannot_invent_transfer_tool_invocation(self):
         _, result = await self.run_labels(
             {
