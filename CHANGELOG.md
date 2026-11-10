@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.3](https://github.com/chasef07/abita_s2s/compare/v0.29.2...v0.29.3) (2026-11-10)
+
+
+### Bug Fixes
+
+* **labels:** resolve calls whose scheduling request completed ([#290](https://github.com/chasef07/abita_s2s/issues/290)) ([f8462f1](https://github.com/chasef07/abita_s2s/commit/f8462f1e58f36ec0f18da03688cee7f414f3a9eb))
+
 ## [0.29.2](https://github.com/chasef07/abita_s2s/compare/v0.29.1...v0.29.2) (2026-11-10)
 
 
