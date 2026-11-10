@@ -222,3 +222,24 @@ class WritePathTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(record.blockers(APPOINTMENT_WRITES, JANE)[0].key, key)
         with self.assertRaises(RuntimeError):
             await path.drain()
+
+    async def test_a_failed_stale_check_settles_the_write_it_sent(self):
+        record = CallRecord()
+        key = WriteKey(JANE, "cancel", 77)
+        path = self.path(record)
+
+        def stale():
+            raise RuntimeError("boom")
+
+        with self.assertRaises(RuntimeError):
+            await path.run(
+                lambda: WritePlan(
+                    key, lambda: self.send(key), {"answer": "lost"}, stale
+                )
+            )
+        self.assertFalse(record.in_flight(APPOINTMENT_WRITES))
+        self.assertEqual(record.saved(key).answer, {"answer": "lost"})
+        other = WriteKey("chart-john", "book", "slot")
+        self.assertEqual(
+            await path.run(plan(other, self.send(other))), {"answer": "sent"}
+        )

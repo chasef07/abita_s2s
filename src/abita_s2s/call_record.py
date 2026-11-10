@@ -339,11 +339,11 @@ class WritePath:
         return await asyncio.shield(self._last_sent)
 
     async def _send(self, write: WritePlan, request: Request) -> dict:
-        if (answer := write.stale()) is not None:
-            self._record.settled(WriteSettled(write.key, "unsent", answer))
-            return answer
         try:
-            settled = await request()
+            if (answer := write.stale()) is not None:
+                settled = WriteSettled(write.key, "unsent", answer)
+            else:
+                settled = await request()
         except BaseException:
             self._record.settled(WriteSettled(write.key, "uncertain", write.unknown))
             raise
