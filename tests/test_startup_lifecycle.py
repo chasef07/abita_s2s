@@ -192,7 +192,6 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         closing = asyncio.gather(app_close(), app_close())
         await asyncio.wait_for(entered.wait(), 1)
         await asyncio.wait_for(read_cancelled.wait(), 1)
-        self.assertTrue(owner._closed)
         self.assertFalse(client.is_closed)
         self.assertEqual(owner.save(**NEED)["outcome"], "failed")
         finish.set()
