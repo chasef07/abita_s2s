@@ -74,6 +74,8 @@ class PatientResolver:
 
     def _select(self, receipt: Receipt, said_name: str | None = None) -> None:
         """Put the call on a chart just read. Staying on the same patient keeps since."""
+        self._token = None
+        self._phone_chart = None
         since = self.state.record.loaded(receipt)
         current = self.state.identity
         if isinstance(current, Selected) and current.patient_id == receipt.patientId:
@@ -315,8 +317,6 @@ class PatientResolver:
             return failed()
         left = self.state.identity.left if self.state.identity else None
         switched = left not in (None, receipt.patientId)
-        self._token = None
-        self._phone_chart = None
         self._select(receipt, exact_name(name))
         return self._facts(
             self.state.chart() or receipt,
@@ -390,8 +390,6 @@ class PatientResolver:
         """Commit a validated creation only while its intake is still the call's patient."""
         if not self.registering(first_name, dob):
             return False
-        self._token = None
-        self._phone_chart = None
         self._select(receipt)
         return True
 
