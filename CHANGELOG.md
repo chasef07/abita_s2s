@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.2](https://github.com/chasef07/abita_s2s/compare/v0.29.1...v0.29.2) (2026-11-10)
+
+
+### Bug Fixes
+
+* **prompts:** match insurance plans by company and type, book before referral details ([#288](https://github.com/chasef07/abita_s2s/issues/288)) ([c05c3d2](https://github.com/chasef07/abita_s2s/commit/c05c3d25df94b9cd9c2678d480b502eddbf32d99))
+
 ## [0.29.1](https://github.com/chasef07/abita_s2s/compare/v0.29.0...v0.29.1) (2026-11-08)
 
 
