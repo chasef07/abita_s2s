@@ -109,16 +109,15 @@ class WriteRuleTests(unittest.TestCase):
     def test_a_repeat_replays_the_last_settlement_until_one_that_does_not(self):
         record = CallRecord()
         key = settle(record, "book", target="slot")
-        self.assertEqual(record.replayable(key).outcome, "written")
+        self.assertEqual(record.saved(key).outcome, "written")
         settle(record, "book", "refused", target="slot")
-        self.assertIsNone(record.replayable(key))
+        self.assertIsNone(record.saved(key))
 
-    def test_a_charts_blocker_answers_before_its_other_replays(self):
+    def test_a_blocker_holds_only_its_chart_and_its_lane(self):
         record = CallRecord()
-        booking = settle(record, "book", target="slot")
+        settle(record, "book", target="slot")
         cancel = settle(record, "cancel", "uncertain", target=77)
-        self.assertIsNone(record.replayable(booking))
-        self.assertEqual(record.replayable(cancel).outcome, "uncertain")
+        self.assertEqual(record.saved(cancel).outcome, "uncertain")
         self.assertEqual(record.blockers(APPOINTMENT_WRITES, JANE)[0].key, cancel)
         self.assertEqual(record.blockers(APPOINTMENT_WRITES, "chart-john"), [])
         self.assertEqual(record.blockers(INSURANCE_WRITES, JANE), [])
@@ -194,7 +193,7 @@ class WritePathTests(unittest.IsolatedAsyncioTestCase):
             await path.run(plan(fresh, answer={"answer": "confirm first"})),
             {"answer": "confirm first"},
         )
-        self.assertIsNone(record.replayable(fresh))
+        self.assertIsNone(record.saved(fresh))
         record.close()
         self.assertEqual(
             await path.run(plan(fresh, self.send(fresh))), {"answer": "closed"}
@@ -207,7 +206,7 @@ class WritePathTests(unittest.IsolatedAsyncioTestCase):
         result = await path.run(plan(key, self.send(key), stale={"answer": "stale"}))
         self.assertEqual(result, {"answer": "stale"})
         self.assertFalse(record.in_flight(APPOINTMENT_WRITES))
-        self.assertIsNone(record.replayable(key))
+        self.assertIsNone(record.saved(key))
 
     async def test_an_exception_settles_uncertain_and_fails_the_drain(self):
         record = CallRecord()
@@ -219,7 +218,7 @@ class WritePathTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(RuntimeError):
             await path.run(plan(key, request))
-        self.assertEqual(record.replayable(key).answer, {"answer": "lost"})
+        self.assertEqual(record.saved(key).answer, {"answer": "lost"})
         self.assertEqual(record.blockers(APPOINTMENT_WRITES, JANE)[0].key, key)
         with self.assertRaises(RuntimeError):
             await path.drain()

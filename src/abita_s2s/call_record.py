@@ -216,15 +216,9 @@ class CallRecord:
             and patient_id in (None, s.key.patient_id)
         ]
 
-    def replayable(self, key: WriteKey) -> WriteSettled | None:
-        """The settlement a repeat of this write answers from. A chart's blocker comes first."""
-        lane = (
-            APPOINTMENT_WRITES if key.action in APPOINTMENT_WRITES else INSURANCE_WRITES
-        )
-        blockers = self.blockers(lane, key.patient_id) if key.patient_id else []
-        return (
-            self._kept().get(key) if all(b.key == key for b in blockers[:1]) else None
-        )
+    def saved(self, key: WriteKey) -> WriteSettled | None:
+        """The settlement a repeat of this write would answer from."""
+        return self._kept().get(key)
 
     def latest(
         self, patient_id: str, actions: Collection[WriteAction]
@@ -323,25 +317,26 @@ class WritePath:
         write = plan()
         if isinstance(write, dict):
             return write
-        if kept := self._record.replayable(write.key):
+        key = write.key
+        own = (
+            self._record.blockers(self._actions, key.patient_id)
+            if key.patient_id
+            else []
+        )
+        if (not own or own[0].key == key) and (kept := self._record.saved(key)):
             answer = write.replay(kept) if write.replay else kept.answer
             if answer is not None:
                 return answer
-        if (answer := self._blocked(write.key)) is not None:
-            return answer
+        if own:
+            return own[0].answer
+        if self._blocks_call and self._record.blockers(self._actions):
+            return self._blocks_call
         request = write.prepare()
         if isinstance(request, dict):
             return request
         self._record.sent(write.key)
         self._last_sent = asyncio.create_task(self._send(write, request))
         return await asyncio.shield(self._last_sent)
-
-    def _blocked(self, key: WriteKey) -> dict | None:
-        """A half-done or uncertain write blocks its chart, and with blocks_call, the call."""
-        own = key.patient_id and self._record.blockers(self._actions, key.patient_id)
-        if own:
-            return own[0].answer
-        return self._blocks_call if self._record.blockers(self._actions) else None
 
     async def _send(self, write: WritePlan, request: Request) -> dict:
         if (answer := write.stale()) is not None:
