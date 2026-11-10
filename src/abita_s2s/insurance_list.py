@@ -99,7 +99,7 @@ def listed_plan(
     if plan is None:
         return reply(
             "unknown_plan",
-            f"needs_input: Use a plan ID from the Insurance list section for {VISITS[coverage]}. If the caller's plan is not listed, say you could not confirm it and offer a staff request.",
+            f"needs_input: Use a plan ID from the Insurance list section for {VISITS[coverage]}.",
         )
     return plan
 
