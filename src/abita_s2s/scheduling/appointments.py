@@ -335,17 +335,14 @@ class Scheduling:
     async def _write(self, plan: Callable[[Receipt], WritePlan]) -> str:
         """Plan a write on the active chart, send it once, and answer with the chart as it
         now stands. A result for a patient the call has since left says so."""
-        planned_for = None
+        patient = self.state.chart()
 
         def on_active_chart() -> WritePlan | dict:
-            nonlocal planned_for
-            patient = self.state.chart()
             if not patient:
                 return reply(
                     "needs_input",
                     "needs_input: Verify the patient before changing appointments.",
                 )
-            planned_for = patient.patientId
             return plan(patient)
 
         result = await self._writes.run(on_active_chart)
@@ -354,7 +351,7 @@ class Scheduling:
         chart = self.state.chart()
         warning = (
             PATIENT_CHANGED_DURING_WRITE
-            if planned_for and (chart is None or chart.patientId != planned_for)
+            if patient and (chart is None or chart.patientId != patient.patientId)
             else ""
         )
         return result["answer"] + warning + self.appointments_text()
