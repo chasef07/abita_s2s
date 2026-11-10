@@ -29,7 +29,7 @@ COMPLETING_OUTCOMES = {
 }
 
 
-def request_completed(intent: str | None, closeout: dict) -> bool:
+def request_completed(intent: str, closeout: dict) -> bool:
     """A successful scheduling write that matches the intent proves the request was handled."""
     expected = COMPLETING_OUTCOMES.get(intent)
     return expected is not None and any(
@@ -110,7 +110,7 @@ async def classify_labels(
             reasons.append(f"{name}_no_quorum")
         else:
             result[name] = plurality(question, valid)
-    if "outcome" in result and request_completed(result.get("intent"), closeout):
+    if "outcome" in result and request_completed(result.get("intent", ""), closeout):
         result["outcome"] = "resolved"
     if not transferred and (
         closeout.get("callStatus") == "FAILED"
