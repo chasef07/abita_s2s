@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 from livekit.agents import AgentSession, llm
-from owner_fixtures import call_owners
+from owner_fixtures import call_owners, select
 from test_knowledge import call_state
 
 from abita_s2s.agent import AbitaAgent
@@ -142,7 +142,7 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_pharmacy_details_update_one_draft_and_deliver_once(self):
         async with self.setup_session() as (session, agent, state, owner, requests, _):
-            state.patient.active = patient()
+            select(state, patient())
             first = await self.invoke(session, agent)
             self.assertTrue(first.startswith("saved:"))
             self.assertIn("Not yet sent", first)
@@ -213,9 +213,9 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_patient_switch_cannot_reassign_existing_draft(self):
         async with self.setup_session() as (_, _, state, owner, requests, _):
-            state.patient.active = patient()
+            select(state, patient())
             draft = owner.save(**NEED)
-            state.patient.active = patient("Alex", "synthetic-2")
+            select(state, patient("Alex", "synthetic-2"))
             result = owner.save(**NEED, draft_id=draft["draftId"])
             self.assertEqual(result["outcome"], "failed")
             self.assertIn("Patient context changed", result["answer"])
@@ -246,7 +246,7 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
                 {"firstName": "Jane", "dob": "01/01/1980"},
                 "resolve_patient",
             )
-            self.assertIsNotNone(state.patient.active)
+            self.assertIsNotNone(state.chart())
             result = owner.save(**NEED, draft_id=draft["draftId"])
             self.assertEqual(result["outcome"], "saved")
             self.assertTrue(result["patient"]["verified"])
@@ -280,7 +280,7 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
             requests,
             middleware,
         ):
-            state.patient.active = patient()
+            select(state, patient())
             middleware.resolve.return_value = Failure(reason="offline")
             await self.invoke(
                 session, agent, {"firstName": "Alex", "dob": None}, "resolve_patient"

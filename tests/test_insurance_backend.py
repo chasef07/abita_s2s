@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 
 import httpx
 from insurance_fixtures import decision
+from owner_fixtures import insurance_ready, select
 from test_insurance_registration import created, registration, updated
 from test_patient_resolution import CONFIG, call_state, receipt
 
@@ -14,9 +15,7 @@ from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import ANSWERS, InsuranceRegistration, decision_answer
 from abita_s2s.insurance_contract import InsuranceDecision, InsuranceRequirement
 from abita_s2s.insurance_list import REQUIREMENTS
-from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
-from abita_s2s.records import Receipt
 
 
 class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
@@ -209,7 +208,7 @@ class BackendInsuranceTests(unittest.IsolatedAsyncioTestCase):
 
                 state, owner = self.owner(handler)
                 if operation == "update":
-                    state.patient.active = Receipt.model_validate(receipt())
+                    select(state, receipt())
                 result = (
                     await owner.add(registration())
                     if operation == "registration"

@@ -5,11 +5,9 @@ from typing import Literal
 from livekit.agents import RunContext, function_tool
 
 from abita_s2s.insurance_contract import CoverageType
-from abita_s2s.offices import EASTERN, SchedulingOfficeChoice
-from abita_s2s.scheduling.answers import UNAVAILABLE, slot_lines
+from abita_s2s.offices import SchedulingOfficeChoice
 from abita_s2s.scheduling.appointments import Scheduling
 from abita_s2s.state import CallState
-from abita_s2s.tools.context import bound
 
 
 class SchedulingTools:
@@ -46,28 +44,9 @@ class SchedulingTools:
                 Hollywood routine_vision callers may also choose north-miami-beach-optical;
                 the result says what to ask first.
         """
-        if not bound(self._scheduling, context):
-            return UNAVAILABLE
-        result = await self._scheduling.availability(
+        return await self._scheduling.availability_text(
             visitType, insurancePlanId, startDate, office, rescheduleAppointmentRef
         )
-        lines = [result["answer"]]
-        if "searchedFrom" in result:
-            patient = self._scheduling.state.patient.active
-            lines.append(
-                f"Searched {result['searchedFrom']} through {result['searchedThrough']}"
-                + (f" for {patient.name}." if patient else ".")
-            )
-        if "retry_same_search" in result and result["outcome"] == "availability_failed":
-            lines.append(
-                "Retry this search once."
-                if result["retry_same_search"]
-                else "Do not retry this search; ask staff for help."
-            )
-        if slots := result.get("slots"):
-            today = self._scheduling.now().astimezone(EASTERN).date()
-            lines += slot_lines(slots, result["soonest"], today)
-        return "\n".join(lines)
 
     @function_tool
     async def book_appointment(
@@ -94,8 +73,6 @@ class SchedulingTools:
             referringDoctorPhone: The referring doctor's phone, or null if unknown.
             referringDoctorAddress: The referring doctor's office address, or null if unknown.
         """
-        if not bound(self._scheduling, context):
-            return UNAVAILABLE
         return await self._scheduling.book(
             slot_ref=appointmentSlotRef,
             reason=appointmentReason,
@@ -122,8 +99,6 @@ class SchedulingTools:
             readBack: True only after the caller confirms the exact date, time, provider
                 and intent to cancel; otherwise null.
         """
-        if not bound(self._scheduling, context):
-            return UNAVAILABLE
         return await self._scheduling.cancel(
             confirmed=readBack,
             old_ref=appointmentRef,
@@ -151,8 +126,6 @@ class SchedulingTools:
                 date, time and provider; otherwise null.
             appointmentReason: Only a new reason the caller volunteered; never ask for one.
         """
-        if not bound(self._scheduling, context):
-            return UNAVAILABLE
         return await self._scheduling.reschedule(
             old_ref=oldAppointmentRef,
             slot_ref=appointmentSlotRef,

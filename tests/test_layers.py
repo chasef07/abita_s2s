@@ -16,16 +16,15 @@ TYPE_ONLY = {
 LAYERS = {
     "foundation": (
         "budgets",
+        "call_record",
         "config",
         "insurance_contract",
-        "insurance_state",
         "name_matcher",
         "offices",
         "prompt",
         "records",
         "results",
         "state",
-        "writes",
     ),
     "integrations": ("integrations",),
     "observability": ("observability",),

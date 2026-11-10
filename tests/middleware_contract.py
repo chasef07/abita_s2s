@@ -55,9 +55,7 @@ async def main(url):
                 dob="01/15/1980",
                 appointmentsStatus=loaded["appointmentsStatus"],
                 appointments=loaded["appointments"],
-            )
-            state.patient.active = state.patient.active.model_copy(
-                update={"insuranceCarrier": loaded["insuranceCarrier"]}
+                insuranceCarrier=loaded["insuranceCarrier"],
             )
             old_ref = owner.appointments()[0]["appointmentRef"]
             available = await owner.availability(
@@ -80,7 +78,7 @@ async def main(url):
                 "failure": "blocked:",
             }[fixture["scenario"]]
             assert result.startswith(expected), result
-            ids = [a.id for a in state.patient.active.appointments]
+            ids = [a.id for a in state.chart().appointments]
             expected_ids = {
                 "success": [98765],
                 "partial": [54321, 98765],
@@ -94,7 +92,7 @@ async def main(url):
                 assert repeated.startswith("needs_input:"), repeated
             else:
                 assert repeated == result
-            for appointment in state.patient.active.appointments:
+            for appointment in state.chart().appointments:
                 if appointment.id == 98765:
                     assert appointment.visitType == "medical"
                     assert appointment.officeId == "spring_hill"

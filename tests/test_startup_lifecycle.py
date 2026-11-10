@@ -192,7 +192,6 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         closing = asyncio.gather(app_close(), app_close())
         await asyncio.wait_for(entered.wait(), 1)
         await asyncio.wait_for(read_cancelled.wait(), 1)
-        self.assertTrue(owner._closed)
         self.assertFalse(client.is_closed)
         self.assertEqual(owner.save(**NEED)["outcome"], "failed")
         finish.set()
@@ -206,7 +205,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         )
         owner = args["dependencies"].insurance
         pending = asyncio.create_task(asyncio.Event().wait())
-        owner._task = pending
+        owner._writes._last_sent = pending
         try:
             with (
                 patch.object(startup, "DRAIN", replace(DRAIN, seconds=0.01)),
@@ -214,7 +213,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
             ):
                 await ctx.add_shutdown_callback.call_args.args[0]()
             self.assertTrue(owner._middleware._client.is_closed)
-            self.assertTrue(owner._closed)
+            self.assertTrue(owner.state.record.closed)
             self._cleanups.pop()
         finally:
             pending.cancel()

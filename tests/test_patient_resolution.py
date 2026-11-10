@@ -11,7 +11,7 @@ import httpx
 from insurance_fixtures import decision, listed, office_plans
 from livekit.agents.llm.tool_context import ToolContext
 from livekit.agents.llm.utils import build_strict_openai_schema
-from owner_fixtures import call_owners
+from owner_fixtures import call_owners, leave, revoke, select
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.config import Config
@@ -22,7 +22,7 @@ from abita_s2s.insurance_list import OfficePlans
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.name_matcher import phone_name_matches
 from abita_s2s.offices import SPRING_HILL
-from abita_s2s.records import Candidate, Receipt
+from abita_s2s.records import Candidate
 from abita_s2s.scheduling.appointments import Scheduling
 from abita_s2s.staff_tasks import _same_patient
 from abita_s2s.state import CallContext, CallState
@@ -60,7 +60,7 @@ def call_state(phone="+15555550101", office=SPRING_HILL):
     state = CallState(
         CallContext("call", datetime.now(UTC), office, caller_phone=phone)
     )
-    state.insurance.plans = office_plans()
+    state.plans = office_plans()
     return state
 
 
@@ -126,7 +126,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
     async def preload(self, resolver):
         resolver.start_phone_lookup()
         await resolver._precall
-        self.assertIsNone(resolver.state.patient.active)
+        self.assertIsNone(resolver.state.chart())
 
     async def test_resolution_shows_the_chart_plan_staff_note(self):
         for note, shown in (
@@ -146,7 +146,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
 
     def icare_state(self):
         state = call_state()
-        state.insurance.plans = OfficePlans.model_validate(
+        state.plans = OfficePlans.model_validate(
             {
                 "medical": [
                     listed("Humana Medicaid HMO", carrierId="car303033"),
@@ -163,7 +163,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         return state
 
     async def answer(self, state, **fields):
-        state.patient.active = None
+        leave(state)
         r, _ = self.resolver([receipt(**fields)], state=state)
         return (await r.resolve("Jane", "01/02/1980"))["answer"]
 
@@ -232,7 +232,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_resolution_asks_per_visit_type_when_both_have_several_plans(self):
         state = call_state()
-        state.insurance.plans = OfficePlans.model_validate(
+        state.plans = OfficePlans.model_validate(
             {
                 coverage: [
                     listed(label, coverage, carrierId="car40907")
@@ -250,7 +250,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         for plans, carrier in ((None, "car1"), (office_plans(), None)):
             with self.subTest(carrier=carrier):
                 state = call_state()
-                state.insurance.plans = plans
+                state.plans = plans
                 r, _ = self.resolver([receipt(insuranceCarrierId=carrier)], state=state)
                 answer = (await r.resolve("Jane", "01/02/1980"))["answer"]
                 self.assertNotIn("this carrier", answer)
@@ -258,12 +258,12 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
     async def test_active_patient_wins_over_matching_phone_record(self):
         r, calls = self.resolver([receipt("chart-existing")])
         await self.preload(r)
-        r.state.patient.active = Receipt.model_validate(receipt("chart-created"))
+        select(r.state, receipt("chart-created"))
 
         result = await r.resolve("Jane", "01/02/1980")
 
         self.assertEqual(result["outcome"], "verified")
-        self.assertEqual(r.state.patient.active.patientId, "chart-created")
+        self.assertEqual(r.state.chart().patientId, "chart-created")
         self.assertEqual(len(calls), 1)
 
     async def test_phone_fast_path_preserves_private_receipt_and_caller_separation(
@@ -275,8 +275,8 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["outcome"], "verified")
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["phone"], r.state.call.caller_phone)
-        self.assertNotIn("insPlanId", r.state.patient.active.model_dump())
-        self.assertNotIn("respPartyId", r.state.patient.active.model_dump())
+        self.assertNotIn("insPlanId", r.state.chart().model_dump())
+        self.assertNotIn("respPartyId", r.state.chart().model_dump())
         for private in (
             "chart-jane",
             "private-plan",
@@ -298,18 +298,18 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         )
         await self.preload(r)
         self.assertEqual(
-            r.state.patient.candidates,
+            r._candidates,
             (Candidate.model_validate(candidate()),),
         )
         self.assertEqual((await r.resolve("Jane", None))["outcome"], "verified")
-        self.assertEqual(r.state.patient.active.insuranceCarrier, "At call start")
+        self.assertEqual(r.state.chart().insuranceCarrier, "At call start")
         self.assertEqual(len(calls), 1)
         self.assertEqual((await r.resolve("John", "03/04/1990"))["outcome"], "switched")
 
         back = await r.resolve("Jane", None)
 
         self.assertEqual(back["outcome"], "switched")
-        self.assertEqual(r.state.patient.active.insuranceCarrier, "Read fresh")
+        self.assertEqual(r.state.chart().insuranceCarrier, "Read fresh")
         self.assertEqual(calls[-1]["patientId"], "chart-jane")
         self.assertEqual(len(calls), 3)
 
@@ -326,7 +326,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual((await r.resolve("Jane", None))["outcome"], "switched")
 
-        self.assertEqual(r.state.patient.active.insuranceCarrier, "Read fresh")
+        self.assertEqual(r.state.chart().insuranceCarrier, "Read fresh")
         self.assertEqual(calls[-1]["patientId"], "chart-jane")
 
     async def test_ambiguous_repeat_keeps_the_patient_and_omits_chart_text(self):
@@ -357,12 +357,12 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
 
         loaded = await tools.resolve_patient(context, "Jane", "01/02/1980")
         self.assertIn("Existing appointments:", loaded)
-        active = r.state.patient.active
+        active = r.state.chart()
 
         repeated = await tools.resolve_patient(context, "Jane", None)
 
         self.assertEqual(repeated, "needs_input: What is the patient's date of birth?")
-        self.assertIs(r.state.patient.active, active)
+        self.assertIs(r.state.chart(), active)
 
     async def test_a_reload_after_a_phone_chart_reads_fresh_tokens(self):
         def chart(token):
@@ -386,23 +386,23 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         await self.preload(r)
         await r.resolve("Jane", None)
         self.assertEqual(len(requests), 1)
-        r.state.patient.mark_appointments_stale()
+        revoke(r.state)
 
         await r.resolve("Jane", None)
 
         self.assertEqual(
             requests[-1], {"patientId": "chart-jane", "office": "spring-hill"}
         )
-        tokens = r.state.patient.active.appointments[0]
+        tokens = r.state.chart().appointments[0]
         self.assertEqual(
             (tokens.cancellationToken, tokens.rescheduleToken),
             ("reloaded-cancel", "reloaded-reschedule"),
         )
         self.assertTrue(await r.reload_chart())
         self.assertEqual(
-            r.state.patient.active.appointments[0].rescheduleToken, "again-reschedule"
+            r.state.chart().appointments[0].rescheduleToken, "again-reschedule"
         )
-        r.state.patient.deactivate()
+        leave(r.state)
         self.assertFalse(await r.reload_chart())
         self.assertEqual(len(requests), 3)
 
@@ -424,16 +424,16 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await r.resolve("John", "03/04/1990"))["outcome"], "switched")
         release.set()
         self.assertFalse(await reloading)
-        self.assertEqual(r.state.patient.active.patientId, "chart-john")
+        self.assertEqual(r.state.chart().patientId, "chart-john")
 
     async def test_reload_never_activates_a_different_chart(self):
         for chart in (receipt("chart-john"), receipt(dob="05/06/2010")):
             with self.subTest(chart=chart["patientId"], dob=chart["dob"]):
                 r, _ = self.resolver([receipt(), chart], call_state(None))
                 await r.resolve("Jane", "01/02/1980")
-                active = r.state.patient.active
+                active = r.state.chart()
                 self.assertFalse(await r.reload_chart())
-                self.assertIs(r.state.patient.active, active)
+                self.assertIs(r.state.chart(), active)
 
     async def test_no_caller_id_requires_dob_then_hydrates(self):
         r, calls = self.resolver([receipt()], call_state(None))
@@ -471,7 +471,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
                 (await r.resolve("Jane", None))["answer"],
                 "needs_input: What is the patient's date of birth?",
             )
-            self.assertIsNone(r.state.patient.active)
+            self.assertIsNone(r.state.chart())
             result = await r.resolve(None, "01/02/1980")
             self.assertEqual(
                 result["outcome"],
@@ -494,7 +494,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         await r.resolve("Jane", "01/02/1980")
         self.assertEqual((await r.resolve("Jane", None))["outcome"], "multiple_matches")
         self.assertEqual((await r.resolve("Jane", "02/03/1982"))["outcome"], "switched")
-        self.assertEqual(r.state.patient.active.patientId, "other")
+        self.assertEqual(r.state.chart().patientId, "other")
 
     async def test_changed_name_clears_active_immediately_and_does_not_inherit_dob(
         self,
@@ -506,7 +506,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
             (await r.resolve("John", None))["answer"],
             "needs_input: What is the patient's date of birth?",
         )
-        self.assertIsNone(r.state.patient.active)
+        self.assertIsNone(r.state.chart())
         self.assertEqual(len(calls), 1)
         self.assertEqual((await r.resolve(None, "01/02/1980"))["outcome"], "switched")
 
@@ -518,7 +518,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             (await r.resolve("Jane", "02/03/1982"))["outcome"], "not_found"
         )
-        self.assertIsNone(r.state.patient.active)
+        self.assertIsNone(r.state.chart())
         self.assertEqual((await r.resolve(None, "01/02/1980"))["outcome"], "verified")
 
     async def test_no_match_routes_to_new_patient_intake_not_staff(self):
@@ -551,7 +551,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["outcome"], outcome)
                 expected = "no_results: " if outcome == "not_found" else "blocked: "
                 self.assertTrue(result["answer"].startswith(expected), result["answer"])
-                self.assertIsNone(r.state.patient.active)
+                self.assertIsNone(r.state.chart())
 
     async def test_complete_search_multiple_charts_never_hydrates(self):
         r, calls = self.resolver([search(candidate(), candidate("other"))])
@@ -559,7 +559,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
             (await r.resolve("Jane", "01/02/1980"))["outcome"], "multiple_matches"
         )
         self.assertEqual(len(calls), 1)
-        self.assertIsNone(r.state.patient.active)
+        self.assertIsNone(r.state.chart())
 
     async def test_invalid_hydrated_receipts_never_activate(self):
         for override in (
@@ -578,7 +578,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     (await r.resolve("Jane", "01/02/1980"))["outcome"], "lookup_failed"
                 )
-                self.assertIsNone(r.state.patient.active)
+                self.assertIsNone(r.state.chart())
 
     async def test_invalid_dob_is_rejected_before_read(self):
         for dob in ("02/30/1980", "13/01/1980", "01/01/2999", "1980-01-01", ""):
@@ -593,13 +593,13 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         r, calls = self.resolver([receipt("chart-john", "John")])
         await self.preload(r)
         self.assertEqual((await r.resolve("Jon", None))["outcome"], "verified")
-        active, revision = r.state.patient.active, r.state.patient.revision
+        active, since = r.state.chart(), r.state.identity.since
 
         result = await r.resolve("Jon", None)
 
         self.assertEqual(result["outcome"], "verified")
-        self.assertIs(r.state.patient.active, active)
-        self.assertEqual(r.state.patient.revision, revision)
+        self.assertIs(r.state.chart(), active)
+        self.assertEqual(r.state.identity.since, since)
         self.assertEqual(len(calls), 1)
 
     async def test_same_patient_table_holds_each_site_rule(self):
@@ -611,7 +611,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
                 if verified_by:
                     await self.preload(r)
                 await r.resolve(verified_by or chart.split(", ")[1], DOB)
-                self.assertIsNotNone(r.state.patient.active)
+                self.assertIsNotNone(r.state.chart())
                 self.assertIs(not r.begin_registration(said, DOB), resolver_same)
                 self.assertIs(
                     _same_patient(
@@ -624,9 +624,9 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
     async def test_appointment_load_error_is_retained_and_reloaded(self):
         r, calls = self.resolver([receipt(appointmentsStatus="error"), receipt()])
         self.assertEqual((await r.resolve("Jane", "01/02/1980"))["outcome"], "verified")
-        self.assertEqual(r.state.patient.active.appointmentsStatus, "error")
+        self.assertEqual(r.state.chart().appointmentsStatus, "error")
         await r.resolve("Jane", None)
-        self.assertEqual(r.state.patient.active.appointmentsStatus, "none")
+        self.assertEqual(r.state.chart().appointmentsStatus, "none")
         self.assertEqual(len(calls), 2)
 
     async def test_superseded_read_cannot_commit_even_if_transport_ignores_cancellation(
@@ -653,7 +653,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await r.resolve("John", "01/02/1980"))["outcome"], "verified")
         release.set()
         self.assertEqual((await first)["outcome"], "superseded")
-        self.assertEqual(r.state.patient.active.patientId, "john")
+        self.assertEqual(r.state.chart().patientId, "john")
 
     async def test_cancelled_duplicate_waiter_leaves_shared_lookup_running(self):
         for cancelled_index in (0, 1):
@@ -677,7 +677,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
                 release.set()
                 result = await tasks[1 - cancelled_index]
                 self.assertEqual(result["outcome"], "verified")
-                self.assertEqual(r.state.patient.active.patientId, "chart-jane")
+                self.assertEqual(r.state.chart().patientId, "chart-jane")
                 self.assertEqual(len(calls), 1)
 
     async def test_shutdown_fences_read_even_if_transport_swallows_cancellation(
@@ -707,7 +707,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         release.set()
         await closing
         self.assertEqual((await task)["outcome"], "superseded")
-        self.assertIsNone(r.state.patient.active)
+        self.assertIsNone(r.state.chart())
 
     async def test_phone_absence_and_failure_leave_no_candidates(self):
         for body in [
@@ -719,7 +719,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         ]:
             r, _ = self.resolver([body, body])
             await self.preload(r)
-            self.assertEqual(r.state.patient.candidates, ())
+            self.assertEqual(r._candidates, ())
             self.assertEqual(
                 (await r.resolve("Jane", None))["answer"],
                 "needs_input: What is the patient's date of birth?",
@@ -749,7 +749,7 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         release.set()
         self.assertEqual((await first)["outcome"], "superseded")
         self.assertEqual((await latest)["outcome"], "verified")
-        self.assertEqual(r.state.patient.active.patientId, "john")
+        self.assertEqual(r.state.chart().patientId, "john")
         self.assertEqual(len(calls), 2)
         self.assertEqual(calls[1]["patientId"], "john")
 
@@ -775,10 +775,10 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         release.set()
         await closing
         self.assertEqual((await resolving)["outcome"], "superseded")
-        self.assertIsNone(r.state.patient.active)
-        self.assertEqual(r.state.patient.candidates, ())
+        self.assertIsNone(r.state.chart())
+        self.assertEqual(r._candidates, ())
 
-    async def test_tool_schema_and_cross_call_guard(self):
+    async def test_tool_schema_takes_only_a_name_and_dob(self):
         r, calls = self.resolver([])
         agent = AbitaAgent(call_owners(SPRING_HILL, resolver=r))
         resolve_patient = ToolContext(agent.tools).function_tools["resolve_patient"]
@@ -787,12 +787,6 @@ class PatientResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(schema["parameters"]["additionalProperties"])
         for value in schema["parameters"]["properties"].values():
             self.assertEqual(value["type"], ["string", "null"])
-        result = await resolve_patient(
-            SimpleNamespace(userdata=call_state()), "Jane", None
-        )
-        self.assertEqual(
-            result, "blocked: Patient lookup is unavailable. Ask office staff for help."
-        )
         self.assertEqual(calls, [])
 
     def test_phone_fuzzy_thresholds_match_agent_examples(self):

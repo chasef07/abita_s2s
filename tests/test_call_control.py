@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import httpx
 from livekit import api, rtc
 from livekit.agents import AgentSession, llm
-from owner_fixtures import call_owners
+from owner_fixtures import call_owners, leave, select
 from test_patient_resolution import call_state, receipt
 
 from abita_s2s.agent import AbitaAgent
@@ -21,7 +21,6 @@ from abita_s2s.config import Config, HandoffConfig, load_config
 from abita_s2s.handoff import HandoffAdmission
 from abita_s2s.integrations.product import Product
 from abita_s2s.offices import SPRING_HILL, get_office_profile
-from abita_s2s.records import Receipt
 from abita_s2s.runtime.silence import BackendResponses
 from abita_s2s.tools.call_control import CallControlTools
 
@@ -191,7 +190,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             (req.room_name, req.participant_identity, req.transfer_to),
             ("room", "caller", "tel:+13527941244"),
         )
-        self.state.patient.revision += 1
+        leave(self.state)
         self.assertEqual(
             (await self.run_tool("transfer_call")).split(":", 1)[0], "accepted"
         )
@@ -386,7 +385,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 (await self.run_tool("transfer_call")).split(":", 1)[0], "ambiguous"
             )
-            self.state.patient.revision += 1
+            leave(self.state)
             await self.run_tool("transfer_call")
         self.assertEqual(len(requests), 1)
         self.assertEqual(requests[0]["officeKey"], "spring-hill")
@@ -398,9 +397,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             office=SPRING_HILL,
             caller_phone="+15555550101",
         )
-        self.state.patient.active = Receipt.model_validate(
-            receipt("child-jane", "Jane", "01/02/2015")
-        )
+        select(self.state, receipt("child-jane", "Jane", "01/02/2015"))
         requests = []
 
         def handler(request):
@@ -431,10 +428,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
             first = await self.run_tool("transfer_call")
             self.assertEqual(first.split(":", 1)[0], "failed")
             self.assertIn("once more", first)
-            self.state.patient.active = Receipt.model_validate(
-                receipt("child-john", "John", "03/04/2017")
-            )
-            self.state.patient.revision += 1
+            select(self.state, receipt("child-john", "John", "03/04/2017"))
             self.assertEqual(
                 (await self.run_tool("transfer_call")).split(":", 1)[0], "accepted"
             )

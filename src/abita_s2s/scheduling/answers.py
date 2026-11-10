@@ -66,6 +66,25 @@ def slot_lines(slots: list[dict], soonest: list[str], today: date) -> list[str]:
     return lines
 
 
+def availability(result: dict, patient: str | None, today: date) -> str:
+    """A search result for the model: its answer, the window searched, any retry advice, the slots."""
+    lines = [result["answer"]]
+    if "searchedFrom" in result:
+        lines.append(
+            f"Searched {result['searchedFrom']} through {result['searchedThrough']}"
+            + (f" for {patient}." if patient else ".")
+        )
+    if "retry_same_search" in result and result["outcome"] == "availability_failed":
+        lines.append(
+            "Retry this search once."
+            if result["retry_same_search"]
+            else "Do not retry this search; ask staff for help."
+        )
+    if slots := result.get("slots"):
+        lines += slot_lines(slots, result["soonest"], today)
+    return "\n".join(lines)
+
+
 def sentences(*parts: str) -> str:
     """One answer from its parts, leaving out a middleware reason that was not sent."""
     return " ".join(part.strip() for part in parts if part.strip())

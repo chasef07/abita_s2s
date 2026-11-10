@@ -93,7 +93,7 @@ class PatientSessionTests(unittest.IsolatedAsyncioTestCase):
                         outputs[-1].output.startswith(outcome + ": "),
                         outputs[-1].output,
                     )
-                    self.assertEqual(state.patient.active is not None, active)
+                    self.assertEqual(state.chart() is not None, active)
                     for output in outputs:
                         for private in (
                             "chart-jane",

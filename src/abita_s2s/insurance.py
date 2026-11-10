@@ -1,12 +1,20 @@
 """Per-call registration and insurance-write owner, and wording for middleware insurance decisions."""
 
-import asyncio
 import re
-from collections.abc import Callable
 from typing import Literal
 
 from pydantic import ConfigDict
 
+from abita_s2s.call_record import (
+    INSURANCE_WRITES,
+    Registered,
+    Request,
+    WriteKey,
+    WriteOutcome,
+    WritePath,
+    WritePlan,
+    WriteSettled,
+)
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance_contract import CoverageType, InsuranceDecision
 from abita_s2s.insurance_list import VISITS, listed_plan, requirement_text
@@ -22,8 +30,7 @@ from abita_s2s.name_matcher import dob_matches, exact_name, parse_dob
 from abita_s2s.offices import e164
 from abita_s2s.records import Receipt, Record
 from abita_s2s.results import reply
-from abita_s2s.state import CallState
-from abita_s2s.writes import WriteKey, WriteLedger, WriteOutcome, write_effect
+from abita_s2s.state import CallState, Selected
 
 
 def full_name(person) -> str:
@@ -55,6 +62,12 @@ def staff(outcome="needs_staff_review"):
         outcome,
         "blocked: Office staff must verify the registration or insurance result before continuing. Do not repeat this write.",
     )
+
+
+STALE = reply(
+    "stale",
+    "blocked: The patient changed. No registration or insurance change was sent.",
+)
 
 
 ANSWERS = {
@@ -95,77 +108,50 @@ class InsuranceRegistration:
         self.state = state
         self._resolver = resolver
         self._middleware = middleware
-        self._ledger: WriteLedger[dict] = WriteLedger()
-        self._task: asyncio.Task | None = None
-        self._closed = False
-
-    def close_admission(self) -> None:
-        self._closed = True
-
-    async def aclose(self):
-        self._closed = True
-        if self._task:
-            await asyncio.shield(self._task)
-
-    def _write_blocker(self) -> dict | None:
-        if self._closed:
-            return staff()
-        if self.state.insurance.write_pending:
-            return reply(
+        self._writes = WritePath(
+            state.record,
+            INSURANCE_WRITES,
+            closed=staff(),
+            busy=reply(
                 "write_pending",
                 "blocked: A registration or insurance write is still in progress. Wait for its result.",
-            )
-        if self.state.insurance.write_uncertain:
-            return staff("uncertain")
-        return None
+            ),
+            blocks_call=staff("uncertain"),
+        )
 
-    async def _run_write(self, current: Callable[[], bool], work):
-        if blocked := self._write_blocker():
-            return blocked
-        self.state.insurance.write_pending = True
+    def close_admission(self) -> None:
+        self.state.record.close()
 
-        async def run():
-            try:
-                if not current():
-                    return reply(
-                        "stale",
-                        "blocked: The patient changed. No registration or insurance change was sent.",
-                    )
-                return await work()
-            except BaseException:
-                self.state.insurance.write_uncertain = True
-                raise
-            finally:
-                self.state.insurance.write_pending = False
-
-        self._task = asyncio.create_task(run())
-        return await asyncio.shield(self._task)
-
-    def _record(self, key: WriteKey, outcome: WriteOutcome, answer: dict) -> dict:
-        if write_effect(outcome).blocks:
-            self.state.insurance.write_uncertain = True
-        self._ledger.record(key, outcome, answer)
-        return answer
+    async def aclose(self):
+        self.close_admission()
+        await self._writes.drain()
 
     async def add(
         self, registration: Registration, *, call_id: str | None = None
     ) -> dict:
         r = registration
         key = WriteKey(
-            (
-                self.state.call.office.key,
-                exact_name(r.firstName),
-                parse_dob(r.dob),
-            ),
+            None,
             "register",
+            (self.state.call.office.key, exact_name(r.firstName), parse_dob(r.dob)),
         )
-        if saved := self._ledger.get(key):
-            return saved
-        if blocked := self._write_blocker():
-            return blocked
+        return await self._writes.run(
+            lambda: WritePlan(
+                key,
+                lambda: self._prepare_create(key, r, call_id),
+                staff("uncertain"),
+                lambda: (
+                    None if self._resolver.registering(r.firstName, r.dob) else STALE
+                ),
+            )
+        )
+
+    def _prepare_create(
+        self, key: WriteKey, r: Registration, call_id: str | None
+    ) -> Request | dict:
         if (
             not self._resolver.begin_registration(r.firstName, r.dob)
-            and self.state.patient.active
+            and self.state.chart()
         ):
             return reply(
                 "already_active",
@@ -236,36 +222,42 @@ class InsuranceRegistration:
             coverageType=r.visitType,
             office=self.state.call.office.key,
         )
+        return lambda: self._send_create(key, request, r, plan, call_id)
 
-        async def create():
-            result = await self._middleware.create(request)
-            chart = None
-            if isinstance(result, WriteFailure):
-                outcome: WriteOutcome = result.status
-                answer = (
-                    reply(
-                        "failed",
-                        f"needs_input: Registration was not created ({result.reason}). Correct the details or resolve the failure before trying again.",
-                    )
-                    if result.status == "failed"
-                    else staff(result.status)
+    async def _send_create(
+        self,
+        key: WriteKey,
+        request: NewPatient,
+        r: Registration,
+        plan: PlanSummary,
+        call_id: str | None,
+    ) -> WriteSettled:
+        result = await self._middleware.create(request)
+        registered = None
+        if isinstance(result, WriteFailure):
+            outcome: WriteOutcome = result.status
+            answer = (
+                reply(
+                    "failed",
+                    f"needs_input: Registration was not created ({result.reason}). Correct the details or resolve the failure before trying again.",
                 )
-            else:
-                outcome, answer = self._created(result, r, plan)
-                if outcome == "written":
-                    chart = result.patientId
-            if self.state.reporter:
-                evidence: dict[str, object] = {"outcome": answer["outcome"]}
-                if chart is not None:
-                    evidence["externalPatientId"] = str(chart)
-                    active = self.state.patient.active
-                    evidence["superseded"] = active is None or active.patientId != chart
-                self.state.reporter.record("patient", evidence, call_id=call_id)
-            return self._record(key, outcome, answer)
-
-        return await self._run_write(
-            lambda: self._resolver.registering(r.firstName, r.dob), create
-        )
+                if result.status == "failed"
+                else staff(result.status)
+            )
+        else:
+            outcome, answer = self._created(result, r, plan)
+            if outcome == "written":
+                registered = Registered(result.patientId, result.status)
+        if self.state.reporter:
+            evidence: dict[str, object] = {"outcome": answer["outcome"]}
+            if registered:
+                evidence["externalPatientId"] = str(registered.patient_id)
+                active = self.state.chart()
+                evidence["superseded"] = (
+                    active is None or active.patientId != registered.patient_id
+                )
+            self.state.reporter.record("patient", evidence, call_id=call_id)
+        return WriteSettled(key, outcome, answer, registered=registered)
 
     def _created(
         self, result: CreationReceipt, r: Registration, plan: PlanSummary
@@ -284,7 +276,6 @@ class InsuranceRegistration:
             appointmentsStatus="none",
             appointments=[],
         )
-        self.state.insurance.registrations[result.patientId] = result.status
         activated = self._resolver.activate_created(r.firstName, r.dob, patient)
         status = "success" if result.status == "created" and activated else "blocked"
         if result.status == "created":
@@ -306,92 +297,106 @@ class InsuranceRegistration:
         *,
         call_id: str | None = None,
     ) -> dict:
-        active = self.state.patient.active
-        if active is None:
-            return reply(
-                "needs_resolution",
-                "needs_input: Verify the patient before changing insurance.",
-            )
-        plan = listed_plan(self.state, plan_id, coverage_type)
-        if isinstance(plan, dict):
-            return plan
-        member_id = "self pay" if plan.selfPay else member_id.strip()
-        if not member_id:
-            return reply(
-                "needs_member_id",
-                "needs_input: What is the member ID on the insurance card?",
-            )
-        office = self.state.call.office.key
-        subject = (office, active.patientId)
-        key = WriteKey(
-            subject, "update_insurance", (plan.planId, coverage_type, member_id)
-        )
-        if blocked := self._ledger.blocking(subject):
-            return blocked
-        if (saved := self._ledger.get(key)) and self._ledger.latest(subject) == key:
-            return saved
-        revision = self.state.patient.revision
-
-        async def update():
-            result = await self._middleware.update(
-                InsuranceChange(
-                    patientId=active.patientId,
-                    dob=active.dob,
-                    coverageType=coverage_type,
-                    subscriberNum=member_id,
-                    insurancePlanId=plan.planId,
-                    office=office,
+        def write() -> WritePlan | dict:
+            identity, active = self.state.identity, self.state.chart()
+            if not isinstance(identity, Selected) or active is None:
+                return reply(
+                    "needs_resolution",
+                    "needs_input: Verify the patient before changing insurance.",
                 )
+            plan = listed_plan(self.state, plan_id, coverage_type)
+            if isinstance(plan, dict):
+                return plan
+            member = "self pay" if plan.selfPay else member_id.strip()
+            if not member:
+                return reply(
+                    "needs_member_id",
+                    "needs_input: What is the member ID on the insurance card?",
+                )
+            key = WriteKey(
+                active.patientId,
+                "update_insurance",
+                (plan.planId, coverage_type, member),
             )
-            outcome: WriteOutcome
-            if isinstance(result, WriteFailure):
-                outcome = result.status
-                if result.status == "failed":
-                    answer = reply(
-                        "failed",
-                        f"needs_input: Insurance was not changed ({result.reason}). Resolve the failure before trying again.",
+            since = identity.since
+
+            def replay(saved: WriteSettled) -> dict | None:
+                latest = self.state.record.latest(active.patientId, INSURANCE_WRITES)
+                return saved.answer if latest == key else None
+
+            return WritePlan(
+                key,
+                lambda: (
+                    lambda: self._send_update(
+                        key, active, plan, coverage_type, member, since, call_id
                     )
-                elif result.status == "partial":
-                    answer = reply(
-                        "partial",
-                        "blocked: The previous insurance plan was ended, but the replacement was not attached. Office staff must finish the change. Do not repeat this write.",
-                    )
-                else:
-                    answer = staff(result.status)
-            elif result.patientId != active.patientId:
-                outcome, answer = "uncertain", staff("uncertain")
+                ),
+                staff("uncertain"),
+                lambda: None if self._resolver.still_on(since) else STALE,
+                replay,
+            )
+
+        return await self._writes.run(write)
+
+    async def _send_update(
+        self,
+        key: WriteKey,
+        active: Receipt,
+        plan: PlanSummary,
+        coverage_type: CoverageType,
+        member: str,
+        since: int,
+        call_id: str | None,
+    ) -> WriteSettled:
+        result = await self._middleware.update(
+            InsuranceChange(
+                patientId=active.patientId,
+                dob=active.dob,
+                coverageType=coverage_type,
+                subscriberNum=member,
+                insurancePlanId=plan.planId,
+                office=self.state.call.office.key,
+            )
+        )
+        outcome: WriteOutcome
+        coverage = None
+        if isinstance(result, WriteFailure):
+            outcome = result.status
+            if result.status == "failed":
+                answer = reply(
+                    "failed",
+                    f"needs_input: Insurance was not changed ({result.reason}). Resolve the failure before trying again.",
+                )
+            elif result.status == "partial":
+                answer = reply(
+                    "partial",
+                    "blocked: The previous insurance plan was ended, but the replacement was not attached. Office staff must finish the change. Do not repeat this write.",
+                )
             else:
-                outcome = "written"
-                self.state.insurance.coverage_changed.add(active.patientId)
-                if active.patientId in self.state.insurance.registrations:
-                    self.state.insurance.registrations[active.patientId] = "created"
-                decision = result.insuranceDecision
-                if self._resolver.refresh_insurance(
-                    active.patientId,
-                    result.newInsurance,
-                    decision.carrierId if decision else None,
-                    revision,
-                ):
-                    answer = reply(
-                        "updated", f"success: Updated insurance to {plan.label}."
-                    )
-                else:
-                    answer = reply(
-                        "updated",
-                        f"blocked: Updated insurance for {active.name}. Patient context changed; the receipt was not applied to the current patient. Do not repeat this write.",
-                    )
-            if self.state.reporter:
-                self.state.reporter.record(
-                    "insurance",
-                    {
-                        "outcome": answer["outcome"],
-                        "externalPatientId": str(active.patientId),
-                    },
-                    call_id=call_id,
+                answer = staff(result.status)
+        elif result.patientId != active.patientId:
+            outcome, answer = "uncertain", staff("uncertain")
+        else:
+            outcome = "written"
+            decision = result.insuranceDecision
+            carrier_id = decision.carrierId if decision else None
+            coverage = (result.newInsurance, carrier_id)
+            if not self.state.record.closed and self._resolver.still_on(since):
+                answer = reply(
+                    "updated", f"success: Updated insurance to {plan.label}."
                 )
-            return self._record(key, outcome, answer)
-
-        return await self._run_write(
-            lambda: self._resolver.unchanged_since(active.patientId, revision),
-            update,
-        )
+            else:
+                answer = reply(
+                    "updated",
+                    f"blocked: Updated insurance for {active.name}. Patient context changed; the receipt was not applied to the current patient. Do not repeat this write.",
+                )
+        if self.state.reporter:
+            self.state.reporter.record(
+                "insurance",
+                {
+                    "outcome": answer["outcome"],
+                    "externalPatientId": str(active.patientId),
+                },
+                call_id=call_id,
+            )
+        return WriteSettled(key, outcome, answer, coverage=coverage)

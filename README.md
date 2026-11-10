@@ -81,8 +81,8 @@ To add a capability:
    (`call_id=`, never a LiveKit `RunContext`).
 2. Put the wire records next to their integration, or in `records.py` when several
    layers share them.
-3. Add a tool in `tools/` that checks `bound(owner, context)`, speaks any announcement
-   with `say_only()`, and returns the owner's answer.
+3. Add a tool in `tools/` that speaks any announcement with `say_only()` and returns the
+   owner's answer.
 4. Add one `Entry` for the tool to `TOOLS` in `tools/registry.py`. Build a new owner in
    `runtime/session_startup.py` and give it a field on `Owners`. If it admits writes, add
    it to `Owners.writers()`, the list shutdown closes and drains.
@@ -95,12 +95,14 @@ To add a capability:
 ## Decisions
 
 - **One writer per state.** Each `CallState` field has one owner module, listed in
-  [tests/test_state_ownership.py](tests/test_state_ownership.py). Only `PatientState`
-  methods change the patient, and each one decides whether the revision moves. `identity`
-  calls them, and `scheduling` calls only the two appointment methods. Acceptance is read
-  and written only through `insurance_state`.
-- **Writes are sent once.** Uncertain chart, insurance, and appointment writes are never
-  retried; they block repeats for the rest of the call and go to staff.
+  [tests/test_state_ownership.py](tests/test_state_ownership.py). `identity` alone
+  decides which chart the call is on. The `CallRecord` holds chart loads and write
+  results in order, and the chart, in-flight writes, replays, and blocks are computed
+  from it. Only `identity` records loads and only `scheduling` revokes them.
+- **Writes are sent once.** Every write takes one path in `call_record.py`: closed,
+  in-flight, replay, block, prepare, sent, shielded send, settle. Uncertain chart,
+  insurance, and appointment writes are never retried; they block repeats for the rest
+  of the call and go to staff.
 - **A move searches from its appointment.** A search with `rescheduleAppointmentRef` binds
   its slots to that appointment, and `reschedule_appointment` refuses a slot found for any
   other. The search reloads a revoked chart once. A settled write or a revocation discards a

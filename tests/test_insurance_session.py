@@ -10,14 +10,13 @@ from insurance_fixtures import decision
 from livekit.agents import AgentSession, llm
 from livekit.agents.llm.tool_context import ToolContext
 from livekit.agents.llm.utils import build_strict_openai_schema
-from owner_fixtures import call_owners
+from owner_fixtures import call_owners, insurance_ready, write_pending, write_uncertain
 from test_insurance_registration import created, registration, updated
 from test_patient_resolution import CONFIG, call_state, search
 
 from abita_s2s.agent import AbitaAgent
 from abita_s2s.identity import PatientResolver
 from abita_s2s.insurance import InsuranceRegistration
-from abita_s2s.insurance_state import insurance_ready
 from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
 from abita_s2s.offices import SPRING_HILL
@@ -269,11 +268,11 @@ class InsuranceSessionTests(unittest.IsolatedAsyncioTestCase):
                 )
                 await asyncio.wait_for(entered.wait(), 5)
                 interrupted = session.interrupt(force=True)
-                self.assertTrue(state.insurance.write_pending)
+                self.assertTrue(write_pending(state))
                 finish.set()
                 await asyncio.wait_for(interrupted, 5)
                 await asyncio.wait_for(run, 5)
                 await owner.aclose()
-                self.assertEqual(state.patient.active.patientId, "new-chart")
-                self.assertFalse(state.insurance.write_uncertain)
+                self.assertEqual(state.chart().patientId, "new-chart")
+                self.assertFalse(write_uncertain(state))
                 self.assertEqual(writes, ["/api/add-patient"])

@@ -54,10 +54,9 @@ class StaffTasks:
         self._product = product
         self._drafts: dict[str, Draft] = {}
         self._close_task: asyncio.Task | None = None
-        self._closed = False
 
     def close_admission(self) -> None:
-        self._closed = True
+        self.state.record.close()
 
     def save(
         self,
@@ -70,7 +69,7 @@ class StaffTasks:
         cancel: bool = False,
         call_id: str | None = None,
     ) -> dict:
-        if self._closed:
+        if self.state.record.closed:
             return reply("failed", "This call has ended. No draft was saved.")
         if draft_id is not None and draft_id not in self._drafts:
             return reply("failed", "Unknown draft ID. No draft was saved.")
@@ -115,7 +114,7 @@ class StaffTasks:
         }
 
     async def aclose(self) -> None:
-        self._closed = True
+        self.state.record.close()
         if self._close_task is None:
             self._close_task = asyncio.create_task(self._flush())
         await asyncio.shield(self._close_task)
