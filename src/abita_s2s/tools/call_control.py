@@ -26,7 +26,7 @@ class CallControlTools(EndCallTool):
 
     @function_tool
     async def transfer_call(self, ctx: RunContext[CallState]) -> str:
-        """Transfer to human staff when office policy requires it, including emergencies or named staff.
+        """Transfer to human staff when office policy requires it, including emergencies or returned office calls.
 
         No patient lookup is required. Call without announcing; this tool speaks first.
         Retry only if the result explicitly offers one retry. Never claim a human answered.

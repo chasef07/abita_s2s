@@ -22,7 +22,7 @@ class StaffTaskTools:
         draft_id: str | None = None,
         cancel: bool = False,
     ) -> str:
-        """Save or update one caller-approved, non-clinical unresolved need for call-end delivery.
+        """Save or update one caller-approved, non-clinical need staff must act on after the call.
 
         Drafts are sent automatically when the call ends, including a caller hangup.
         Say the request is noted, not submitted; staff owns fulfillment and timing.
