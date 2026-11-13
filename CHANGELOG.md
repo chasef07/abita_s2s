@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.4](https://github.com/chasef07/abita_s2s/compare/v0.29.3...v0.29.4) (2026-11-13)
+
+
+### Bug Fixes
+
+* **prompts:** stop staff tasks for late arrivals, detail requests, and returned calls ([#292](https://github.com/chasef07/abita_s2s/issues/292)) ([ebe4de6](https://github.com/chasef07/abita_s2s/commit/ebe4de679ae153282c54d2e4d3c728d65ddbd696))
+
 ## [0.29.3](https://github.com/chasef07/abita_s2s/compare/v0.29.2...v0.29.3) (2026-11-10)
 
 
