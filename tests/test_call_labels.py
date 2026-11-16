@@ -14,6 +14,7 @@ from livekit.agents.llm import (
     FunctionCallOutput,
 )
 
+from abita_s2s.integrations.transport import tls_context
 from abita_s2s.observability.call_labels import (
     INTENT_CRITERIA,
     MODEL,
@@ -130,6 +131,7 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
                 office_knowledge="Hours\nWeekdays 9 to 5.",
                 insurance_list="",
                 closeout=closeout or {"transferStatus": "idle"},
+                verify=tls_context(),
             )
         return requests, result
 
@@ -329,6 +331,7 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
                     office_knowledge="",
                     insurance_list="",
                     budget=budget,
+                    verify=tls_context(),
                 )
             client.assert_not_called()
             self.assertEqual(result["classification"]["status"], "skipped")
@@ -495,6 +498,7 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
                     office_knowledge="",
                     insurance_list="",
                     budget=budget,
+                    verify=tls_context(),
                 )
             client.assert_not_called()
             self.assertEqual(
@@ -521,6 +525,7 @@ class CallLabelTests(unittest.IsolatedAsyncioTestCase):
                     60,
                     office_knowledge="",
                     insurance_list="",
+                    verify=tls_context(),
                 )
             client.assert_not_called()
             self.assertEqual(result["classification"]["status"], "skipped")

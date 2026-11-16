@@ -1,6 +1,5 @@
 """Worker entry point; session startup owns each call."""
 
-import importlib
 import json
 import sys
 
@@ -9,6 +8,7 @@ from livekit.agents import AgentServer, JobContext, JobProcess, cli
 
 from abita_s2s.budgets import PROCESS_KILL
 from abita_s2s.config import agent_name, load_config
+from abita_s2s.integrations.transport import warm_http
 from abita_s2s.release import identity
 from abita_s2s.runtime.google_cloud_tracing import (
     register_trace_flush,
@@ -21,7 +21,7 @@ server = AgentServer(shutdown_process_timeout=PROCESS_KILL.seconds)
 
 
 def prewarm(proc: JobProcess) -> None:
-    importlib.import_module("anyio.abc._sockets")
+    warm_http()
     proc.userdata["google_cloud_trace_processor"] = setup_google_cloud_tracing()
 
 
