@@ -2,8 +2,6 @@
 
 from datetime import datetime
 
-from livekit.agents.llm import DelegationDetector
-from livekit.plugins.openai import LLM
 from livekit.plugins.openai.realtime import GPTLiveModel, GPTLiveSession
 
 from abita_s2s.config import Config
@@ -15,7 +13,6 @@ from abita_s2s.runtime.silence import BackendResponses
 SPEAKER_MODEL = "gpt-live-1"
 THINKER_MODEL = "gpt-6-luna"
 THINKER_REASONING_EFFORT = "high"
-DELEGATION_DETECTOR_MODEL = "gpt-5.6-luna"
 
 
 class CallModel(GPTLiveModel):
@@ -39,15 +36,7 @@ def create_model(
         api_key=config.openai_api_key,
         model=SPEAKER_MODEL,
         voice=config.voice,
-        delegation_recovery={
-            "detector": DelegationDetector(
-                LLM(
-                    model=DELEGATION_DETECTOR_MODEL,
-                    api_key=config.openai_api_key,
-                    reasoning_effort="none",
-                )
-            )
-        },
+        delegation_recovery=True,
         responses_options={
             "model": THINKER_MODEL,
             "reasoning": {"effort": THINKER_REASONING_EFFORT},

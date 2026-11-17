@@ -1,10 +1,11 @@
 """Verify the managed thinker configuration and what each live session is wired to."""
 
+import os
 import unittest
 from datetime import datetime
 from unittest.mock import patch
 
-from livekit.plugins.openai import LLM
+from livekit.agents import inference
 from livekit.plugins.openai.realtime import GPTLiveSession
 
 from abita_s2s.config import Config
@@ -64,13 +65,14 @@ class ModelConfigTests(unittest.TestCase):
         self.assertEqual(options["model"], "gpt-6-luna")
         self.assertEqual(options["reasoning"], {"effort": "high"})
 
-    def test_undelegated_turns_are_judged_by_openai_on_our_key(self):
-        model = create_model(Config(openai_api_key="offline"), "", "")
+    def test_undelegated_turns_are_judged_by_livekit_default_detector(self):
+        with patch.dict(
+            os.environ, {"LIVEKIT_API_KEY": "offline", "LIVEKIT_API_SECRET": "offline"}
+        ):
+            model = create_model(Config(openai_api_key="offline"), "", "")
         detector = model._opts.delegation_recovery["detector"].model
-        self.assertIsInstance(detector, LLM)
-        self.assertEqual(detector.model, "gpt-5.6-luna")
-        self.assertEqual(detector._opts.reasoning_effort, "none")
-        self.assertEqual(detector._client.api_key, "offline")
+        self.assertIsInstance(detector, inference.LLM)
+        self.assertEqual(detector.model, "google/gemma-4-31b-it")
 
     def test_thinker_calls_one_tool_at_a_time(self):
         with patch("abita_s2s.model_config.CallModel") as model:
