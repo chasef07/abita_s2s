@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import math
+import ssl
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 
@@ -53,6 +54,7 @@ async def evaluate_judges(
     closeout: dict,
     transferred: bool,
     include_jury: bool = True,
+    verify: ssl.SSLContext,
 ) -> dict:
     """Ask each juror the scorecard questions and the call labels within one deadline.
 
@@ -68,7 +70,7 @@ async def evaluate_judges(
     asked = [name for name in QUESTIONS if name not in results] if include_jury else []
     jurors = JURORS if include_jury else ()
     deadline = asyncio.get_running_loop().time() + seconds
-    async with httpx.AsyncClient(timeout=seconds) as client:
+    async with httpx.AsyncClient(timeout=seconds, verify=verify) as client:
 
         async def ask(
             model: str, state: dict, questions: dict
@@ -207,6 +209,7 @@ async def evaluate_call(
     insurance_list: str,
     budget: float = math.inf,
     closeout: dict | None = None,
+    verify: ssl.SSLContext,
 ) -> dict:
     """Return a persistable result without letting a judge failure break closeout.
 
@@ -254,6 +257,7 @@ async def evaluate_call(
                         closeout=closeout or {},
                         transferred=transferred,
                         include_jury=seconds >= MIN_CALL_SECONDS,
+                        verify=verify,
                     )
                 )
             if seconds < MIN_CALL_SECONDS:

@@ -27,6 +27,7 @@ from abita_s2s.integrations.patient_middleware import PatientMiddleware
 from abita_s2s.integrations.product import KNOWLEDGE_ENTRIES, Product
 from abita_s2s.integrations.registration_middleware import RegistrationMiddleware
 from abita_s2s.integrations.scheduling_http import SchedulingHTTP
+from abita_s2s.integrations.transport import tls_context
 from abita_s2s.knowledge import read_office_knowledge, render_office_knowledge
 from abita_s2s.model_config import create_model
 from abita_s2s.offices import (
@@ -211,9 +212,10 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
         )
 
     client = httpx.AsyncClient(
+        verify=tls_context(),
         limits=httpx.Limits(
             max_connections=100, max_keepalive_connections=20, keepalive_expiry=50.0
-        )
+        ),
     )
     owners: Owners | None = None
     sip_api = None

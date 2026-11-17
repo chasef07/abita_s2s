@@ -1,9 +1,15 @@
 """The one HTTP path: typed request out, parsed reply or transport fault back."""
 
 import asyncio
+import functools
+import ssl
 from collections.abc import Awaitable
 from typing import Generic, Literal, NamedTuple, TypeVar
 
+import anyio
+import anyio._backends._asyncio
+import anyio.abc
+import httpcore  # noqa: F401
 import httpx
 from pydantic import ConfigDict, TypeAdapter
 
@@ -11,6 +17,20 @@ from abita_s2s.records import Record
 
 Body = TypeVar("Body", covariant=True)
 Fault = Literal["not_configured", "timeout", "network"]
+
+
+@functools.cache
+def tls_context() -> ssl.SSLContext:
+    """Read the CA bundle once per process; each client still owns its pool and loop."""
+    return httpx.create_ssl_context()
+
+
+def warm_http() -> None:
+    """Load what the first client and request would import on the event loop."""
+    for module in (anyio, anyio.abc):
+        for name in dir(module):
+            getattr(module, name)
+    tls_context()
 
 
 class Request(Record):

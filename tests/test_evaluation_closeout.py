@@ -8,6 +8,7 @@ from livekit.agents import ChatContext
 from livekit.agents.llm import AgentConfigUpdate
 
 from abita_s2s.config import load_config
+from abita_s2s.integrations.transport import tls_context
 from abita_s2s.observability.evaluation import evaluate_call
 
 
@@ -35,7 +36,12 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLogs("abita_s2s.observability.evaluation", "ERROR") as logs,
             ):
                 result = await evaluate_call(
-                    report, "offline", 60, office_knowledge="", insurance_list=""
+                    report,
+                    "offline",
+                    60,
+                    office_knowledge="",
+                    insurance_list="",
+                    verify=tls_context(),
                 )
             self.assertEqual(result["status"], "incomplete")
             self.assertNotIn("private API body", str(result) + str(logs.output))
@@ -43,7 +49,12 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
     async def test_missing_key_never_calls_provider(self):
         with patch("abita_s2s.observability.evaluation.evaluate_judges") as judge:
             result = await evaluate_call(
-                self.report(), "", 60, office_knowledge="", insurance_list=""
+                self.report(),
+                "",
+                60,
+                office_knowledge="",
+                insurance_list="",
+                verify=tls_context(),
             )
         judge.assert_not_called()
         self.assertEqual(result["reason"], "openrouter_key_not_configured")
@@ -64,6 +75,7 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
                     seconds,
                     office_knowledge="",
                     insurance_list="",
+                    verify=tls_context(),
                 )
             self.assertEqual(judge.call_args.kwargs["include_jury"], jury)
             if not jury:
@@ -74,11 +86,21 @@ class JevCloseoutTests(unittest.IsolatedAsyncioTestCase):
         report = self.report()
         report["chat_history"] = ChatContext().to_dict()
         result = await evaluate_call(
-            report, "offline", 60, office_knowledge="", insurance_list=""
+            report,
+            "offline",
+            60,
+            office_knowledge="",
+            insurance_list="",
+            verify=tls_context(),
         )
         self.assertEqual(result["status"], "skipped")
         result = await evaluate_call(
-            {}, "offline", 60, office_knowledge="", insurance_list=""
+            {},
+            "offline",
+            60,
+            office_knowledge="",
+            insurance_list="",
+            verify=tls_context(),
         )
         self.assertEqual(result["status"], "skipped")
         self.assertEqual(result["reason"], "native_report_unavailable")

@@ -14,6 +14,7 @@ import httpx
 from livekit.agents import ChatContext
 from livekit.agents.llm import AgentConfigUpdate, FunctionCall, FunctionCallOutput
 
+from abita_s2s.integrations.transport import tls_context
 from abita_s2s.knowledge import UNAVAILABLE
 from abita_s2s.observability import gap_lines
 from abita_s2s.observability.decisions import parse, read_answers
@@ -203,6 +204,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 office_knowledge=office_knowledge,
                 insurance_list=insurance_list,
                 closeout=confirmed("rescheduled") if closeout is None else closeout,
+                verify=tls_context(),
             )
         return requests, result
 
