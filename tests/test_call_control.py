@@ -320,7 +320,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         ):
             await asyncio.wait_for(self.session.run(user_input="end_call"), 4)
             await asyncio.wait_for(closed.wait(), 4)
-        self.assertEqual(self.model.outputs[-1], "Say a brief goodbye to the caller.")
+        self.assertEqual(len(self.model.outputs), 1)
         self.assertTrue(self.control.ending)
         self.sip.transfer_sip_participant.assert_not_awaited()
 
@@ -341,7 +341,7 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.model.outputs[-1].split(":", 1)[0], "failed")
         self.sip.transfer_sip_participant.assert_not_awaited()
 
-    async def test_goodbye_finishes_before_builtin_shutdown(self):
+    async def test_end_call_asks_for_no_reply_and_shuts_down_after_the_turn(self):
         job = SimpleNamespace(shutdown=Mock(), add_shutdown_callback=Mock())
         closed = asyncio.Event()
         self.session.on("close", lambda event: closed.set())
@@ -350,8 +350,8 @@ class CallControlTests(unittest.IsolatedAsyncioTestCase):
         ):
             await asyncio.wait_for(self.session.run(user_input="end_call"), 4)
             await asyncio.wait_for(closed.wait(), 4)
-        self.assertEqual(self.model.outputs[-1], "Say a brief goodbye to the caller.")
-        self.assertIn(
+        self.assertEqual(self.model.outputs, [])
+        self.assertNotIn(
             "Goodbye.",
             [x.text_content for x in self.session.history.items if x.type == "message"],
         )
