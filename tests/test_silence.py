@@ -32,10 +32,7 @@ class SilenceCheckInTests(unittest.IsolatedAsyncioTestCase):
         self.backend = BackendResponses()
         self.session = AgentSession(llm=GPTLiveModel(api_key="offline"))
         self.control = SimpleNamespace(leaving=False)
-        self.handed_off = False
-        check_in_on_silence(
-            self.session, self.backend, self.control, lambda: self.handed_off
-        )
+        check_in_on_silence(self.session, self.backend, self.control)
         self.reset = patch.object(self.session, "reset_away_timer").start()
         self.reply = patch.object(self.session, "generate_reply").start()
         self.addCleanup(patch.stopall)
@@ -51,12 +48,6 @@ class SilenceCheckInTests(unittest.IsolatedAsyncioTestCase):
         self.reply.assert_not_called()
         self.user("away")
         self.reply.assert_called_once_with(instructions=CHECK_IN)
-
-    def test_unanswered_caller_words_go_to_the_backend_instead_of_a_check_in(self):
-        self.handed_off = True
-        self.user("away")
-        self.reply.assert_not_called()
-        self.reset.assert_called_once_with()
 
     def test_running_backend_response_tells_caller_it_is_still_working(self):
         self.backend.record(backend_event("response.created"))
@@ -92,7 +83,7 @@ class SilenceCheckInTests(unittest.IsolatedAsyncioTestCase):
             self.backend.record(backend_event(kind))
         self.reply.assert_not_called()
 
-    def test_failure_stays_quiet_for_watchdog_other_work_or_a_leaving_call(self):
+    def test_failure_stays_quiet_for_app_started_or_other_work_or_a_leaving_call(self):
         self.backend.record(backend_event("response.created", None))
         self.backend.record(backend_event("response.failed", None))
         self.backend.record(backend_event("response.created", "d1"))
@@ -138,7 +129,7 @@ class BackendResponsesTests(unittest.TestCase):
         self.assertEqual(backend.running, set())
 
 
-class BackendBusyTests(unittest.IsolatedAsyncioTestCase):
+class BackendCallerTurnTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         with patch.object(GPTLiveSession, "_main_task", idle):
             model = GPTLiveModel(api_key="offline")
@@ -151,34 +142,6 @@ class BackendBusyTests(unittest.IsolatedAsyncioTestCase):
     def receive(self, event):
         self.live.emit("openai_server_event_received", event)
         self.live._handle_event(event)
-
-    def test_unanswered_tool_calls_keep_the_backend_busy_after_the_response(self):
-        self.assertFalse(self.backend.busy)
-        self.receive(backend_event("response.created"))
-        self.assertEqual((self.backend.running, self.backend.busy), ({"d1"}, True))
-        self.receive(
-            {
-                "type": "response.event",
-                "delegation_id": "d1",
-                "event": {
-                    "type": "response.output_item.done",
-                    "item": {
-                        "type": "function_call",
-                        "status": "completed",
-                        "call_id": "c1",
-                        "name": "lookup",
-                        "arguments": "{}",
-                    },
-                },
-            }
-        )
-        self.receive(backend_event("response.completed"))
-        self.assertEqual((self.backend.running, self.backend.busy), (set(), True))
-
-    def test_cancelled_response_frees_the_backend(self):
-        self.receive(backend_event("response.created"))
-        self.receive(backend_event("response.cancelled"))
-        self.assertFalse(self.backend.busy)
 
     def test_caller_speech_counts_as_a_turn(self):
         self.backend.request_started()
