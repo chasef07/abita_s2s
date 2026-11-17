@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.30.0](https://github.com/chasef07/abita_s2s/compare/v0.29.4...v0.30.0) (2026-11-17)
+
+
+### Features
+
+* **model:** replace DelegationWatchdog with LiveKit delegation recovery ([#296](https://github.com/chasef07/abita_s2s/issues/296)) ([b2b63ef](https://github.com/chasef07/abita_s2s/commit/b2b63efd523d7d7d9ff5357d694a16d148e4ce87))
+
+
+### Bug Fixes
+
+* **call-control:** end the call after the goodbye turn instead of waiting for a reply ([#297](https://github.com/chasef07/abita_s2s/issues/297)) ([677c281](https://github.com/chasef07/abita_s2s/commit/677c281b7a4dfafbbd00b42ec4796e20f6a284d1))
+* **runtime:** prepare TLS and the HTTP stack once per worker process ([#295](https://github.com/chasef07/abita_s2s/issues/295)) ([9b5f22a](https://github.com/chasef07/abita_s2s/commit/9b5f22affb654f1da5727b903f3241d285964cb2))
+
 ## [0.29.4](https://github.com/chasef07/abita_s2s/compare/v0.29.3...v0.29.4) (2026-11-13)
 
 
