@@ -316,12 +316,7 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
             staff_tasks=StaffTasks(state, resolver, product),
             call_control=control,
         )
-        check_in_on_silence(
-            session,
-            model.backend,
-            control,
-            lambda: model.watchdog.hand_off_held(),
-        )
+        check_in_on_silence(session, model.backend, control)
         await start_session(session, ctx, room_options, AbitaAgent(owners))
         if state.reporter:
             state.reporter.started = True
