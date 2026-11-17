@@ -130,7 +130,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 FunctionCallOutput(
                     call_id="end-1",
                     name="end_call",
-                    output="Say a brief goodbye to the caller.",
+                    output="",
                     is_error=False,
                 ),
             ]
@@ -571,7 +571,7 @@ class JevTests(unittest.IsolatedAsyncioTestCase):
                 "agent: It is rescheduled.",
                 "caller: This is frustrating. Please get a person.",
                 "caller: Thanks.",
-                "tool end_call({}) -> Say a brief goodbye to the caller.",
+                "tool end_call({}) -> ",
             ],
         )
 
@@ -847,8 +847,8 @@ class JudgeStateTests(unittest.TestCase):
         blocked = "blocked: The caller spoke again after this request."
         self.assertEqual(ended(), skipped)
         self.assertEqual(ended(blocked), skipped)
-        self.assertIsNone(ended("Say a brief goodbye to the caller."))
-        self.assertIsNone(ended(blocked, "Say a brief goodbye to the caller."))
+        self.assertIsNone(ended(""))
+        self.assertIsNone(ended(blocked, ""))
 
     def test_office_answers_share_the_knowledge_gap_office_question_scope(self):
         self.assertIn(

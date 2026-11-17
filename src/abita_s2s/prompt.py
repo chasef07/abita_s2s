@@ -14,7 +14,6 @@ Prompt = Literal[
     "check_in",
     "still_working",
     "could_not_finish",
-    "goodbye",
 ]
 
 
