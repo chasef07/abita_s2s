@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.1](https://github.com/chasef07/abita_s2s/compare/v0.30.0...v0.30.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **prompts:** stop transferring gradual symptoms and offering transfers for routine work ([#299](https://github.com/chasef07/abita_s2s/issues/299)) ([b0ba7dd](https://github.com/chasef07/abita_s2s/commit/b0ba7ddb7989d41d59fd156b76e6cafd4eb4efac))
+
 ## [0.30.0](https://github.com/chasef07/abita_s2s/compare/v0.29.4...v0.30.0) (2026-11-17)
 
 
