@@ -18,7 +18,7 @@ from pydantic import (
 )
 
 from abita_s2s.config import Config
-from abita_s2s.integrations.transport import Fault, Reply, Request, post
+from abita_s2s.integrations.transport import Fault, Reply, Request, body_or_cause, post
 from abita_s2s.records import Category, Record, Urgency
 
 STAFF_TASK_TIMEOUT = 10.0
@@ -195,13 +195,7 @@ class Product:
             KNOWLEDGE_READ_TIMEOUT,
             {"X-Office-Key": office_key},
         )
-        if isinstance(reply, str):
-            return reply
-        if not reply.ok:
-            return f"http_{reply.code}"
-        if reply.body is None:
-            return "invalid_response"
-        return reply.body
+        return body_or_cause(reply)
 
     async def admit(
         self, office_key: str, source_call_id: str, caller_phone: str

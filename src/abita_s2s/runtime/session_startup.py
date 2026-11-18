@@ -226,8 +226,9 @@ async def start_voice_call(ctx: JobContext, *, simulation=None) -> None:
 
     async def drain():
         writers = owners.writers() if owners else [resolver]
-        for writer in writers:
-            writer.close_admission()
+        state.record.close()
+        if owners:
+            owners.call_control.close_admission()
         async with asyncio.timeout(DRAIN.seconds):
             await _gather_raising(
                 *(writer.aclose() for writer in writers),

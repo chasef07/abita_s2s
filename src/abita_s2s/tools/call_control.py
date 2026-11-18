@@ -5,13 +5,23 @@ from livekit.agents.beta.tools.end_call import EndCallTool
 
 from abita_s2s.call_control import CallControl
 from abita_s2s.state import CallState
-from abita_s2s.tools.context import say_only
 
 END_RULES = (
     "Call only after the caller says goodbye or declines further help and nothing "
     "they asked for is unhandled. Never call on an unfinished phrase or a new "
     "question; answer it first. Save approved staff requests before calling."
 )
+
+
+async def say_only(context: RunContext, news: str) -> bool:
+    """Tell the caller one short piece of news after current playout; report whether it completed."""
+    await context.wait_for_playout()
+    speech = context.session.generate_reply(
+        instructions=f"In one short sentence, tell the caller {news}.",
+        tool_choice="none",
+    )
+    await speech.wait_for_playout()
+    return not speech.interrupted and speech.exception() is None
 
 
 class CallControlTools(EndCallTool):

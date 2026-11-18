@@ -169,6 +169,10 @@ def verified(state, patient_id="chart-jane", **extra):
     select(state, receipt(patient_id, **extra))
 
 
+def loaded(state):
+    verified(state, appointmentsStatus="found", appointments=[appointment()])
+
+
 def speech_context(state):
     speech = SimpleNamespace(
         wait_for_playout=AsyncMock(), interrupted=False, exception=lambda: None
@@ -283,11 +287,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 owner, requests = self.owner(
                     [inventory(), rescheduled() if move else booking()]
                 )
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 registered(owner.state, "chart-jane", "created")
                 old_ref = owner.appointments()[0]["appointmentRef"]
                 ref = await self.slots(
@@ -361,7 +361,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_move_sends_no_referring_doctor(self):
         owner, requests = self.owner([inventory(), rescheduled()])
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         moved = await self.tool(
             owner,
             "reschedule_appointment",
@@ -773,7 +773,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 )
             ]
         )
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         output = await self.tool(
             owner, "list_available_appointments", visitType="medical"
         )
@@ -843,14 +843,14 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             readBack=True,
         )
         self.assertTrue(cancelled.startswith("success:"), cancelled)
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         output = await resolve_patient(context, "Jane", None)
         self.assertIn("No upcoming appointments.", output)
         self.assertNotIn("Existing appointments", output)
 
     async def test_insurance_update_keeps_appointment_refs(self):
         owner, requests = self.owner([{"status": "cancelled", "appointmentId": 77}])
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         ref = owner.appointments()[0]["appointmentRef"]
         coverage_written(owner.state, "Aetna", "car1")
         self.assertEqual(owner.appointments()[0]["appointmentRef"], ref)
@@ -905,7 +905,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         owner, requests = self.owner(
             [inventory(outcome="no_eligible_providers", slots=[])]
         )
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         result = await self.tool(
             owner,
             "list_available_appointments",
@@ -925,7 +925,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self,
     ):
         owner, _ = self.owner([inventory(outcome="no_eligible_providers", slots=[])])
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         result = await self.tool(
             owner,
             "list_available_appointments",
@@ -1309,7 +1309,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 callback = (
                     (lambda: verified(owner.state, "chart-john"))
                     if change == "patient"
-                    else owner.close_admission
+                    else owner.state.record.close
                 )
                 asyncio.get_running_loop().call_soon(callback)
                 result = await self.book(owner, ref)
@@ -1449,11 +1449,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     ref = await self.slots(owner)
                     task = asyncio.create_task(self.book(owner, ref))
                 else:
-                    verified(
-                        owner.state,
-                        appointmentsStatus="found",
-                        appointments=[appointment()],
-                    )
+                    loaded(owner.state)
                     ref = owner.appointments()[0]["appointmentRef"]
                     task = asyncio.create_task(
                         self.tool(
@@ -1490,11 +1486,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                         rescheduled(cancellation_status),
                     ]
                 )
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 old_ref = owner.appointments()[0]["appointmentRef"]
                 slot_ref = await self.slots(owner, rescheduleAppointmentRef=old_ref)
                 args = dict(
@@ -1529,11 +1521,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                         else "uncertain"
                     ],
                 )
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 for _ in range(2):
                     owner.appointments()
                     self.assertEqual(
@@ -1622,11 +1610,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                         {"status": "cancelled", "appointmentId": 77},
                     ]
                 )
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 ref = owner.appointments()[0]["appointmentRef"]
                 result = await self.tool(
                     owner, "cancel_appointment", appointmentRef=ref, readBack=True
@@ -1718,11 +1702,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(response=response.model_dump()):
                 owner, _ = self.owner([])
                 owner.http.cancel = AsyncMock(return_value=response)
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 ref = owner.appointments()[0]["appointmentRef"]
                 await self.tool(
                     owner, "cancel_appointment", appointmentRef=ref, readBack=True
@@ -1744,11 +1724,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(cancellation_receipt=cancellation_receipt):
                 owner, requests = self.owner([cancellation_receipt])
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 ref = owner.appointments()[0]["appointmentRef"]
                 result = await self.tool(
                     owner, "cancel_appointment", appointmentRef=ref, readBack=True
@@ -1764,7 +1740,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_cancellation_requires_confirmation_without_writing(self):
         owner, requests = self.owner([{"status": "cancelled", "appointmentId": 77}])
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         ref = owner.appointments()[0]["appointmentRef"]
         for confirmation in (None, False):
             result = await self.tool(
@@ -1914,11 +1890,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                     if write == "cancel"
                     else [inventory(), response, cancelled]
                 )
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 old_ref = owner.appointments()[0]["appointmentRef"]
                 if write == "book":
                     result = await self.book(owner, await self.slots(owner))
@@ -1942,11 +1914,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn(reason, result)
                 self.assertNotIn("could not be confirmed", result)
                 self.assertEqual([a.id for a in owner.state.chart().appointments], [77])
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 sent = len(requests)
                 later = await self.tool(
                     owner, "cancel_appointment", appointmentRef=old_ref, readBack=True
@@ -1961,11 +1929,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(write=write):
                 owner, _ = self.owner([inventory(), response | {"message": said}])
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 old_ref = owner.appointments()[0]["appointmentRef"]
                 if write == "book":
                     result = await self.book(owner, await self.slots(owner))
@@ -1994,11 +1958,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 owner, requests = self.owner(
                     [response] if write == "cancel" else [inventory(), response]
                 )
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 old_ref = owner.appointments()[0]["appointmentRef"]
                 if write == "book":
                     result = await self.book(owner, await self.slots(owner))
@@ -2045,7 +2005,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 rescheduled(),
             ]
         )
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         old_ref = owner.appointments()[0]["appointmentRef"]
 
         lost = await self.tool(
@@ -2103,11 +2063,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                         {"status": "failed", "outcome": outcome, "message": said},
                     ]
                 )
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 result = await self.tool(
                     owner,
                     "reschedule_appointment",
@@ -2134,7 +2090,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 },
             ]
         )
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         result = await self.tool(
             owner,
             "reschedule_appointment",
@@ -2151,11 +2107,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 owner, _ = self.owner(
                     [{"status": "error", "outcome": outcome, "message": said}]
                 )
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 result = await self.tool(
                     owner,
                     "cancel_appointment",
@@ -2168,7 +2120,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_successful_write_on_a_revoked_chart_says_to_reload(self):
         owner, _ = self.owner([inventory(), booking()])
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         ref = await self.slots(owner)
         revoke(owner.state)
 
@@ -2251,7 +2203,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         owner, requests = self.owner(
             [{"status": "error", "outcome": "invalid_cancellation_token"}]
         )
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         ref = owner.appointments()[0]["appointmentRef"]
         self.assertEqual(
             (
@@ -2317,7 +2269,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 rescheduled(),
             ]
         )
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         result = await self.tool(
             owner,
             "list_available_appointments",
@@ -2343,7 +2295,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_null_plan_move_with_no_openings_names_the_doctor(self):
         owner, _ = self.owner([inventory(outcome="no_availability", slots=[])])
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         result = await self.tool(
             owner,
             "list_available_appointments",
@@ -2356,7 +2308,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_slot_only_serves_the_search_that_found_it(self):
         owner, requests = self.owner([inventory()])
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         moving = await self.tool(
             owner,
             "list_available_appointments",
@@ -2369,7 +2321,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("cannot book a new one", refused)
 
         owner, requests = self.owner([inventory()])
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         new_visit = await self.slots(owner)
         for read_back in (None, True):
             with self.subTest(readBack=read_back):
@@ -2395,11 +2347,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         for visit, ref, plan in cases:
             with self.subTest(visit=visit, ref=ref, plan=plan):
                 owner, requests = self.owner([])
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 if ref == "appointment":
                     ref = owner.appointments()[0]["appointmentRef"]
                 result = await self.tool(
@@ -2430,11 +2378,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         for case, (plan, moving, expected) in cases.items():
             with self.subTest(case=case):
                 owner, requests = self.owner([inventory()])
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 result = await self.tool(
                     owner,
                     "list_available_appointments",
@@ -2607,7 +2551,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             )
 
         owner, requests = self.owner([updated, inventory(), inventory()])
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         insurance = InsuranceRegistration(
             owner.state,
             owner._resolver,
@@ -2665,7 +2609,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             appointments=[appointment(rescheduleToken="fresh-reschedule")],
         )
         owner, requests = self.owner([refusal, fresh, inventory(), rescheduled()])
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         old_ref = owner.appointments()[0]["appointmentRef"]
         since = owner.state.identity.since
 
@@ -2728,11 +2672,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         for case, (responses, paths) in cases.items():
             with self.subTest(case=case):
                 owner, requests = self.owner(list(responses))
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 result = await self.tool(
                     owner,
                     "list_available_appointments",
@@ -2790,7 +2730,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 {"status": "cancelled", "appointmentId": 77},
             ]
         )
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         ref = owner.appointments()[0]["appointmentRef"]
 
         expired = await self.tool(
@@ -2827,7 +2767,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             )
 
         owner, requests = self.owner([inventory(), slow_chart, booking()])
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         old_ref = owner.appointments()[0]["appointmentRef"]
         new_visit = await self.slots(owner)
         revoke(owner.state)
@@ -2897,7 +2837,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         owner, _ = self.owner(
             [slow_chart, {"status": "error", "outcome": "provider_rejected"}]
         )
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         reloading = asyncio.create_task(owner._resolver.reload_chart())
         await started.wait()
         refused = await self.tool(
@@ -2917,7 +2857,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         owner, _ = self.owner(
             [inventory(outcome="move_needs_staff", slots=[], message=said)]
         )
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         result = await self.tool(
             owner,
             "list_available_appointments",
@@ -2940,7 +2880,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 rescheduled(),
             ]
         )
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         ref = await self.move_slot(owner)
         revoke(owner.state)
         await owner._resolver.resolve("Jane", None)
@@ -3059,7 +2999,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_move_slot_ref_answers_a_new_visit_call_with_the_move_it_made(self):
         owner, requests = self.owner([inventory(), rescheduled(), inventory()])
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         ref = await self.move_slot(owner)
         moved = await self.tool(
             owner,
@@ -3112,9 +3052,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
     async def test_reschedule_partial_and_success_never_rebooks(self):
         for status in ("cancelled", "error"):
             owner, requests = self.owner([inventory(), rescheduled(status)])
-            verified(
-                owner.state, appointmentsStatus="found", appointments=[appointment()]
-            )
+            loaded(owner.state)
             old_ref = owner.appointments()[0]["appointmentRef"]
             slot_ref = await self.slots(owner, rescheduleAppointmentRef=old_ref)
             args = {
@@ -3183,7 +3121,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         owner, requests = self.owner(
             [inventory(slots=[slot(), slot(start="2026-09-15T14:00")]), rescheduled()]
         )
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         old_ref = owner.appointments()[0]["appointmentRef"]
         listing = await self.tool(
             owner,
@@ -3297,9 +3235,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             {"status": "uncertain", "booking": booking(999)},
         ):
             owner, requests = self.owner([inventory(), response])
-            verified(
-                owner.state, appointmentsStatus="found", appointments=[appointment()]
-            )
+            loaded(owner.state)
             old_ref = owner.appointments()[0]["appointmentRef"]
             ref = await self.slots(owner, rescheduleAppointmentRef=old_ref)
             args = dict(
@@ -3373,11 +3309,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                         ),
                     ]
                 )
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 resolver = PatientResolver(
                     owner.state, PatientMiddleware(owner.http._client, CONFIG)
                 )
@@ -3434,7 +3366,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             )
 
         owner, requests = self.owner([insurance_moved])
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         ref = owner.appointments()[0]["appointmentRef"]
 
         await self.tool(owner, "cancel_appointment", appointmentRef=ref, readBack=True)
@@ -3459,7 +3391,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             )
 
         owner, _ = self.owner([inventory(), switched])
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         await self.tool(
             owner,
             "reschedule_appointment",
@@ -3483,7 +3415,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 rescheduled(),
             ]
         )
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         old_ref = owner.appointments()[0]["appointmentRef"]
         slot_ref = await self.slots(owner, rescheduleAppointmentRef=old_ref)
         args = dict(
@@ -3502,7 +3434,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.assertEqual(len(requests), 2)
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         args["appointmentSlotRef"] = await self.slots(
             owner, rescheduleAppointmentRef=old_ref
         )
@@ -3527,7 +3459,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             raise httpx.ReadTimeout("response lost", request=request)
 
         owner, requests = self.owner([inventory(), timed_out, inventory()])
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         old_ref = owner.appointments()[0]["appointmentRef"]
         slot_ref = await self.slots(owner, rescheduleAppointmentRef=old_ref)
         args = dict(
@@ -3578,11 +3510,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         for case, (response, answer, cancellation) in cases.items():
             with self.subTest(case=case):
                 owner, requests = self.owner([inventory(), response])
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 result = await self.tool(
                     owner,
                     "reschedule_appointment",
@@ -3633,7 +3561,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, json=rescheduled())
 
         owner, requests = self.owner([inventory(), switched])
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         ref = await self.move_slot(owner)
         result = await self.tool(
             owner,
@@ -3665,11 +3593,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 owner, requests = self.owner(
                     [inventory(), rescheduled() if move else booking()]
                 )
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 ref = await (self.move_slot(owner) if move else self.slots(owner))
                 context = speech_context(owner.state)
 
@@ -3859,11 +3783,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         for outcome, (response, reported, answer, effects) in cases.items():
             with self.subTest(outcome=outcome):
                 owner, _ = self.owner([inventory()])
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 owner.http.book = AsyncMock(return_value=response)
                 ref = await self.slots(owner)
                 first, observed = await self.write_effects(
@@ -3918,11 +3838,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         for outcome, (response, reported, answer, effects) in cases.items():
             with self.subTest(outcome=outcome):
                 owner, _ = self.owner([])
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 owner.http.cancel = AsyncMock(return_value=response)
                 ref = owner.appointments()[0]["appointmentRef"]
                 first, observed = await self.write_effects(
@@ -3980,11 +3896,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         for outcome, (response, reported, answer, effects) in cases.items():
             with self.subTest(outcome=outcome):
                 owner, _ = self.owner([inventory()])
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 owner.http.reschedule = AsyncMock(return_value=response)
                 args = dict(
                     oldAppointmentRef=owner.appointments()[0]["appointmentRef"],
@@ -4063,11 +3975,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(case=case):
                 owner, _ = self.owner([inventory()])
                 owner.state.reporter = reporter = Recorder()
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 setattr(owner.http, write, AsyncMock(return_value=response))
                 old_ref = owner.appointments()[0]["appointmentRef"]
                 if write == "cancel":
@@ -4142,11 +4050,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
                 booking_owner.http.book = AsyncMock(return_value=response)
                 await self.book(booking_owner, await self.slots(booking_owner))
                 cancel_owner, _ = self.owner([])
-                verified(
-                    cancel_owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(cancel_owner.state)
                 cancel_owner.http.cancel = AsyncMock(return_value=response)
                 await self.tool(
                     cancel_owner,
@@ -4168,11 +4072,7 @@ class SchedulingTests(unittest.IsolatedAsyncioTestCase):
         for outcome, (_, _, moved) in errors.items():
             with self.subTest(move=outcome):
                 owner, _ = self.owner([inventory()])
-                verified(
-                    owner.state,
-                    appointmentsStatus="found",
-                    appointments=[appointment()],
-                )
+                loaded(owner.state)
                 owner.http.reschedule = AsyncMock(
                     return_value=RescheduleReceipt(status="failed", outcome=outcome)
                 )
@@ -4332,7 +4232,7 @@ class SchedulingSessionTests(unittest.IsolatedAsyncioTestCase):
                 rescheduled(appointment_id=999),
             ]
         )
-        verified(owner.state, appointmentsStatus="found", appointments=[appointment()])
+        loaded(owner.state)
         model = SchedulingModel()
         agent = AbitaAgent(call_owners(SPRING_HILL, scheduling=owner))
         async with AgentSession(llm=model, userdata=owner.state) as session:

@@ -145,11 +145,8 @@ class PatientResolver:
             self._candidates = candidates
         return candidates
 
-    def close_admission(self) -> None:
-        self.state.record.close()
-
     async def aclose(self) -> None:
-        self.close_admission()
+        self.state.record.close()
         self._token = None
         tasks = [t for t in (self._task, self._precall) if t is not None]
         for task in tasks:
