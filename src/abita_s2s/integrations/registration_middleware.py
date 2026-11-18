@@ -6,7 +6,7 @@ from pydantic import BeforeValidator, Field, TypeAdapter
 
 from abita_s2s.insurance_contract import CoverageType, InsuranceDecision
 from abita_s2s.integrations.middleware import Middleware, OfficeKey
-from abita_s2s.integrations.transport import Fault, Reply, Request
+from abita_s2s.integrations.transport import Fault, Reply, Request, body_or_cause
 from abita_s2s.offices import same_office
 from abita_s2s.records import Record, Text
 
@@ -138,18 +138,12 @@ class RegistrationMiddleware(Middleware):
             PLAN_LIST,
             PLAN_LIST_TIMEOUT,
         )
-        if isinstance(reply, str):
-            return reply
-        if not reply.ok:
-            return f"http_{reply.code}"
-        if reply.body is None:
-            return "invalid_response"
-        if (
-            not same_office(reply.body.officeId, office)
-            or reply.body.coverage != coverage
-        ):
+        plans = body_or_cause(reply)
+        if isinstance(plans, str):
+            return plans
+        if not same_office(plans.officeId, office) or plans.coverage != coverage:
             return "mismatched_response"
-        return reply.body
+        return plans
 
     async def create(self, request: NewPatient) -> CreationReceipt | WriteFailure:
         reply = await self._post("/api/add-patient", request, CREATED)

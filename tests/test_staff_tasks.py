@@ -310,7 +310,7 @@ class StaffTaskTests(unittest.IsolatedAsyncioTestCase):
                     ],
                     "failed",
                 )
-            owner.close_admission()
+            owner.state.record.close()
             self.assertEqual(owner.save(**NEED)["outcome"], "failed")
             self.assertEqual(
                 owner.save(**NEED, draft_id=saved["draftId"], cancel=True)["outcome"],

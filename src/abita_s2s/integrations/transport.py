@@ -54,6 +54,17 @@ class Reply(NamedTuple, Generic[Body]):  # noqa: UP046
         return self.code in (408, 429) or self.code >= 500
 
 
+def body_or_cause[T](reply: Reply[T] | Fault) -> T | str:
+    """The parsed 2xx body, or a log-safe cause for why there is none."""
+    if isinstance(reply, str):
+        return reply
+    if not reply.ok:
+        return f"http_{reply.code}"
+    if reply.body is None:
+        return "invalid_response"
+    return reply.body
+
+
 async def post[T](
     client: httpx.AsyncClient,
     url: str,

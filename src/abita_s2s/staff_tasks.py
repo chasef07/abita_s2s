@@ -55,9 +55,6 @@ class StaffTasks:
         self._drafts: dict[str, Draft] = {}
         self._close_task: asyncio.Task | None = None
 
-    def close_admission(self) -> None:
-        self.state.record.close()
-
     def save(
         self,
         category: Category,
@@ -144,10 +141,6 @@ class StaffTasks:
         """Validate before any write, then snapshot the exact request for replay."""
         call = self.state.call
         office = call.office
-        if not office.staff_tasks_enabled:
-            raise ValueError(
-                "Staff tasks are disabled for this office. No request was sent."
-            )
         if not self._product.staff_tasks_configured:
             raise ValueError("Staff delivery is not configured. No request was sent.")
         summary, message = summary.strip(), message.strip()

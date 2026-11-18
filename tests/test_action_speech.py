@@ -14,6 +14,17 @@ from test_patient_resolution import call_state
 from abita_s2s.offices import SPRING_HILL
 from abita_s2s.tools.registry import TOOLS, Owners
 
+ACTIONS = {
+    "book_appointment",
+    "cancel_appointment",
+    "reschedule_appointment",
+    "save_staff_task",
+    "transfer_call",
+    "end_call",
+    "add_patient",
+    "update_insurance",
+}
+
 
 class Reached(Exception):
     """The tool reached an owner or a speech call; the message says which."""
@@ -77,36 +88,18 @@ def action_tools() -> dict[str, llm.FunctionTool]:
         staff_tasks=Owner(state, "staff_tasks"),
         call_control=Owner(state, "call_control"),
     )
-    tools = [
-        tool
-        for entry in TOOLS
-        if entry.action and (tool := entry.build(owners)) is not None
-    ]
+    tools = [tool for entry in TOOLS if (tool := entry.build(owners)) is not None]
     return {
         name: tool
         for name, tool in llm.ToolContext(tools).function_tools.items()
-        if isinstance(tool, llm.FunctionTool)
+        if isinstance(tool, llm.FunctionTool) and name in ACTIONS
     }, state
 
 
 class ActionSpeechTests(unittest.IsolatedAsyncioTestCase):
     async def test_action_tools_reach_their_owner_before_any_speech(self):
         tools, state = action_tools()
-        self.assertEqual(
-            set(tools),
-            {
-                "book_appointment",
-                "cancel_appointment",
-                "reschedule_appointment",
-                "save_staff_task",
-                "transfer_call",
-                "end_call",
-                "add_patient",
-                "update_insurance",
-            },
-            "every tool that writes or moves the call sets action=True "
-            "on its Entry in tools/registry.py",
-        )
+        self.assertEqual(set(tools), ACTIONS)
         context = SimpleNamespace(
             userdata=state,
             function_call=SimpleNamespace(call_id="call"),

@@ -119,11 +119,8 @@ class InsuranceRegistration:
             blocks_call=staff("uncertain"),
         )
 
-    def close_admission(self) -> None:
-        self.state.record.close()
-
     async def aclose(self):
-        self.close_admission()
+        self.state.record.close()
         await self._writes.drain()
 
     async def add(

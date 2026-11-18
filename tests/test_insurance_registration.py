@@ -239,7 +239,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                 await owner.add(registration())
                 active, since = state.chart(), state.identity.since
                 if blocked == "closed":
-                    owner.close_admission()
+                    state.record.close()
                 elif blocked == "pending":
                     insurance_write_open(state, "new-chart")
                 else:

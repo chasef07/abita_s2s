@@ -194,11 +194,8 @@ class Scheduling:
             busy=BUSY,
         )
 
-    def close_admission(self) -> None:
-        self.state.record.close()
-
     async def aclose(self):
-        self.close_admission()
+        self.state.record.close()
         await self._offers.aclose()
         await self._writes.drain()
 
@@ -431,7 +428,6 @@ class Scheduling:
             p,
             answer["outcome"],
             call_id=call_id,
-            cancellation_outcome=answer["outcome"],
             old=old,
         )
         return WriteSettled(
@@ -616,7 +612,6 @@ class Scheduling:
             answer["outcome"],
             call_id=call_id,
             booking=result,
-            booking_outcome=answer["outcome"],
             slot=slot,
         )
         return WriteSettled(key, outcome, answer, booked=new)
@@ -699,7 +694,7 @@ class Scheduling:
         call_id: str,
         booking: WriteReceipt | RescheduleReceipt | SchedulingFailure | None = None,
         booking_outcome: str | None = None,
-        cancellation_outcome: str = "not_attempted",
+        cancellation_outcome: str | None = None,
         old: Appointment | None = None,
         slot: Slot | None = None,
     ) -> None:
@@ -707,6 +702,7 @@ class Scheduling:
         if not reporter:
             return
         evidence: dict[str, object] = {"externalPatientId": str(patient.patientId)}
+        booking_outcome = booking_outcome or outcome
         if booking is not None:
             booking_result: dict[str, object] = {"status": booking_outcome}
             evidence["bookingResult"] = booking_result
@@ -731,7 +727,7 @@ class Scheduling:
         if old:
             evidence["oldAppointmentId"] = str(old.id)
             evidence["cancellationResult"] = {
-                "status": cancellation_outcome,
+                "status": cancellation_outcome or outcome,
                 "appointmentId": old.id,
                 "appointmentDate": old.date,
                 "appointmentTime": old.time,
