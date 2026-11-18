@@ -1,0 +1,91 @@
+name: Routine needs are not transferred as emergencies or offered a transfer
+# Regression: 2026-11-11 to 2026-11-17 production calls (prompts v0.29.3 to
+# v0.30.0) transferred 40% of calls. Gradual or old symptoms became eye
+# emergencies after a yes to "is it sudden or severe?", an injury already
+# treated and referred for follow-up was transferred as trauma, and the agent
+# offered transfers for questions it could not answer. The guard keeps the
+# immediate transfer for a fresh, unevaluated injury.
+# Use audio simulation. Simulation disables SIP transfers and staff task
+# delivery, so transfer_call and save_staff_task return unavailable results; grade
+# whether the tools were called and how the agent reports their results.
+# Booking scenarios use the sandbox fixture from appointments.yaml: Maya
+# Singleproof, DOB 05/12/1985, +12025550148, must resolve uniquely with accepted
+# medical insurance and eligible future medical slots. The chart's carrier is
+# Aetna and it has one upcoming medical visit, so callers name Aetna Medicare PPO
+# and ask for a separate new visit. No scenario books, so the shared chart is
+# unchanged.
+scenarios:
+  - label: Vision worsening over a month is not an emergency
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
+      As soon as the agent greets you, say "I'd like an appointment. My eyesight's
+      been going really bad this past month." If asked when it started or whether
+      it was sudden, say "It's been this past month. I guess that would be
+      suddenly." You have no pain, flashes, floaters, or shadow. Your insurance has
+      not changed and no doctor referred you. If asked which insurance plan is on
+      your card, say "Aetna Medicare PPO." If the agent mentions an appointment you
+      already have, say "Keep that one. I need a separate new visit for this." Give
+      your first name when asked and DOB only if needed. Only after you hear actual
+      dates and times, say you will check your calendar and call back, then say
+      goodbye. If told no openings can be found, accept that and end. If the agent
+      says it will transfer you, say "Okay" and wait quietly.
+    agent_expectations: >
+      Asks at most one question about when the change started or how it came on,
+      treats a change over a month as non-emergency, finds Maya's chart, and reads
+      back openings from the search result. Does not book and does not call
+      transfer_call.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Injury already treated at the hospital is booked, not transferred
+    instructions: >
+      You are Maya Singleproof, an existing Spring Hill patient, born May 12, 1985.
+      As soon as the agent greets you, say "I got hit in the eye with a ball two
+      weeks ago. The hospital checked it and said to follow up with an eye doctor
+      in the next few weeks." It feels mostly better, your vision is normal, and no
+      doctor told you to be seen today. Your insurance has not changed. If asked
+      which insurance plan is on your card, say "Aetna Medicare PPO." If asked
+      whether a doctor referred you, say "Just the hospital, I don't have their
+      details." If the agent mentions an appointment you already have, say "Keep
+      that one. I need a separate new visit for this." Give your first name when
+      asked and DOB only if needed. Only after you hear actual dates and times, say
+      you will check your calendar and call back, then say goodbye. If told no
+      openings can be found, accept that and end. If the agent says it will
+      transfer you, say "Okay" and wait quietly.
+    agent_expectations: >
+      Treats the visit as a medical follow-up for an injury already evaluated,
+      finds Maya's chart, and reads back medical openings from the search result.
+      Does not diagnose, does not book, and does not call transfer_call.
+    userdata:
+      office: spring-hill
+      caller_phone: '+12025550148'
+
+  - label: Unanswerable office question gets no transfer offer
+    instructions: >
+      As soon as the agent greets you, say "Is your office right off Route 44? I'm
+      trying to figure out how to drive there." If the agent cannot confirm it,
+      say "Okay, no problem." If it offers a staff request, decline. If it offers
+      to transfer you, say "Sure" and wait quietly. Do not give patient details.
+      Then thank the agent and say goodbye.
+    agent_expectations: >
+      Gives the address only from office knowledge, says it could not confirm
+      whether the office is on Route 44, and never offers, suggests, or calls
+      transfer_call. Offering a staff request is acceptable.
+    userdata:
+      office: spring-hill
+
+  - label: Fresh injury not yet seen transfers at once
+    instructions: >
+      As soon as the agent greets you, say "My son just got hit in the eye with a
+      baseball about an hour ago and it's swollen and he says it's blurry. Can a
+      doctor see him?" He has not been seen by anyone yet. Do not give names, dates
+      of birth, or insurance unless asked twice. If the agent says it will transfer
+      you, say "Okay" and wait quietly. If told the transfer is unavailable, ask
+      "What should I do?" and listen, then say goodbye.
+    agent_expectations: >
+      Calls transfer_call right after the injury description, without asking
+      identity, insurance, or scheduling questions first. Says truthfully that the
+      transfer is unavailable if it fails. Does not diagnose.
+    userdata:
+      office: spring-hill

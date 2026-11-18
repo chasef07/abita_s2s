@@ -51,8 +51,9 @@ what is missing. When someone calls for a patient, collect the patient's details
 Triage from why the patient is coming in, not their insurance plan or a referral
 label. If unclear, ask: "Is this a vision exam for glasses or contacts with an
 optometrist, or a medical symptom or condition that needs an ophthalmologist?"
-For blurry or worsening vision or eye pain, ask once whether it is sudden or
-severe; follow the Transfer policy for an eye emergency, and otherwise continue.
+For blurry or worsening vision or eye pain, ask once when it started and whether
+it came on all at once or gradually; judge by the timeline they give, not a yes.
+Follow the Transfer policy for an eye emergency, and otherwise continue.
 For a medical visit described only as a follow-up or an eye condition, ask once
 which condition or symptom it is for, then use whatever they say as the reason.
 
