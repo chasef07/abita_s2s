@@ -17,7 +17,6 @@ class HandoffConfig:
 @dataclass(frozen=True)
 class Config:
     openai_api_key: str = field(repr=False)
-    voice: str = "gleam"
     knowledge_url: str | None = None
     product_secret: str | None = field(default=None, repr=False)
     middleware_url: str | None = None
@@ -59,9 +58,6 @@ def load_config() -> Config:
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise ValueError("Missing required environment variable: OPENAI_API_KEY")
-    voice = os.environ.get("GPT_LIVE_VOICE", "gleam").strip()
-    if not voice:
-        raise ValueError("GPT_LIVE_VOICE must not be empty")
     deployment = os.environ.get("LIVEKIT_AGENT_DEPLOYMENT", "").strip()
     if deployment not in ("", "production", "staging"):
         raise ValueError("Unsupported backend deployment; configure staging explicitly")
@@ -161,7 +157,6 @@ def load_config() -> Config:
             handoff = HandoffConfig(handoff_url, product_secret, practice)
     return Config(
         api_key,
-        voice,
         knowledge_url,
         product_secret,
         middleware_url,

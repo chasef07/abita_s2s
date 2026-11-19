@@ -10,7 +10,8 @@ from abita_s2s.prompt import thinker_instructions
 from abita_s2s.runtime.observability import ObservedGPTLiveSession
 from abita_s2s.runtime.silence import BackendResponses
 
-SPEAKER_MODEL = "gpt-live-1"
+SPEAKER_MODEL = "gpt-live-1.1"
+SPEAKER_VOICE = "bossa"
 THINKER_MODEL = "gpt-6-luna"
 THINKER_REASONING_EFFORT = "high"
 
@@ -35,7 +36,7 @@ def create_model(
     return CallModel(
         api_key=config.openai_api_key,
         model=SPEAKER_MODEL,
-        voice=config.voice,
+        voice=SPEAKER_VOICE,
         delegation_recovery=True,
         responses_options={
             "model": THINKER_MODEL,
