@@ -24,26 +24,23 @@ class StaffTaskTools:
     ) -> str:
         """Save or update one caller-approved, non-clinical need staff must act on after the call.
 
-        Drafts are sent automatically when the call ends, including a caller hangup.
-        Say the request is noted, not submitted; staff owns fulfillment and timing.
-        Reuse draft_id for added details or corrections to the same request, including
-        pharmacy details. Omit it only for a genuinely separate need, even in one category.
-        For records, use the office knowledge for intake/delivery rules; speak restrictions
-        and missing prerequisites. Collect available details and list remaining gaps.
-        Follow the Transfer policy for urgent or clinical concerns.
+        Drafts are sent when the call ends, even on a hangup; say the request is
+        noted, not submitted. For records, follow the office knowledge for intake
+        and delivery, and say any restrictions or missing prerequisites.
 
         Args:
-            category: Follow the Staff task drafts routing rules. Classify the work
-                requested; ask one focused question if unclear before using other.
-            urgency: high_priority for time-sensitive non-clinical work, normal for
-                standard follow-up, non_urgent without time sensitivity. Transfer clinical acuity.
+            category: Route by Staff task drafts; if unclear, ask one focused question
+                before using other.
+            urgency: high_priority for time-sensitive work, normal for standard
+                follow-up, non_urgent without time sensitivity. Transfer clinical acuity.
             summary: Short staff inbox title for one unresolved need.
             message: Details of exactly one need. Include medication/pharmacy, service/plan,
                 authorization status and procedure timing when relevant. Preserve intake
                 and list missing details. When updating, include the full revised request.
-            draft_id: ID returned by the previous save for this need; omit for a new need.
-            cancel: True with the draft ID if the request is withdrawn or resolved;
-                it will not be submitted. Other request fields are ignored when cancelling.
+            draft_id: The ID from this need's previous save, for added details or
+                corrections; omit only for a genuinely separate need, even in one category.
+            cancel: True with draft_id to withdraw a resolved or unwanted request;
+                other fields are ignored.
         """
         context.disallow_interruptions()
         result = self._staff_tasks.save(

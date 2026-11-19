@@ -19,14 +19,11 @@ class InsuranceTools:
         visitType: CoverageType,
         insuranceMemberId: str,
     ) -> str:
-        """Change the active verified patient's coverage only when the caller requests it.
-
-        Use add_patient for registration. Claim success only from an updated receipt;
-        never retry an uncertain result or repeat a completed write.
+        """Change the active verified patient's coverage when the caller asks; use add_patient to register.
 
         Args:
             insurancePlanId: The new plan's ID from the Insurance list for visitType.
-            visitType: The visit type the new plan is for: medical or routine_vision.
+            visitType: The visit type the new plan covers.
             insuranceMemberId: Member ID on the new card; empty for a self-pay plan.
         """
         result = await self._insurance.update(

@@ -26,18 +26,17 @@ class PatientTools:
     async def resolve_patient(
         self, context: RunContext[CallState], firstName: str | None, dob: str | None
     ) -> str:
-        """Resolve existing patients only; do not call for callers who say they are new.
+        """Find an existing patient; never call for a caller who says they are new.
 
-        Call with the patient's firstName and dob:null unless DOB was already
-        provided. The tool asks for DOB if needed.
-
-        Include a supplied DOB without separate confirmation and follow the returned next step.
-        Same-name patient switches require DOB. If no patient matches, clarify first-name
-        spelling and DOB, then start new patient intake. Use only caller-provided identity.
+        Use only caller-provided identity, and follow the returned next step; the
+        tool asks for DOB when needed, and switching to a same-name patient requires
+        it. If none matches, clarify the first-name spelling and DOB, then start new
+        patient intake.
 
         Args:
             firstName: First name of the patient receiving care; null if unknown.
-            dob: Patient date of birth in MM/DD/YYYY; null if unknown.
+            dob: Patient date of birth in MM/DD/YYYY if the caller already gave it,
+                without confirming it separately; otherwise null.
         """
         result = await self._resolver.resolve(
             firstName, dob, call_id=context.function_call.call_id
@@ -67,27 +66,19 @@ class PatientTools:
         insuranceMemberId: str,
         readBack: Literal[True] | None,
     ) -> str:
-        """Create a new patient chart and attach insurance from completed intake.
+        """Create a new patient chart and attach insurance after completed intake; no chart lookup is needed.
 
-        Requires the patient's plan ID from the Insurance list for the triaged visit
-        type and caller confirmation of the final read-back. No existing-chart lookup is required.
-        A blocked result may mean the chart exists but insurance is not confirmed.
-        Do not repeat chart creation after successful creation, partial creation,
-        or an uncertain result.
+        A blocked result may mean the chart exists but insurance is not confirmed;
+        never create it again after a created, partial, or uncertain result.
 
         Args:
-            firstName: Patient's first name.
-            lastName: Patient's last name.
             dob: Patient's date of birth in MM/DD/YYYY.
             callback: The literal "inbound" if the caller approved the number they called from; otherwise the number they gave.
             email: Patient's email address, or null if unavailable or declined.
             street: Street number and street name.
             aptSuite: Apartment, unit, or suite; null if none.
-            city: City of the patient's address.
             state: Two-letter state abbreviation.
-            zip: ZIP code of the patient's address.
-            sex: Patient's sex for registration.
-            visitType: The triaged visit type: medical or routine_vision.
+            visitType: The triaged visit type.
             insurancePlanId: The patient's plan ID from the Insurance list for visitType.
             subscriberName: Name on the insurance card; reuse the patient's name if confirmed as theirs.
             insuranceMemberId: Member ID on the insurance card; empty for a self-pay plan.
