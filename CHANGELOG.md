@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.0](https://github.com/chasef07/abita_s2s/compare/v0.30.1...v0.31.0) (2026-11-19)
+
+
+### Features
+
+* **voice:** run gpt-live-1.1 with the bossa voice ([#304](https://github.com/chasef07/abita_s2s/issues/304)) ([2c0fe7d](https://github.com/chasef07/abita_s2s/commit/2c0fe7d1a33a088653dcef88959e1bfc483507b2))
+
 ## [0.30.1](https://github.com/chasef07/abita_s2s/compare/v0.30.0...v0.30.1) (2026-11-18)
 
 
