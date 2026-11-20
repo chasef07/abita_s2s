@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.1](https://github.com/chasef07/abita_s2s/compare/v0.31.0...v0.31.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **prompts:** transfer callers who ask for a person, and cut duplicated rules ([#303](https://github.com/chasef07/abita_s2s/issues/303)) ([20471e2](https://github.com/chasef07/abita_s2s/commit/20471e265c8f544f0f456ef5e9d52ef64f52e8f1))
+
 ## [0.31.0](https://github.com/chasef07/abita_s2s/compare/v0.30.1...v0.31.0) (2026-11-19)
 
 
