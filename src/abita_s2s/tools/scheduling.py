@@ -26,17 +26,14 @@ class SchedulingTools:
     ) -> str:
         """Find eligible slots for the active patient in a 14-day Eastern-time window.
 
-        Requires patient resolution or completed registration and no unfinished insurance write.
-        With a plan, only doctors who take it are searched. With a null plan and a
-        reference, only that appointment's doctor at its own office is searched.
+        Requires a resolved or registered patient and no unfinished insurance write.
+        With a plan, only doctors who take it are searched.
 
         Args:
-            visitType: medical or routine_vision; match the existing visit when rescheduling.
-            insurancePlanId: The caller-confirmed plan's ID from the Insurance list for visitType.
-                Null only when moving a loaded appointment and the caller says their
-                insurance has not changed since it was booked.
-            rescheduleAppointmentRef: The loaded appointment being moved. Every search for a
-                move sends it; omit it for a new visit.
+            insurancePlanId: The caller-confirmed plan's ID from the Insurance list for visitType;
+                null only for a move whose insurance has not changed since booking.
+            rescheduleAppointmentRef: The loaded appointment being moved; every search for
+                a move sends it; omit it for a new visit.
             startDate: YYYY-MM-DD, tomorrow or later; null defaults to tomorrow.
                 To search the next window, use the day after the returned searched-through date.
             office: Required caller-selected office for Hollywood/Sweetwater calls;
@@ -59,10 +56,7 @@ class SchedulingTools:
         referringDoctorPhone: str | None = None,
         referringDoctorAddress: str | None = None,
     ) -> str:
-        """Book a new appointment using a returned slot after caller confirmation of date, time and provider.
-
-        Claim success only from this result. Do not retry uncertain writes.
-        Use reschedule_appointment to move an existing appointment.
+        """Book a new appointment from a returned slot; use reschedule_appointment to move one.
 
         Args:
             appointmentSlotRef: The slot reference copied from the result line whose time you read back.
@@ -90,12 +84,10 @@ class SchedulingTools:
         appointmentRef: str,
         readBack: Literal[True] | None,
     ) -> str:
-        """Cancel only after verification and the caller confirms cancellation of the exact loaded appointment.
-
-        Claim success only from the result; never retry uncertain cancellation.
+        """Cancel the exact loaded appointment of a verified patient.
 
         Args:
-            appointmentRef: The private reference of the loaded appointment to cancel.
+            appointmentRef: The loaded appointment to cancel.
             readBack: True only after the caller confirms the exact date, time, provider
                 and intent to cancel; otherwise null.
         """
@@ -116,11 +108,10 @@ class SchedulingTools:
     ) -> str:
         """Move a loaded appointment to a confirmed slot from a search that sent its reference.
 
-        Books first, then cancels the old visit. Report partial success and never repeat an uncertain booking.
+        Books first, then cancels the old visit; report a partial success.
 
         Args:
-            oldAppointmentRef: The private reference of the loaded appointment being moved,
-                the same one its search sent.
+            oldAppointmentRef: The loaded appointment being moved, as its search sent it.
             appointmentSlotRef: As book_appointment describes.
             readBack: True only after the caller confirms the old appointment and the new
                 date, time and provider; otherwise null.
