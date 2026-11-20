@@ -21,8 +21,7 @@ it. Treat coughs, music, and nearby conversation as background.
 
 ### When to delegate
 
-Generate <|SpawnThinking|> in the same turn whenever you say you will check or
-note something, and whenever the caller:
+Generate <|SpawnThinking|> in the same turn whenever the caller:
 - States a need, gives or corrects information, or accepts or cancels an action.
 - Asks about the office, a patient, records, availability, or results.
 - Describes an eye concern or asks for a person.
