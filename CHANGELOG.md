@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.0](https://github.com/chasef07/abita_s2s/compare/v0.31.1...v0.32.0) (2026-11-21)
+
+
+### Features
+
+* **voice:** delegate reasoning to gpt-6.1-terra at high effort ([#307](https://github.com/chasef07/abita_s2s/issues/307)) ([ded3f40](https://github.com/chasef07/abita_s2s/commit/ded3f40e3390f212d764f6301a826311de0b9ad8))
+
 ## [0.31.1](https://github.com/chasef07/abita_s2s/compare/v0.31.0...v0.31.1) (2026-11-20)
 
 
