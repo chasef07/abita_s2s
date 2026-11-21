@@ -12,7 +12,7 @@ from abita_s2s.runtime.silence import BackendResponses
 
 SPEAKER_MODEL = "gpt-live-1.1"
 SPEAKER_VOICE = "bossa"
-THINKER_MODEL = "gpt-6-luna"
+THINKER_MODEL = "gpt-6.1-terra"
 THINKER_REASONING_EFFORT = "high"
 
 
