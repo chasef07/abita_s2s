@@ -51,7 +51,7 @@ def completed(response_id):
         "type": "response.completed",
         "response": {
             "id": response_id,
-            "model": "gpt-6-luna",
+            "model": "gpt-6.1-terra",
             "usage": {
                 "input_tokens": 376,
                 "input_tokens_details": {
@@ -95,7 +95,10 @@ class TraceCase(unittest.IsolatedAsyncioTestCase):
         gen_ai.set_capture_content(True)
         self.model = GPTLiveModel(
             api_key="offline",
-            responses_options={"model": "gpt-6-luna", "instructions": "PRIVATE prompt"},
+            responses_options={
+                "model": "gpt-6.1-terra",
+                "instructions": "PRIVATE prompt",
+            },
         )
         with self.tracer.start_as_current_span("agent_session") as parent:
             self.parent = parent
@@ -155,7 +158,7 @@ class BackendResponseTraceTests(TraceCase):
         self.assertEqual(attrs["lk.delegation_id"], "d1")
         self.assertEqual(attrs["lk.session_id"], "live_test")
         self.assertEqual(attrs["gen_ai.response.id"], "r1")
-        self.assertEqual(attrs["gen_ai.request.model"], "gpt-6-luna")
+        self.assertEqual(attrs["gen_ai.request.model"], "gpt-6.1-terra")
         self.assertEqual(attrs["gen_ai.usage.input_tokens"], 376)
         self.assertEqual(attrs["gen_ai.usage.cache_read.input_tokens"], 100)
         self.assertEqual(attrs["gen_ai.usage.reasoning.output_tokens"], 5)

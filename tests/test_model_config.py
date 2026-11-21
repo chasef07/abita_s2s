@@ -62,7 +62,7 @@ class ModelConfigTests(unittest.TestCase):
         with patch("abita_s2s.model_config.CallModel") as model:
             create_model(Config(openai_api_key="offline"), "", "")
         options = model.call_args.kwargs["responses_options"]
-        self.assertEqual(options["model"], "gpt-6-luna")
+        self.assertEqual(options["model"], "gpt-6.1-terra")
         self.assertEqual(options["reasoning"], {"effort": "high"})
 
     def test_undelegated_turns_are_judged_by_livekit_default_detector(self):
