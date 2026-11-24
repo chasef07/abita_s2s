@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.1](https://github.com/chasef07/abita_s2s/compare/v0.32.0...v0.32.1) (2026-11-24)
+
+
+### Performance Improvements
+
+* **thinker:** give the delegator the call date, not the minute, so calls share its prompt cache ([#309](https://github.com/chasef07/abita_s2s/issues/309)) ([2a20844](https://github.com/chasef07/abita_s2s/commit/2a2084491c875a34122f698247baa8cb599557b0))
+
 ## [0.32.0](https://github.com/chasef07/abita_s2s/compare/v0.31.1...v0.32.0) (2026-11-21)
 
 
