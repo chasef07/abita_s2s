@@ -9,7 +9,7 @@ Prompt = Literal[
     "speaker",
     "thinker",
     "transfer_policy",
-    "call_started",
+    "call_date",
     "greeting",
     "check_in",
     "still_working",
@@ -28,7 +28,7 @@ def load_prompt(name: Prompt) -> str:
 def thinker_instructions(
     started: datetime, office_knowledge: str, insurance_list: str
 ) -> str:
-    """The thinker's rules with the office's knowledge and insurance list, plus the clinic-local call start."""
+    """The thinker's rules with the office's knowledge and insurance list, plus the clinic-local call date."""
     return (
         load_prompt("thinker").format(
             transfer_policy=load_prompt("transfer_policy"),
@@ -36,7 +36,7 @@ def thinker_instructions(
             insurance_list=insurance_list,
         )
         + "\n\n"
-        + load_prompt("call_started").format(started=started)
+        + load_prompt("call_date").format(started=started)
     )
 
 
