@@ -53,8 +53,8 @@ class ModelConfigTests(unittest.TestCase):
                             office_knowledge="Hours\nWeekdays.",
                             insurance_list="### Medical visits",
                         )
-                        + f"\n\n## Call date\n\nCall date: {expected} (America/New_York). "
-                        "Use this clinic-local date to interpret relative dates.",
+                        + f"\n\n## Call date\n\nCall date: {expected}. "
+                        "Use this date to interpret relative dates.",
                     )
             self.assertEqual(clock.now.call_count, len(cases))
 
