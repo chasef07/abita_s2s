@@ -40,11 +40,10 @@ scenarios:
       glasses." After the answer, ask "What time do you close today?" Then thank
       the agent and say goodbye. Do not say the day of the week or the time.
     agent_expectations: >
-      Says whether the office is open or gives a closing time only from office
-      knowledge. The open-now answer is consistent with the office's hours for
-      the current weekday and the call's local time; if today's hours are not
-      in office knowledge, says it cannot confirm rather than guessing. Never
-      invites the caller to come by unless the office's hours show it is open.
+      Gives today's hours or closing time only from office knowledge, for the
+      current weekday. Does not claim the office is open right now; if today's
+      hours are not in office knowledge, says it cannot confirm rather than
+      guessing. Never invites the caller to come by now.
     userdata:
       office: north-miami-beach-optical
 

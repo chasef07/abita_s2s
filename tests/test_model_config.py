@@ -20,14 +20,14 @@ async def idle(session):
 
 
 class ModelConfigTests(unittest.TestCase):
-    def test_each_call_gets_eastern_time_across_midnight_and_dst(self):
+    def test_each_call_gets_the_eastern_date_across_midnight_and_dst(self):
         cases = (
-            ("2026-09-16T03:59:00+00:00", "Tuesday, 2026-09-15 23:59 EDT"),
-            ("2026-09-16T04:00:00+00:00", "Wednesday, 2026-09-16 00:00 EDT"),
-            ("2026-03-08T06:59:00+00:00", "Sunday, 2026-03-08 01:59 EST"),
-            ("2026-03-08T07:00:00+00:00", "Sunday, 2026-03-08 03:00 EDT"),
-            ("2026-11-01T05:30:00+00:00", "Sunday, 2026-11-01 01:30 EDT"),
-            ("2026-11-01T06:30:00+00:00", "Sunday, 2026-11-01 01:30 EST"),
+            ("2026-09-16T03:59:00+00:00", "Tuesday, 2026-09-15"),
+            ("2026-09-16T04:00:00+00:00", "Wednesday, 2026-09-16"),
+            ("2026-03-08T06:59:00+00:00", "Sunday, 2026-03-08"),
+            ("2026-03-08T07:00:00+00:00", "Sunday, 2026-03-08"),
+            ("2026-11-01T05:30:00+00:00", "Sunday, 2026-11-01"),
+            ("2026-11-01T06:30:00+00:00", "Sunday, 2026-11-01"),
         )
         with (
             patch("abita_s2s.model_config.datetime") as clock,
@@ -53,10 +53,26 @@ class ModelConfigTests(unittest.TestCase):
                             office_knowledge="Hours\nWeekdays.",
                             insurance_list="### Medical visits",
                         )
-                        + f"\n\n## Call start\n\nCall started: {expected} (America/New_York). "
-                        "Use this clinic-local date to interpret relative dates.",
+                        + f"\n\n## Call date\n\nCall date: {expected}. "
+                        "Use this date to interpret relative dates.",
                     )
             self.assertEqual(clock.now.call_count, len(cases))
+
+    def test_calls_at_one_office_on_one_day_share_identical_instructions(self):
+        instructions = []
+        with (
+            patch("abita_s2s.model_config.datetime") as clock,
+            patch("abita_s2s.model_config.CallModel") as model,
+        ):
+            for instant in ("2026-11-24T13:40:12+00:00", "2026-11-24T21:05:59+00:00"):
+                clock.now.side_effect = lambda tz, instant=instant: (
+                    datetime.fromisoformat(instant).astimezone(tz)
+                )
+                create_model(Config(openai_api_key="offline"), "Hours", "Plans")
+                instructions.append(
+                    model.call_args.kwargs["responses_options"]["instructions"]
+                )
+        self.assertEqual(instructions[0], instructions[1])
 
     def test_thinker_reasons_at_high_effort(self):
         with patch("abita_s2s.model_config.CallModel") as model:
