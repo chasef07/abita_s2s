@@ -138,8 +138,11 @@ class GreetingTests(unittest.IsolatedAsyncioTestCase):
             if item.type == "message" and item.role == "developer"
         ]
         self.assertEqual(len(seeded), 1)
-        self.assertIn(
-            f'Practice name: "{SPRING_HILL.greeting_name}"', seeded[0].text_content
+        self.assertEqual(
+            seeded[0].text_content,
+            "In a warm tone, say exactly: “Thank you for calling "
+            f"{SPRING_HILL.greeting_name}. This is Sofia. How can I help you today?” "
+            "Then listen.",
         )
         handle = asyncio.get_running_loop().create_future()
         handle.set_result(None)

@@ -40,6 +40,6 @@ def thinker_instructions(
     )
 
 
-def greeting(practice_name: str, now: datetime) -> str:
+def greeting(practice_name: str) -> str:
     """The opening instructions, seeded into session.input and then asked for once, as GPT-Live advises."""
-    return load_prompt("greeting").format(practice_name=practice_name, now=now)
+    return load_prompt("greeting").format(practice_name=practice_name)
