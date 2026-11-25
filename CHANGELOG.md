@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.2](https://github.com/chasef07/abita_s2s/compare/v0.32.1...v0.32.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **voice:** greet every caller with one standard line so calls share the thinker's prompt cache ([#311](https://github.com/chasef07/abita_s2s/issues/311)) ([89924c7](https://github.com/chasef07/abita_s2s/commit/89924c72c096920037e47f1ff85fc84449aec6a3))
+
 ## [0.32.1](https://github.com/chasef07/abita_s2s/compare/v0.32.0...v0.32.1) (2026-11-24)
 
 
