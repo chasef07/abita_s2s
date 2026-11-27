@@ -17,7 +17,7 @@ from release import component_files, component_version, digest
 
 from abita_s2s.release import COMPONENTS, checksums, content_digest
 
-LK_VERSION = "2.20.0"
+LK_VERSION = "2.20.1"
 KEYS = (
     "agent_version",
     "git_commit",
